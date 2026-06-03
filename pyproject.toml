@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lmu-app"
+version = "0.1.0"
+description = "A modern telemetry overlay for Le Mans Ultimate"
+requires-python = ">=3.11"
+dependencies = [
+    "PySide6>=6.6",
+    "pyqtgraph>=0.13",
+    "psutil>=5.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-qt>=4.3",
+    "ruff>=0.3",
+]
+
+[project.scripts]
+lmu-app = "lmu_app.main:main"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["lmu_app*"]
