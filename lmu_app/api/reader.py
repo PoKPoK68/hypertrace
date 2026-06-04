@@ -71,10 +71,12 @@ class VehicleScoringEntry:
     last_lap: float       = -1.0
     time_behind_leader: float = 0.0
     time_behind_next: float   = 0.0
-    time_into_lap: float      = 0.0   # temps écoulé dans le tour actuel (s)
+    time_into_lap: float      = 0.0   # estimated time into lap (s)
+    estimated_lap_time: float = 0.0   # estimated lap time used for relative gap
     is_player: bool       = False
     in_pits: bool         = False
     control: int          = 0   # 0=player, 1=AI, 2=remote
+    in_garage: bool       = False  # dans le garage (pas juste dans la pitlane)
 
 
 @dataclass
@@ -232,8 +234,10 @@ class LMUReader(BaseReader):
                     time_behind_leader = v.mTimeBehindLeader,
                     time_behind_next   = v.mTimeBehindNext,
                     time_into_lap      = v.mTimeIntoLap,
+                    estimated_lap_time = v.mEstimatedLapTime,
                     is_player          = bool(v.mIsPlayer),
                     in_pits            = bool(v.mInPits),
+                    in_garage          = bool(v.mInGarageStall),
                     control            = v.mControl,
                 ))
 
@@ -375,7 +379,7 @@ class MockReader(BaseReader):
                 slot_id=i, driver_name=("YOU" if i==2 else f"Driver {i+1:02d}"),
                 place=i+1, total_laps=int(t/120)+1,
                 best_lap=115.4+i*1.2, last_lap=116.+i*0.8,
-                time_behind_leader=i*3.4, time_into_lap=float(i*3.2), is_player=(i==2),
+                time_behind_leader=i*3.4, time_into_lap=float(i*3.2), estimated_lap_time=120.0, is_player=(i==2), in_garage=False,
             )
             for i in range(10)
         ]
