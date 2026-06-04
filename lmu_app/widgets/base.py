@@ -13,7 +13,7 @@ Gère :
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from PySide6.QtCore import QPoint, QTimer, Qt
 from PySide6.QtGui import QMouseEvent
@@ -34,7 +34,6 @@ class BaseWidget(QWidget):
       - (optionnel) setup_ui() → construit l'UI interne
     """
 
-    # Nom affiché dans le panneau de config — à surcharger
     WIDGET_NAME: str = "Widget"
 
     def __init__(
@@ -50,6 +49,9 @@ class BaseWidget(QWidget):
         self._auto_hide = auto_hide
         self._dragging = False
         self._drag_offset = QPoint()
+        self._locked = False
+        self._hide_in_garage = False
+        self._on_position_changed: Callable[[int, int], None] | None = None
 
         # Fenêtre overlay : transparente, sans décoration, toujours au-dessus
         self.setWindowFlags(
@@ -83,13 +85,24 @@ class BaseWidget(QWidget):
         self.hide()
 
     def set_locked(self, locked: bool) -> None:
-        """Verrouille / déverrouille le drag & drop."""
         self._dragging = False
         self._locked = locked
+
+    def set_hide_in_garage(self, hide: bool) -> None:
+        self._hide_in_garage = hide
+
+    def apply_class_colors(self, colors: dict) -> None:
+        """Override in widgets that display car class colors."""
 
     # ------------------------------------------------------------------
     # À surcharger dans les sous-classes
     # ------------------------------------------------------------------
+
+    # Schéma des paramètres configurables.
+    # Chaque entrée : {"key": str, "label": str, "type": "int"|"float"|"bool"|"choice",
+    #                  "default": ..., "min": ..., "max": ..., "step": ...,
+    #                  "options": [{"value": ..., "label": str}, ...]}
+    CONFIG_SCHEMA: list[dict] = []
 
     def setup_ui(self) -> None:
         """Construire les éléments visuels du widget."""
@@ -97,12 +110,15 @@ class BaseWidget(QWidget):
     def on_data(self, snapshot: LMUSnapshot) -> None:
         """Appelé à chaque tick avec le snapshot courant. À surcharger."""
 
+    def apply_params(self, params: dict) -> None:
+        """Applique les paramètres de configuration. À surcharger."""
+
     # ------------------------------------------------------------------
     # Drag & drop
     # ------------------------------------------------------------------
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
-        if event.button() == Qt.MouseButton.LeftButton:
+        if not self._locked and event.button() == Qt.MouseButton.LeftButton:
             self._dragging = True
             self._drag_offset = event.globalPosition().toPoint() - self.pos()
 
@@ -111,7 +127,10 @@ class BaseWidget(QWidget):
             self.move(event.globalPosition().toPoint() - self._drag_offset)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
-        self._dragging = False
+        if self._dragging:
+            self._dragging = False
+            if self._on_position_changed:
+                self._on_position_changed(self.x(), self.y())
 
     # ------------------------------------------------------------------
     # Tick interne
@@ -120,7 +139,15 @@ class BaseWidget(QWidget):
     def _update(self) -> None:
         snapshot = self._reader.get()
 
-        # Auto-hide si hors piste
+        # Hide when player is in garage
+        if self._hide_in_garage and snapshot.player_in_garage:
+            if self.isVisible():
+                self.hide()
+            return
+        elif self._hide_in_garage and not self.isVisible():
+            self.show()
+
+        # Auto-hide when not on track
         if self._auto_hide:
             if snapshot.is_on_track or not snapshot.game_running:
                 if not self.isVisible():

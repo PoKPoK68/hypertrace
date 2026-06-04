@@ -75,8 +75,10 @@ class VehicleScoringEntry:
     estimated_lap_time: float = 0.0   # estimated lap time used for relative gap
     is_player: bool       = False
     in_pits: bool         = False
-    control: int          = 0   # 0=player, 1=AI, 2=remote
-    in_garage: bool       = False  # dans le garage (pas juste dans la pitlane)
+    control: int          = 0
+    in_garage: bool       = False
+    vehicle_class: str    = ""
+    virtual_energy: float = 0.0   # 0-1 fraction; 0 if car has no VE
 
 
 @dataclass
@@ -102,6 +104,7 @@ class LMUSnapshot:
     tyres: TyreData          = field(default_factory=TyreData)
     session: SessionData     = field(default_factory=SessionData)
     is_on_track: bool        = False
+    player_in_garage: bool   = False
     game_running: bool       = False
     timestamp: float         = 0.0
 
@@ -222,6 +225,10 @@ class LMUReader(BaseReader):
             s.vehicles = []
             for i in range(min(sc_info.mNumVehicles, 104)):
                 v = data.scoring.vehScoringInfo[i]
+                try:
+                    vclass = v.mVehicleClass.decode(errors="replace").rstrip("\x00")
+                except AttributeError:
+                    vclass = ""
                 s.vehicles.append(VehicleScoringEntry(
                     slot_id            = v.mID,
                     driver_name        = v.mDriverName.decode(errors="replace").rstrip("\x00"),
@@ -239,7 +246,19 @@ class LMUReader(BaseReader):
                     in_pits            = bool(v.mInPits),
                     in_garage          = bool(v.mInGarageStall),
                     control            = v.mControl,
+                    vehicle_class      = vclass,
                 ))
+
+            # --- VE pour tous les véhicules depuis telemInfo ---
+            ve_by_id: dict[int, float] = {}
+            try:
+                for i in range(min(telem.activeVehicles, 104)):
+                    t = telem.telemInfo[i]
+                    ve_by_id[t.mID] = float(t.mVirtualEnergy)
+            except (AttributeError, IndexError):
+                pass
+            for entry in s.vehicles:
+                entry.virtual_energy = ve_by_id.get(entry.slot_id, 0.0)
 
             # --- Télémétrie joueur ---
             if not telem.playerHasVehicle:
@@ -275,8 +294,9 @@ class LMUReader(BaseReader):
             # Trouver le scoring joueur pour lap_dist et on_track
             player_sc = next((e for e in s.vehicles if e.is_player), None)
             if player_sc:
-                v.lap_dist     = player_sc.lap_dist
-                snap.is_on_track = not player_sc.in_pits and sc_info.mInRealtime
+                v.lap_dist           = player_sc.lap_dist
+                snap.is_on_track     = not player_sc.in_pits and sc_info.mInRealtime
+                snap.player_in_garage = player_sc.in_garage
 
             # --- Pneus (0=FL,1=FR,2=RL,3=RR) ---
             t = snap.tyres
