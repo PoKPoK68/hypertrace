@@ -26,7 +26,6 @@ if TYPE_CHECKING:
 
 _BTN_LOCK   = "background:#3a3a1a; color:#ffdd44; border-color:#666622;"
 _BTN_UNLOCK = "background:#1a3a1a; color:#88ff88; border-color:#226622;"
-_BTN_QUIT   = "background:#3a1a1a; color:#ff8888; border-color:#662222;"
 
 
 class MainWindow(QWidget):
@@ -89,12 +88,6 @@ class MainWindow(QWidget):
         self._lock_btn = QPushButton()
         self._lock_btn.clicked.connect(self._toggle_lock)
         vl.addWidget(self._lock_btn)
-
-        quit_btn = QPushButton("Quit")
-        quit_btn.setStyleSheet(_BTN_QUIT)
-        quit_btn.clicked.connect(QApplication.instance().quit)
-        vl.addWidget(quit_btn)
-
         vl.addStretch()
         return w
 
@@ -166,6 +159,10 @@ class MainWindow(QWidget):
         self._config.set_widget_enabled(key, enabled)
         self._config.save()
         widget.start() if enabled else widget.stop()
+
+    def closeEvent(self, event) -> None:
+        QApplication.instance().quit()
+        event.accept()
 
     def _open_config(self, key: str, widget: BaseWidget) -> None:
         from lmu_app.ui.widget_config_dialog import WidgetConfigDialog

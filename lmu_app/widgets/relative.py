@@ -12,19 +12,27 @@ from PySide6.QtWidgets import QSizePolicy
 from lmu_app.api.reader import DataReader, LMUSnapshot
 from lmu_app.widgets.base import BaseWidget
 
-ROW_H    = 22
 _W_BASE  = 100   # fixed: 34px before name + 58px gap area + 8px margin
 
-_CHAR_PX  = 7
-_BADGE_PX = 22   # badge pill overlaps name text
+
+def _char_px(font_size: int) -> int:
+    return max(4, round(7 * font_size / 9))
 
 
-def _widget_w(max_name_chars: int) -> int:
-    return max_name_chars * _CHAR_PX + _W_BASE
+def _badge_px(font_size: int) -> int:
+    return max(14, round(22 * font_size / 9))
 
 
-def _widget_h(ahead: int, behind: int) -> int:
-    return (ahead + 1 + behind) * ROW_H + 16
+def _widget_w(max_name_chars: int, font_size: int = 9) -> int:
+    return max_name_chars * _char_px(font_size) + _W_BASE
+
+
+def _row_h(font_size: int) -> int:
+    return font_size + 13
+
+
+def _widget_h(ahead: int, behind: int, font_size: int = 9) -> int:
+    return (ahead + 1 + behind) * _row_h(font_size) + 8
 
 
 def _fmt_name(raw: str, fmt: str) -> str:
@@ -43,21 +51,26 @@ def _fmt_gap(g: float, decimals: int = 1) -> str:
 class RelativeWidget(BaseWidget):
     WIDGET_NAME = "Relative"
     CONFIG_SCHEMA = [
-        {"key": "drivers_ahead",  "label": "Drivers ahead",    "type": "int",
+        {"type": "separator", "label": "Rows"},
+        {"key": "drivers_ahead",     "label": "Drivers ahead",         "type": "int",
          "min": 1, "max": 10, "step": 1, "default": 4},
-        {"key": "drivers_behind", "label": "Drivers behind",   "type": "int",
+        {"key": "drivers_behind",    "label": "Drivers behind",        "type": "int",
          "min": 1, "max": 10, "step": 1, "default": 4},
-        {"key": "gap_decimals",   "label": "Gap decimals (0-3)","type": "int",
-         "min": 0, "max": 3,  "step": 1, "default": 1},
-        {"key": "show_badges",    "label": "PIT / OUT badges",  "type": "bool", "default": True},
-        {"key": "max_name_chars", "label": "Name max chars",    "type": "int",
+        {"type": "separator", "label": "Names"},
+        {"key": "max_name_chars",    "label": "Name max chars",        "type": "int",
          "min": 4, "max": 30, "step": 1, "default": 16},
-        {"key": "name_format",    "label": "Name format",       "type": "choice",
+        {"key": "name_format",       "label": "Name format",           "type": "choice",
          "options": [
              {"value": "full",    "label": "First Last"},
              {"value": "initial", "label": "F. Last"},
              {"value": "last",    "label": "Last only"},
          ], "default": "full"},
+        {"type": "separator", "label": "Display"},
+        {"key": "show_badges",       "label": "PIT / OUT badges",      "type": "bool", "default": True},
+        {"key": "interval_decimals", "label": "Interval decimals (0-3)","type": "int",
+         "min": 0, "max": 3,  "step": 1, "default": 1},
+        {"key": "font_size",         "label": "Font size",              "type": "int",
+         "min": 7, "max": 14, "step": 1, "default": 9},
     ]
 
     C_BG     = QColor(10, 10, 10, 215)
@@ -73,37 +86,40 @@ class RelativeWidget(BaseWidget):
     C_OUT_FG = QColor(20, 20, 20)
 
     def __init__(self, reader: DataReader,
-                 drivers_ahead:  int = 4,
-                 drivers_behind: int = 4,
-                 gap_decimals:   int = 1,
-                 show_badges:    bool = True,
-                 max_name_chars: int = 16,
-                 name_format:    str = "full",
+                 drivers_ahead:      int = 4,
+                 drivers_behind:     int = 4,
+                 interval_decimals:  int = 1,
+                 show_badges:        bool = True,
+                 max_name_chars:     int = 16,
+                 name_format:        str = "full",
+                 font_size:          int = 9,
                  **kw):
-        self._ahead          = drivers_ahead
-        self._behind         = drivers_behind
-        self._gap_decimals   = gap_decimals
-        self._show_badges    = show_badges
+        self._ahead              = drivers_ahead
+        self._behind             = drivers_behind
+        self._interval_decimals  = interval_decimals
+        self._show_badges        = show_badges
         self._max_name_chars = max_name_chars
         self._name_format    = name_format
+        self._font_size      = max(7, min(14, int(font_size)))
         self._rows:  list    = []
         self._outlap_tracking: dict[int, int] = {}
         self._prev_in_pits:   dict[int, bool] = {}
         super().__init__(reader, update_hz=10, **kw)
-        self.setFixedSize(_widget_w(max_name_chars), _widget_h(drivers_ahead, drivers_behind))
+        self.setFixedSize(_widget_w(max_name_chars, self._font_size), _widget_h(drivers_ahead, drivers_behind, self._font_size))
 
     def setup_ui(self):
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
     def apply_params(self, params: dict) -> None:
-        self._ahead          = int(params.get("drivers_ahead", 4))
-        self._behind         = int(params.get("drivers_behind", 4))
-        self._gap_decimals   = int(params.get("gap_decimals", 1))
-        self._show_badges    = bool(params.get("show_badges", True))
+        self._ahead             = int(params.get("drivers_ahead", 4))
+        self._behind            = int(params.get("drivers_behind", 4))
+        self._interval_decimals = int(params.get("interval_decimals", 1))
+        self._show_badges       = bool(params.get("show_badges", True))
         self._max_name_chars = int(params.get("max_name_chars", 16))
         self._name_format    = str(params.get("name_format", "full"))
-        self.setFixedSize(_widget_w(self._max_name_chars),
-                          _widget_h(self._ahead, self._behind))
+        self._font_size      = max(7, min(14, int(params.get("font_size", 9))))
+        self.setFixedSize(_widget_w(self._max_name_chars, self._font_size),
+                          _widget_h(self._ahead, self._behind, self._font_size))
         self.update()
 
     def on_data(self, snap: LMUSnapshot):
@@ -125,6 +141,18 @@ class RelativeWidget(BaseWidget):
             elif slot in self._outlap_tracking and v.total_laps > self._outlap_tracking[slot]:
                 del self._outlap_tracking[slot]
         self._prev_in_pits = new_prev
+
+        # Class position map: sort each class group by overall place
+        class_groups: dict[str, list] = {}
+        for v in vehicles:
+            cls = v.vehicle_class.lower()
+            if cls not in class_groups:
+                class_groups[cls] = []
+            class_groups[cls].append(v)
+        class_pos: dict[int, int] = {}
+        for grp in class_groups.values():
+            for rank, v in enumerate(sorted(grp, key=lambda x: x.place), 1):
+                class_pos[v.slot_id] = rank
 
         laptime_est = player.estimated_lap_time
         if laptime_est <= 0:
@@ -151,7 +179,7 @@ class RelativeWidget(BaseWidget):
                      else "")
 
             entry = {
-                "pos":       v.place,
+                "pos":       class_pos.get(v.slot_id, v.place),
                 "name_raw":  v.driver_name or f"Car {v.place}",
                 "is_player": False,
                 "badge":     badge,
@@ -171,7 +199,7 @@ class RelativeWidget(BaseWidget):
                    else "")
 
         player_entry = {
-            "pos":       player.place,
+            "pos":       class_pos.get(player.slot_id, player.place),
             "name_raw":  player.driver_name or "Player",
             "gap":       0.0,
             "is_player": True,
@@ -191,15 +219,17 @@ class RelativeWidget(BaseWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         W = self.width()
         H = self.height()
-        ncw = self._max_name_chars * _CHAR_PX
+        ncw = self._max_name_chars * _char_px(self._font_size)
+        bdg = _badge_px(self._font_size)
 
         p.setBrush(self.C_BG); p.setPen(QPen(self.C_BORDER, 1))
         p.drawRoundedRect(0, 0, W, H, 8, 8)
 
         player_row_idx = self._ahead  # index of player row in self._rows
 
+        rh = _row_h(self._font_size)
         for i, row in enumerate(self._rows):
-            y = 8 + i * ROW_H
+            y = 4 + i * rh
             if not row["name_raw"] and not row["is_player"]:
                 continue  # empty slot
 
@@ -210,35 +240,38 @@ class RelativeWidget(BaseWidget):
 
             if is_p:
                 p.setBrush(self.C_PLAYER); p.setPen(Qt.PenStyle.NoPen)
-                p.drawRect(1, y, W-2, ROW_H)
+                p.drawRect(1, y, W-2, rh)
+
+            fs  = self._font_size
+            fss = max(6, fs - 2)
 
             # Position
-            p.setFont(QFont("Monospace", 9, QFont.Weight.Bold))
+            p.setFont(QFont("Monospace", fs, QFont.Weight.Bold))
             p.setPen(QColor(255, 220, 80) if is_p else self.C_DIM)
             if row["pos"] > 0:
-                p.drawText(6, y, 26, ROW_H, Qt.AlignmentFlag.AlignVCenter, str(row["pos"]))
+                p.drawText(6, y, 26, rh, Qt.AlignmentFlag.AlignVCenter, str(row["pos"]))
 
             # Name — always full width, badge overlays on top
-            p.setFont(QFont("Monospace", 9))
+            p.setFont(QFont("Monospace", fs))
             p.setPen(QColor(255, 220, 80) if is_p else self.C_TEXT)
-            p.drawText(34, y, ncw, ROW_H, Qt.AlignmentFlag.AlignVCenter, name)
+            p.drawText(34, y, ncw, rh, Qt.AlignmentFlag.AlignVCenter, name)
 
             # Badge overlaid at right edge of name zone
             if badge:
-                bx2 = 34 + ncw - _BADGE_PX; by2 = y + 3
+                bx2 = 34 + ncw - bdg; by2 = y + 3
                 bg  = self.C_PIT_BG if badge == "PIT" else self.C_OUT_BG
                 fg  = self.C_PIT_FG if badge == "PIT" else self.C_OUT_FG
                 p.setBrush(bg); p.setPen(Qt.PenStyle.NoPen)
-                p.drawRoundedRect(bx2, by2, _BADGE_PX, ROW_H-6, 2, 2)
-                p.setFont(QFont("Monospace", 7, QFont.Weight.Bold)); p.setPen(fg)
-                p.drawText(bx2, by2, _BADGE_PX, ROW_H-6, Qt.AlignmentFlag.AlignCenter, badge)
+                p.drawRoundedRect(bx2, by2, bdg, rh - 6, 2, 2)
+                p.setFont(QFont("Monospace", fss, QFont.Weight.Bold)); p.setPen(fg)
+                p.drawText(bx2, by2, bdg, rh - 6, Qt.AlignmentFlag.AlignCenter, badge)
 
             # Gap value
             if not is_p and row["pos"] > 0:
                 col_gap = self.C_AHEAD if gap < 0 else self.C_BEHIND
                 p.setPen(col_gap)
-                p.setFont(QFont("Monospace", 9, QFont.Weight.Bold))
-                p.drawText(6, y, W-12, ROW_H,
+                p.setFont(QFont("Monospace", fs, QFont.Weight.Bold))
+                p.drawText(6, y, W-12, rh,
                            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
-                           _fmt_gap(gap, self._gap_decimals))
+                           _fmt_gap(gap, self._interval_decimals))
         p.end()

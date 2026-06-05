@@ -11,6 +11,7 @@ from lmu_app.widgets.inputs import InputsWidget
 from lmu_app.widgets.fuel import FuelWidget
 from lmu_app.widgets.standings import StandingsWidget
 from lmu_app.widgets.relative import RelativeWidget
+from lmu_app.widgets.tyres import TyresWidget
 from lmu_app.ui.main_window import MainWindow
 
 
@@ -66,6 +67,7 @@ def main() -> int:
         ("fuel",      FuelWidget(reader,      auto_hide=False)),
         ("standings", StandingsWidget(reader, auto_hide=False)),
         ("relative",  RelativeWidget(reader,  auto_hide=False)),
+        ("tyres",     TyresWidget(reader,     auto_hide=False)),
     ]
 
     locked = config.locked

@@ -79,6 +79,7 @@ class VehicleScoringEntry:
     in_garage: bool       = False
     vehicle_class: str    = ""
     virtual_energy: float = 0.0   # 0-1 fraction; 0 if car has no VE
+    fuel: float           = 0.0   # litres
 
 
 @dataclass
@@ -249,16 +250,19 @@ class LMUReader(BaseReader):
                     vehicle_class      = vclass,
                 ))
 
-            # --- VE pour tous les véhicules depuis telemInfo ---
-            ve_by_id: dict[int, float] = {}
+            # --- VE et fuel pour tous les véhicules depuis telemInfo ---
+            ve_by_id:   dict[int, float] = {}
+            fuel_by_id: dict[int, float] = {}
             try:
                 for i in range(min(telem.activeVehicles, 104)):
                     t = telem.telemInfo[i]
-                    ve_by_id[t.mID] = float(t.mVirtualEnergy)
+                    ve_by_id[t.mID]   = float(t.mVirtualEnergy)
+                    fuel_by_id[t.mID] = float(t.mFuel)
             except (AttributeError, IndexError):
                 pass
             for entry in s.vehicles:
                 entry.virtual_energy = ve_by_id.get(entry.slot_id, 0.0)
+                entry.fuel           = fuel_by_id.get(entry.slot_id, 0.0)
 
             # --- Télémétrie joueur ---
             if not telem.playerHasVehicle:
@@ -399,7 +403,10 @@ class MockReader(BaseReader):
                 slot_id=i, driver_name=("YOU" if i==2 else f"Driver {i+1:02d}"),
                 place=i+1, total_laps=int(t/120)+1,
                 best_lap=115.4+i*1.2, last_lap=116.+i*0.8,
-                time_behind_leader=i*3.4, time_into_lap=float(i*3.2), estimated_lap_time=120.0, is_player=(i==2), in_garage=False,
+                time_behind_leader=i*3.4, time_into_lap=float(i*3.2), estimated_lap_time=120.0,
+                is_player=(i==2), in_garage=False,
+                virtual_energy=max(0., 0.7 - i*0.05 - t/7200.) if i < 5 else 0.0,
+                fuel=max(0., 80. - i*5. - t/60.),
             )
             for i in range(10)
         ]

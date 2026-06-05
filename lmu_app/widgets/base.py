@@ -52,6 +52,7 @@ class BaseWidget(QWidget):
         self._locked = False
         self._hide_in_garage = False
         self._on_position_changed: Callable[[int, int], None] | None = None
+        self._last_snap_ts: float = -1.0
 
         # Fenêtre overlay : transparente, sans décoration, toujours au-dessus
         self.setWindowFlags(
@@ -156,5 +157,10 @@ class BaseWidget(QWidget):
                 if self.isVisible():
                     self.hide()
                 return
+
+        # Skip if data hasn't changed since last tick
+        if snapshot.timestamp > 0 and snapshot.timestamp == self._last_snap_ts:
+            return
+        self._last_snap_ts = snapshot.timestamp
 
         self.on_data(snapshot)

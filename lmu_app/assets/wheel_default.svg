@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <!-- Outer rim -->
+  <circle cx="128" cy="128" r="108" fill="none" stroke="#C0C0C0" stroke-width="16"/>
+  <!-- Right spoke (90°) -->
+  <line x1="158" y1="128" x2="228" y2="128" stroke="#909090" stroke-width="14" stroke-linecap="round"/>
+  <!-- Down spoke (180°) -->
+  <line x1="128" y1="158" x2="128" y2="228" stroke="#909090" stroke-width="14" stroke-linecap="round"/>
+  <!-- Left spoke (270°) -->
+  <line x1="98" y1="128" x2="28" y2="128" stroke="#909090" stroke-width="14" stroke-linecap="round"/>
+  <!-- Hub outer -->
+  <circle cx="128" cy="128" r="30" fill="#686868"/>
+  <!-- Hub inner -->
+  <circle cx="128" cy="128" r="18" fill="#4A4A4A"/>
+</svg>
