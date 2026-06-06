@@ -5,20 +5,20 @@ from PySide6.QtGui import QColor
 # Each entry: config key, keywords, dialog label, short display code, default hex color
 CLASS_ENTRIES: list[dict] = [
     {"key": "HYPERCAR", "keywords": ("HYPERCAR", "LMH", "GTP", "HYPER"),
-     "label": "Hypercar", "abbrev": "HY",  "default": "#8a1414"},
+     "label": "Hypercar", "abbrev": "HYP", "default": "#CC0000"},
     {"key": "LMP2",     "keywords": ("LMP2", "P2"),
-     "label": "LMP2",    "abbrev": "P2",  "default": "#1040a0"},
+     "label": "LMP2",    "abbrev": "P2",  "default": "#1050C8"},
     {"key": "LMP3",     "keywords": ("LMP3", "P3"),
-     "label": "LMP3",    "abbrev": "P3",  "default": "#501490"},
+     "label": "LMP3",    "abbrev": "P3",  "default": "#7020C0"},
     {"key": "GT3",      "keywords": ("LMGT3", "GT3", "GTD"),
-     "label": "GT3",     "abbrev": "GT3", "default": "#106020"},
+     "label": "GT3",     "abbrev": "GT3", "default": "#00A040"},
     {"key": "GTE",      "keywords": ("GTE", "GT2"),
-     "label": "GTE",     "abbrev": "GTE", "default": "#904010"},
+     "label": "GTE",     "abbrev": "GTE", "default": "#E06010"},
     {"key": "UNKNOWN",  "keywords": (),           # catch-all, matched last
      "label": "Unknown class", "abbrev": "",  "default": "#404040"},
 ]
 
-_ALPHA = 155
+_ALPHA = 255
 
 
 def class_color(vclass: str, overrides: dict[str, str] | None = None) -> QColor | None:

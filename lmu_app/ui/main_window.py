@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor
+from PySide6.QtCore import QRect, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -24,9 +24,140 @@ if TYPE_CHECKING:
     from lmu_app.config import AppConfig
     from lmu_app.widgets.base import BaseWidget
 
-_BTN_LOCK   = "background:#3a3a1a; color:#ffdd44; border-color:#666622;"
-_BTN_UNLOCK = "background:#1a3a1a; color:#88ff88; border-color:#226622;"
 
+# ---------------------------------------------------------------------------
+# ON / OFF toggle button
+# ---------------------------------------------------------------------------
+
+_SS_ON  = ("QPushButton { background:#1a5c1a; color:#88ff88; "
+           "border:1px solid #3a8a3a; border-radius:10px; "
+           "font-weight:bold; font-size:10px; }"
+           "QPushButton:hover { background:#1e6e1e; }")
+_SS_OFF = ("QPushButton { background:#5c1a1a; color:#ff8888; "
+           "border:1px solid #8a3a3a; border-radius:10px; "
+           "font-weight:bold; font-size:10px; }"
+           "QPushButton:hover { background:#6e1e1e; }")
+
+
+class _OnOffBtn(QPushButton):
+    """Pill-shaped ON / OFF toggle button."""
+
+    def __init__(self, enabled: bool, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setCheckable(True)
+        self.setChecked(enabled)
+        self.setFixedSize(46, 22)
+        self._refresh(enabled)
+        self.toggled.connect(self._refresh)
+
+    def _refresh(self, checked: bool) -> None:
+        self.setText("ON" if checked else "OFF")
+        self.setStyleSheet(_SS_ON if checked else _SS_OFF)
+
+
+# ---------------------------------------------------------------------------
+# Sliding lock / unlock toggle
+# ---------------------------------------------------------------------------
+
+class _LockToggle(QWidget):
+    """Animated pill toggle: FREE (left) ↔ LOCK (right)."""
+
+    toggled = Signal(bool)   # True = locked
+
+    _W, _H = 52, 28
+
+    def __init__(self, locked: bool = False, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._locked = locked
+        self._t = 1.0 if locked else 0.0   # animation progress 0=free, 1=locked
+        self._timer = QTimer(self)
+        self._timer.setInterval(14)
+        self._timer.timeout.connect(self._step)
+        self.setFixedSize(self._W, self._H)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip("Lock / unlock overlay positions")
+
+    def set_locked(self, locked: bool) -> None:
+        if locked != self._locked:
+            self._locked = locked
+            self._timer.start()
+        else:
+            self._t = 1.0 if locked else 0.0
+            self.update()
+
+    def _step(self) -> None:
+        target = 1.0 if self._locked else 0.0
+        self._t += (target - self._t) * 0.20
+        if abs(self._t - target) < 0.008:
+            self._t = target
+            self._timer.stop()
+        self.update()
+
+    def mousePressEvent(self, e) -> None:
+        if e.button() == Qt.MouseButton.LeftButton:
+            self._locked = not self._locked
+            self._timer.start()
+            self.toggled.emit(self._locked)
+
+    def paintEvent(self, _) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        W, H, t = self._W, self._H, self._t
+        pad = 3
+        knob_d = H - pad * 2
+        travel = W - pad * 2 - knob_d
+
+        # Track background: dark green (free) → dark gold (locked)
+        r = int(22 + 46 * t)
+        g = int(50 +  8 * t)
+        b = int(22 - 14 * t)
+        p.setBrush(QColor(r, g, b))
+        p.setPen(QPen(QColor(70, 65, 40), 1))
+        p.drawRoundedRect(0, 0, W, H, H // 2, H // 2)
+
+        # Sliding knob
+        knob_x = pad + int(travel * t)
+        kr = int(195 + 25 * t)
+        kg = int(215 - 35 * t)
+        kb = int(175 - 80 * t)
+        p.setBrush(QColor(kr, kg, kb))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawEllipse(knob_x, pad, knob_d, knob_d)
+
+        # Padlock icon on the knob
+        self._draw_padlock(p, knob_x + knob_d // 2, pad + knob_d // 2, knob_d, t > 0.5)
+        p.end()
+
+    def _draw_padlock(self, p: QPainter, cx: int, cy: int,
+                      size: int, locked: bool) -> None:
+        s = max(1, size // 5)
+        # Body
+        bw = s * 2 + 2
+        bh = s + s // 2 + 2
+        bx = cx - bw // 2
+        by = cy
+        p.setBrush(QColor(35, 28, 18))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawRoundedRect(bx, by, bw, bh, 1, 1)
+        # Keyhole dot
+        kr = max(1, s // 2)
+        p.setBrush(QColor(190, 160, 60))
+        p.drawEllipse(cx - kr, by + bh // 2 - kr, kr * 2, kr * 2)
+        # Shackle arc
+        arc_r = s + 1
+        arc_rect = QRect(cx - arc_r, by - arc_r * 2 + 1, arc_r * 2, arc_r * 2)
+        p.setPen(QPen(QColor(35, 28, 18), max(1, s // 2 + 1),
+                      Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        if locked:
+            p.drawArc(arc_rect, 0, 180 * 16)
+        else:
+            p.drawArc(arc_rect, 40 * 16, 140 * 16)
+
+
+# ---------------------------------------------------------------------------
+# Main window
+# ---------------------------------------------------------------------------
 
 class MainWindow(QWidget):
     """Tabbed control panel."""
@@ -41,9 +172,12 @@ class MainWindow(QWidget):
         self._entries = widget_entries
 
         self.setWindowTitle("LMU App")
-        self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
+        self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setFixedWidth(290)
+
+        self._toggles: dict[str, _OnOffBtn] = {}
+        self._lock_toggle: _LockToggle | None = None
 
         self._setup_ui()
         self._apply_lock_state()
@@ -72,7 +206,6 @@ class MainWindow(QWidget):
         vl.setSpacing(4)
         vl.setContentsMargins(6, 8, 6, 8)
 
-        self._checkboxes: dict[str, QCheckBox] = {}
         for key, widget in self._entries:
             vl.addWidget(self._make_row(key, widget))
 
@@ -85,9 +218,10 @@ class MainWindow(QWidget):
 
         vl.addWidget(_sep())
 
-        self._lock_btn = QPushButton()
-        self._lock_btn.clicked.connect(self._toggle_lock)
-        vl.addWidget(self._lock_btn)
+        self._lock_toggle = _LockToggle(self._config.locked)
+        self._lock_toggle.toggled.connect(self._on_lock_toggled)
+        vl.addWidget(self._lock_toggle, alignment=Qt.AlignmentFlag.AlignLeft)
+
         vl.addStretch()
         return w
 
@@ -97,11 +231,8 @@ class MainWindow(QWidget):
         hl.setContentsMargins(0, 1, 0, 1)
         hl.setSpacing(6)
 
-        cb = QCheckBox(widget.WIDGET_NAME)
-        cb.setChecked(self._config.widget_enabled(key))
-        cb.toggled.connect(lambda checked, k=key, w=widget: self._on_toggle(k, w, checked))
-        self._checkboxes[key] = cb
-        hl.addWidget(cb, 1)
+        lbl = QLabel(widget.WIDGET_NAME)
+        hl.addWidget(lbl, 1)
 
         if widget.CONFIG_SCHEMA:
             cfg_btn = QPushButton("⚙")
@@ -109,6 +240,11 @@ class MainWindow(QWidget):
             cfg_btn.setToolTip(f"Configure {widget.WIDGET_NAME}")
             cfg_btn.clicked.connect(lambda _, k=key, w=widget: self._open_config(k, w))
             hl.addWidget(cfg_btn)
+
+        btn = _OnOffBtn(self._config.widget_enabled(key))
+        btn.toggled.connect(lambda checked, k=key, w=widget: self._on_toggle(k, w, checked))
+        self._toggles[key] = btn
+        hl.addWidget(btn)
 
         return row
 
@@ -138,7 +274,7 @@ class MainWindow(QWidget):
             lbl.setMinimumWidth(120)
             btn = _ClassColorBtn(saved.get(entry["key"], entry["default"]))
             btn.color_changed.connect(
-                lambda _, k=entry["key"]: self._on_class_color_change(k)
+                lambda k=entry["key"]: self._on_class_color_change(k)
             )
             self._class_btns[entry["key"]] = btn
             hl.addWidget(lbl, 1)
@@ -168,10 +304,11 @@ class MainWindow(QWidget):
         from lmu_app.ui.widget_config_dialog import WidgetConfigDialog
         WidgetConfigDialog(self._config, key, widget, parent=self).exec()
 
-    def _toggle_lock(self) -> None:
-        self._config.locked = not self._config.locked
+    def _on_lock_toggled(self, locked: bool) -> None:
+        self._config.locked = locked
         self._config.save()
-        self._apply_lock_state()
+        for _, widget in self._entries:
+            widget.set_locked(locked)
 
     def _toggle_garage_hide(self, checked: bool) -> None:
         self._config.hide_in_garage = checked
@@ -183,12 +320,8 @@ class MainWindow(QWidget):
         locked = self._config.locked
         for _, widget in self._entries:
             widget.set_locked(locked)
-        if locked:
-            self._lock_btn.setText("Unlock widgets")
-            self._lock_btn.setStyleSheet(_BTN_UNLOCK)
-        else:
-            self._lock_btn.setText("Lock widgets")
-            self._lock_btn.setStyleSheet(_BTN_LOCK)
+        if self._lock_toggle is not None:
+            self._lock_toggle.set_locked(locked)
 
     def _on_class_color_change(self, key: str) -> None:
         colors = self._config.class_colors()
@@ -214,9 +347,6 @@ class MainWindow(QWidget):
 
 
 # ---------------------------------------------------------------------------
-
-from PySide6.QtCore import Signal  # noqa: E402
-
 
 class _ClassColorBtn(QPushButton):
     color_changed = Signal()

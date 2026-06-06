@@ -7,12 +7,13 @@ Badge overlays the name text (no column shrink).
 from __future__ import annotations
 import math as _math
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QFont, QPainter, QPen
+from PySide6.QtGui import QColor, QFont, QPainter
 from PySide6.QtWidgets import QSizePolicy
 from lmu_app.api.reader import DataReader, LMUSnapshot
+from lmu_app.utils.class_colors import class_color
 from lmu_app.widgets.base import BaseWidget
 
-_W_BASE  = 100   # fixed: 34px before name + 58px gap area + 8px margin
+_W_BASE  = 74    # fixed: 28px pos column + 40px gap area + 6px margin
 
 
 def _char_px(font_size: int) -> int:
@@ -51,6 +52,9 @@ def _fmt_gap(g: float, decimals: int = 1) -> str:
 class RelativeWidget(BaseWidget):
     WIDGET_NAME = "Relative"
     CONFIG_SCHEMA = [
+        {"type": "separator", "label": "Window"},
+        {"key": "opacity",           "label": "Opacity (%)",            "type": "int",
+         "min": 0, "max": 100, "step": 5, "default": 85},
         {"type": "separator", "label": "Rows"},
         {"key": "drivers_ahead",     "label": "Drivers ahead",         "type": "int",
          "min": 1, "max": 10, "step": 1, "default": 4},
@@ -104,11 +108,17 @@ class RelativeWidget(BaseWidget):
         self._rows:  list    = []
         self._outlap_tracking: dict[int, int] = {}
         self._prev_in_pits:   dict[int, bool] = {}
+        self._class_colors:   dict[str, str]  = {}
+        self._opacity = 85
         super().__init__(reader, update_hz=10, **kw)
         self.setFixedSize(_widget_w(max_name_chars, self._font_size), _widget_h(drivers_ahead, drivers_behind, self._font_size))
 
     def setup_ui(self):
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+
+    def apply_class_colors(self, colors: dict) -> None:
+        self._class_colors = colors
+        self.update()
 
     def apply_params(self, params: dict) -> None:
         self._ahead             = int(params.get("drivers_ahead", 4))
@@ -118,6 +128,7 @@ class RelativeWidget(BaseWidget):
         self._max_name_chars = int(params.get("max_name_chars", 16))
         self._name_format    = str(params.get("name_format", "full"))
         self._font_size      = max(7, min(14, int(params.get("font_size", 9))))
+        self._opacity        = max(0, min(100, int(params.get("opacity", 85))))
         self.setFixedSize(_widget_w(self._max_name_chars, self._font_size),
                           _widget_h(self._ahead, self._behind, self._font_size))
         self.update()
@@ -183,6 +194,7 @@ class RelativeWidget(BaseWidget):
                 "name_raw":  v.driver_name or f"Car {v.place}",
                 "is_player": False,
                 "badge":     badge,
+                "cls":       v.vehicle_class,
             }
             ahead_list.append((gap_ahead,  {**entry, "gap": -gap_ahead}))
             behind_list.append((gap_behind, {**entry, "gap": -gap_behind}))
@@ -204,10 +216,11 @@ class RelativeWidget(BaseWidget):
             "gap":       0.0,
             "is_player": True,
             "badge":     p_badge,
+            "cls":       player.vehicle_class,
         }
 
         # Pad ahead list to always have self._ahead rows
-        empty = {"pos": 0, "name_raw": "", "gap": 0.0, "is_player": False, "badge": ""}
+        empty = {"pos": 0, "name_raw": "", "gap": 0.0, "is_player": False, "badge": "", "cls": ""}
         ahead_padded  = [empty] * max(0, self._ahead - len(ahead_entries)) + ahead_entries
         behind_padded = behind_entries + [empty] * max(0, self._behind - len(behind_entries))
 
@@ -222,7 +235,7 @@ class RelativeWidget(BaseWidget):
         ncw = self._max_name_chars * _char_px(self._font_size)
         bdg = _badge_px(self._font_size)
 
-        p.setBrush(self.C_BG); p.setPen(QPen(self.C_BORDER, 1))
+        p.setBrush(QColor(10, 10, 10, self._bg_alpha())); p.setPen(self._border_pen())
         p.drawRoundedRect(0, 0, W, H, 8, 8)
 
         player_row_idx = self._ahead  # index of player row in self._rows
@@ -245,20 +258,26 @@ class RelativeWidget(BaseWidget):
             fs  = self._font_size
             fss = max(6, fs - 2)
 
-            # Position
-            p.setFont(QFont("Monospace", fs, QFont.Weight.Bold))
-            p.setPen(QColor(255, 220, 80) if is_p else self.C_DIM)
+            # Position — class color background (fully opaque)
             if row["pos"] > 0:
-                p.drawText(6, y, 26, rh, Qt.AlignmentFlag.AlignVCenter, str(row["pos"]))
+                cc = class_color(row.get("cls", ""), self._class_colors)
+                if cc:
+                    c2 = QColor(cc); c2.setAlpha(255)
+                    p.setBrush(c2); p.setPen(Qt.PenStyle.NoPen)
+                    p.drawRoundedRect(4, y + 1, 22, rh - 2, 2, 2)
+            p.setFont(QFont("Monospace", fs, QFont.Weight.Bold))
+            p.setPen(QColor(255, 220, 80) if is_p else self.C_TEXT)
+            if row["pos"] > 0:
+                p.drawText(4, y, 22, rh, Qt.AlignmentFlag.AlignCenter, str(row["pos"]))
 
             # Name — always full width, badge overlays on top
             p.setFont(QFont("Monospace", fs))
             p.setPen(QColor(255, 220, 80) if is_p else self.C_TEXT)
-            p.drawText(34, y, ncw, rh, Qt.AlignmentFlag.AlignVCenter, name)
+            p.drawText(28, y, ncw, rh, Qt.AlignmentFlag.AlignVCenter, name)
 
             # Badge overlaid at right edge of name zone
             if badge:
-                bx2 = 34 + ncw - bdg; by2 = y + 3
+                bx2 = 28 + ncw - bdg; by2 = y + 3
                 bg  = self.C_PIT_BG if badge == "PIT" else self.C_OUT_BG
                 fg  = self.C_PIT_FG if badge == "PIT" else self.C_OUT_FG
                 p.setBrush(bg); p.setPen(Qt.PenStyle.NoPen)
@@ -266,12 +285,11 @@ class RelativeWidget(BaseWidget):
                 p.setFont(QFont("Monospace", fss, QFont.Weight.Bold)); p.setPen(fg)
                 p.drawText(bx2, by2, bdg, rh - 6, Qt.AlignmentFlag.AlignCenter, badge)
 
-            # Gap value
+            # Gap value — white, drawn right-aligned after name zone
             if not is_p and row["pos"] > 0:
-                col_gap = self.C_AHEAD if gap < 0 else self.C_BEHIND
-                p.setPen(col_gap)
+                p.setPen(self.C_TEXT)
                 p.setFont(QFont("Monospace", fs, QFont.Weight.Bold))
-                p.drawText(6, y, W-12, rh,
+                p.drawText(28 + ncw, y, W - 28 - ncw - 4, rh,
                            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
                            _fmt_gap(gap, self._interval_decimals))
         p.end()

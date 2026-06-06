@@ -40,7 +40,6 @@ def _dark_palette() -> QPalette:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mock", action="store_true")
     parser.add_argument("--hz", type=int, default=50)
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
@@ -54,11 +53,11 @@ def main() -> int:
     app.setStyle("Fusion")        # consistent rendering
     app.setPalette(_dark_palette())  # makes arrows/indicators visible on dark bg
     app.setApplicationName("LMU App")
-    app.setApplicationVersion("0.1.0")
+    app.setApplicationVersion("0.1.1")
     app.setQuitOnLastWindowClosed(False)
 
     config = AppConfig()
-    reader = DataReader(mock=args.mock, update_hz=args.hz)
+    reader = DataReader(update_hz=args.hz)
     reader.start()
 
     widget_entries: list[tuple[str, object]] = [

@@ -16,7 +16,7 @@ import logging
 from typing import TYPE_CHECKING, Callable
 
 from PySide6.QtCore import QPoint, QTimer, Qt
-from PySide6.QtGui import QMouseEvent
+from PySide6.QtGui import QColor, QMouseEvent, QPen
 from PySide6.QtWidgets import QWidget
 
 if TYPE_CHECKING:
@@ -53,6 +53,7 @@ class BaseWidget(QWidget):
         self._hide_in_garage = False
         self._on_position_changed: Callable[[int, int], None] | None = None
         self._last_snap_ts: float = -1.0
+        self._opacity: int = 85
 
         # Fenêtre overlay : transparente, sans décoration, toujours au-dessus
         self.setWindowFlags(
@@ -91,6 +92,15 @@ class BaseWidget(QWidget):
 
     def set_hide_in_garage(self, hide: bool) -> None:
         self._hide_in_garage = hide
+
+    def _bg_alpha(self) -> int:
+        return round(255 * self._opacity / 100)
+
+    def _border_pen(self) -> QPen:
+        alpha = round(180 * self._opacity / 100)
+        if alpha == 0:
+            return QPen(Qt.PenStyle.NoPen)
+        return QPen(QColor(55, 55, 55, alpha), 1)
 
     def apply_class_colors(self, colors: dict) -> None:
         """Override in widgets that display car class colors."""

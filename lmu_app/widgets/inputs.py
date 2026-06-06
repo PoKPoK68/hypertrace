@@ -51,8 +51,11 @@ def _load_wheel_pixmap(path_str: str) -> QPixmap | None:
 class InputsWidget(BaseWidget):
     WIDGET_NAME = "Inputs"
     CONFIG_SCHEMA = [
+        {"type": "separator", "label": "Window"},
+        {"key": "opacity",     "label": "Opacity (%)", "type": "int",
+         "min": 0,  "max": 100, "step": 5, "default": 85},
         {"key": "scale",       "label": "Size (%)",    "type": "int",
-         "min": 50, "max": 250, "step": 5, "default": 100},
+         "min": 50, "max": 250, "step": 5, "default": 80},
         {"key": "wheel_image", "label": "Wheel image", "type": "filepath",
          "default": ""},
     ]
@@ -70,12 +73,12 @@ class InputsWidget(BaseWidget):
 
     def __init__(self, reader: DataReader, **kw):
         self._t = self._b = self._c = self._s = 0.0
-        self._scale = 1.0
+        self._scale = 0.80
         self._wheel_image_path = ""
         self._wheel_pixmap: QPixmap | None = None
         super().__init__(reader, update_hz=60, **kw)
         self._wheel_pixmap = _load_wheel_pixmap(self._wheel_image_path)
-        self.setFixedSize(BASE_W, BASE_H)
+        self.setFixedSize(int(BASE_W * self._scale), int(BASE_H * self._scale))
 
     def setup_ui(self):
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
@@ -85,7 +88,8 @@ class InputsWidget(BaseWidget):
         if new_path != self._wheel_image_path:
             self._wheel_image_path = new_path
             self._wheel_pixmap = _load_wheel_pixmap(self._wheel_image_path)
-        self._scale = int(params.get("scale", 100)) / 100.0
+        self._scale   = int(params.get("scale", 80)) / 100.0
+        self._opacity = max(0, min(100, int(params.get("opacity", 85))))
         self.setFixedSize(int(BASE_W * self._scale), int(BASE_H * self._scale))
         self.update()
 
@@ -102,7 +106,7 @@ class InputsWidget(BaseWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.scale(s, s)
-        p.setBrush(self.C_BG); p.setPen(QPen(self.C_BDR, 1))
+        p.setBrush(QColor(10, 10, 10, self._bg_alpha())); p.setPen(self._border_pen())
         p.drawRoundedRect(0, 0, BASE_W, BASE_H, 8, 8)
         self._draw_bars(p)
         self._draw_wheel(p)

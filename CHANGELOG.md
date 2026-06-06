@@ -5,6 +5,34 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/)
 
 ---
 
+## [0.1.1]
+
+### Ajouté
+- **Opacité** : réglage 0–100 % sur tous les overlays (fond + bordure disparaissent à 0 %)
+- **Couleurs de classe** vivifiées (inspirées WEC) : Hypercar `#CC0000`, LMP2 `#1050C8`, LMP3 `#7020C0`, GT3 `#00A040`, GTE `#E06010`
+- **Tyres** : refonte en 4 barres verticales (2×2, FL/FR/RL/RR) — hauteur = usure restante, couleur = température. Scale ajouté. Clip rect anti-débordement
+- **Fuel** : détection automatique absence de VE (10 ticks à zéro) → ligne VE masquée, widget rétréci **par le haut** (bas de l'overlay fixe)
+- **Fuel** : `scale` ajouté
+- **Lock overlay** : remplacé par un toggle coulissant animé (vert = libre, or = verrouillé) avec icône cadenas
+- **Overlays tab** : checkboxes remplacées par des boutons ON / OFF par overlay
+
+### Modifié
+- **Standings** : en-tête de classe = badge coloré sur l'abréviation (HYP/P2/P3/GTE/GT3) au lieu de toute la ligne
+- **Standings** : `_class_rank()` utilise les mêmes keywords que `class_color` (LMH, GTP, LMGT3…) — corrige l'ordre Hypercar/GT3
+- **Relative** : colonne position réduite (28 px), numéro centré
+- **Relative** : paramètre opacité déplacé en tête de config
+- Opacité déplacée en première position dans chaque dialogue de configuration
+- Tailles initiales réduites : Speed 75 %, Inputs 80 %, Fuel 85 %
+- MockReader supprimé (tests uniquement sur LMU)
+- Label « Overlay positions : » supprimé à côté du toggle lock
+
+### Corrigé
+- **Standings** : Hypercar apparaissait sous GT3 quand le nom de classe LMU est "LMH"/"GTP"
+- **Class colors** : `lambda _` → `lambda` dans `_make_class_colors_tab` (TypeError à l'application d'une couleur)
+- Bordure des overlays visible à 0 % d'opacité (alpha de la `QPen` désormais proportionnel à l'opacité)
+
+---
+
 ## [0.1.0]
 
 ### Ajouté

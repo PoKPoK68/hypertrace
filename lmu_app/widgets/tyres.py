@@ -1,168 +1,147 @@
-"""Tyres overlay — carcass temperature and wear for all 4 tyres."""
+"""Tyres overlay — 4 vertical wear bars (2×2) colored by temperature."""
 from __future__ import annotations
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QFont, QPainter, QPen
+from PySide6.QtGui import QColor, QFont, QPainter
 from PySide6.QtWidgets import QSizePolicy
 from lmu_app.api.reader import DataReader, LMUSnapshot
 from lmu_app.widgets.base import BaseWidget
 
-_CELL_W = 72
-_PAD    = 6
-_GAP    = 4
+_BAR_W = 33   # 100% at font 7 bold ≈ 28px + ~5px margin total
+_BAR_H = 52
+_PAD   = 5
+_GAP_X = 6
+_GAP_Y = 6
 
-WIDGET_W = _PAD * 2 + _CELL_W * 2 + _GAP    # 160
+WIDGET_W = _PAD * 2 + _BAR_W * 2 + _GAP_X   # 82
+WIDGET_H = _PAD * 2 + _BAR_H * 2 + _GAP_Y   # 120
 
-C_BG     = QColor(10, 10, 10, 215)
-C_BORDER = QColor(55, 55, 55, 180)
-C_DIM    = QColor(110, 110, 110)
-C_TEXT   = QColor(220, 220, 220)
-C_TRACK  = QColor(35, 35, 35)
+_C_TRACK = QColor(30, 30, 30)
+_C_DIM   = QColor(90, 90, 90)
+_C_TXT   = QColor(240, 240, 240, 215)
 
-
-def _wear_color(w: float) -> QColor:
-    if w > 0.6:
-        return QColor(60, 220, 80)
-    if w > 0.3:
-        return QColor(220, 180, 0)
-    return QColor(220, 60, 60)
+_POSITIONS = [
+    (_PAD,                    _PAD),
+    (_PAD + _BAR_W + _GAP_X, _PAD),
+    (_PAD,                    _PAD + _BAR_H + _GAP_Y),
+    (_PAD + _BAR_W + _GAP_X, _PAD + _BAR_H + _GAP_Y),
+]
 
 
 class TyresWidget(BaseWidget):
     WIDGET_NAME = "Tyres"
     CONFIG_SCHEMA = [
+        {"type": "separator", "label": "Window"},
+        {"key": "opacity", "label": "Opacity (%)", "type": "int",
+         "min": 0, "max": 100, "step": 5, "default": 85},
+        {"key": "scale",   "label": "Size (%)",    "type": "int",
+         "min": 50, "max": 250, "step": 5, "default": 100},
         {"type": "separator", "label": "Display"},
-        {"key": "show_temp",     "label": "Show carcass temp",   "type": "bool", "default": True},
-        {"key": "show_wear",     "label": "Show wear bar",       "type": "bool", "default": True},
-        {"key": "show_wear_pct", "label": "Show wear %",         "type": "bool", "default": True},
-        {"key": "show_pressure", "label": "Show pressure (kPa)", "type": "bool", "default": False},
+        {"key": "show_temp",     "label": "Show temperature (°C)", "type": "bool", "default": True},
+        {"key": "show_wear_pct", "label": "Show wear %",           "type": "bool", "default": True},
         {"type": "separator", "label": "Temperature range (°C)"},
-        {"key": "temp_cold",   "label": "Cold below",   "type": "int", "min": 20,  "max": 100, "step": 5, "default": 60},
-        {"key": "temp_opt_lo", "label": "Optimal from", "type": "int", "min": 40,  "max": 120, "step": 5, "default": 80},
-        {"key": "temp_opt_hi", "label": "Optimal to",   "type": "int", "min": 60,  "max": 150, "step": 5, "default": 100},
-        {"key": "temp_hot",    "label": "Hot above",    "type": "int", "min": 80,  "max": 200, "step": 5, "default": 120},
+        {"key": "temp_cold",   "label": "Cold below",   "type": "int",
+         "min": 20, "max": 100, "step": 5, "default": 60},
+        {"key": "temp_opt_lo", "label": "Optimal from", "type": "int",
+         "min": 40, "max": 120, "step": 5, "default": 80},
+        {"key": "temp_opt_hi", "label": "Optimal to",   "type": "int",
+         "min": 60, "max": 150, "step": 5, "default": 100},
+        {"key": "temp_hot",    "label": "Hot above",    "type": "int",
+         "min": 80, "max": 200, "step": 5, "default": 120},
     ]
 
     def __init__(self, reader: DataReader,
-                 show_temp: bool = True, show_wear: bool = True,
-                 show_wear_pct: bool = True, show_pressure: bool = False,
+                 show_temp: bool = True, show_wear_pct: bool = True,
                  temp_cold: int = 60, temp_opt_lo: int = 80,
                  temp_opt_hi: int = 100, temp_hot: int = 120,
                  **kw):
         self._show_temp     = show_temp
-        self._show_wear     = show_wear
         self._show_wear_pct = show_wear_pct
-        self._show_pressure = show_pressure
-        self._t_cold    = temp_cold
-        self._t_opt_lo  = temp_opt_lo
-        self._t_opt_hi  = temp_opt_hi
-        self._t_hot     = temp_hot
-        self._temps:     list[float] = [0.0] * 4
-        self._wears:     list[float] = [1.0] * 4
-        self._pressures: list[float] = [0.0] * 4
+        self._scale         = 1.0
+        self._opacity       = 85
+        self._t_cold        = temp_cold
+        self._t_opt_lo      = temp_opt_lo
+        self._t_opt_hi      = temp_opt_hi
+        self._t_hot         = temp_hot
+        self._temps:  list[float] = [0.0] * 4
+        self._wears:  list[float] = [1.0] * 4
         super().__init__(reader, update_hz=10, **kw)
-        self._h = self._compute_h()
-        self.setFixedSize(WIDGET_W, self._h)
+        self.setFixedSize(WIDGET_W, WIDGET_H)
 
     def setup_ui(self):
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
-    def _compute_h(self) -> int:
-        wear_row = self._show_wear or self._show_wear_pct
-        rows = sum([self._show_temp, wear_row, self._show_pressure])
-        cell_h = max(1, rows) * 16 + 4
-        return _PAD * 2 + cell_h * 2 + _GAP
-
     def apply_params(self, params: dict) -> None:
         self._show_temp     = bool(params.get("show_temp",     True))
-        self._show_wear     = bool(params.get("show_wear",     True))
         self._show_wear_pct = bool(params.get("show_wear_pct", True))
-        self._show_pressure = bool(params.get("show_pressure", False))
-        self._t_cold    = int(params.get("temp_cold",   60))
-        self._t_opt_lo  = int(params.get("temp_opt_lo", 80))
-        self._t_opt_hi  = int(params.get("temp_opt_hi", 100))
-        self._t_hot     = int(params.get("temp_hot",    120))
-        self._h = self._compute_h()
-        self.setFixedSize(WIDGET_W, self._h)
+        self._scale         = int(params.get("scale", 100)) / 100.0
+        self._opacity       = max(0, min(100, int(params.get("opacity", 85))))
+        self._t_cold        = int(params.get("temp_cold",   60))
+        self._t_opt_lo      = int(params.get("temp_opt_lo", 80))
+        self._t_opt_hi      = int(params.get("temp_opt_hi", 100))
+        self._t_hot         = int(params.get("temp_hot",    120))
+        self.setFixedSize(int(WIDGET_W * self._scale), int(WIDGET_H * self._scale))
         self.update()
 
     def on_data(self, snap: LMUSnapshot) -> None:
-        self._temps     = list(snap.tyres.temp_carcass)
-        self._wears     = list(snap.tyres.wear)
-        self._pressures = list(snap.tyres.pressure)
+        self._temps = list(snap.tyres.temp_carcass)
+        self._wears = list(snap.tyres.wear)
         self.update()
 
     def _temp_color(self, t: float) -> QColor:
-        if t <= 0:
-            return C_DIM
+        if t <= 0: return _C_DIM
         if t < self._t_cold:
             return QColor(80, 140, 255)
         if t < self._t_opt_lo:
             f = (t - self._t_cold) / max(1, self._t_opt_lo - self._t_cold)
-            return QColor(int(80 - 80 * f), int(140 + 80 * f), int(255 - 175 * f))
+            return QColor(int(80 - 80*f), int(140 + 80*f), int(255 - 175*f))
         if t <= self._t_opt_hi:
             return QColor(60, 220, 80)
         if t < self._t_hot:
             f = (t - self._t_opt_hi) / max(1, self._t_hot - self._t_opt_hi)
-            return QColor(int(60 + 195 * f), int(220 - 160 * f), int(80 - 60 * f))
+            return QColor(int(60 + 195*f), int(220 - 160*f), int(80 - 60*f))
         return QColor(255, 60, 60)
 
     def paintEvent(self, _):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        H = self._h
-        cell_h = (H - 2 * _PAD - _GAP) // 2
+        p.scale(self._scale, self._scale)
 
-        p.setBrush(C_BG); p.setPen(QPen(C_BORDER, 1))
-        p.drawRoundedRect(0, 0, WIDGET_W, H, 8, 8)
+        p.setBrush(QColor(10, 10, 10, self._bg_alpha()))
+        p.setPen(self._border_pen())
+        p.drawRoundedRect(0, 0, WIDGET_W, WIDGET_H, 8, 8)
 
-        for i, (col, row) in enumerate([(0, 0), (1, 0), (0, 1), (1, 1)]):
-            x = _PAD + col * (_CELL_W + _GAP)
-            y = _PAD + row * (cell_h + _GAP)
+        for i, (x, y) in enumerate(_POSITIONS):
             self._draw_tyre(p, x, y, i)
-
         p.end()
 
-    def _draw_tyre(self, p: QPainter, x: int, y: int, idx: int):
-        temp  = self._temps[idx]     if idx < len(self._temps)     else 0.0
-        wear  = self._wears[idx]     if idx < len(self._wears)     else 1.0
-        pres  = self._pressures[idx] if idx < len(self._pressures) else 0.0
+    def _draw_tyre(self, p: QPainter, x: int, y: int, idx: int) -> None:
+        wear = max(0.0, min(1.0, self._wears[idx] if idx < 4 else 1.0))
+        temp =                   self._temps[idx]  if idx < 4 else 0.0
 
-        ty = y
+        # Clip everything to the bar rect
+        p.save()
+        p.setClipRect(x, y, _BAR_W, _BAR_H)
 
-        if self._show_temp:
-            c   = self._temp_color(temp)
-            txt = f"{temp:.0f}°C" if temp > 0 else "---"
-            p.setFont(QFont("Monospace", 9, QFont.Weight.Bold)); p.setPen(c)
-            p.drawText(x, ty, _CELL_W, 14,
-                       Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, txt)
-            ty += 16
+        # Dark background
+        p.setBrush(_C_TRACK); p.setPen(Qt.PenStyle.NoPen)
+        p.drawRoundedRect(x, y, _BAR_W, _BAR_H, 3, 3)
 
-        if self._show_wear:
-            c   = _wear_color(wear)
-            pct = wear * 100
-            bar_area = _CELL_W - (28 if self._show_wear_pct else 0)
-            bar_w    = max(0, int(bar_area * wear))
-            p.setBrush(C_TRACK); p.setPen(Qt.PenStyle.NoPen)
-            p.drawRoundedRect(x, ty + 3, bar_area, 8, 2, 2)
-            if bar_w > 0:
-                p.setBrush(c)
-                p.drawRoundedRect(x, ty + 3, bar_w, 8, 2, 2)
-            if self._show_wear_pct:
-                p.setFont(QFont("Monospace", 7)); p.setPen(c)
-                p.drawText(x + _CELL_W - 26, ty, 26, 14,
-                           Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-                           f"{pct:.0f}%")
-            ty += 16
-        elif self._show_wear_pct:
-            c = _wear_color(wear)
-            p.setFont(QFont("Monospace", 9, QFont.Weight.Bold)); p.setPen(c)
-            p.drawText(x, ty, _CELL_W, 14,
-                       Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+        # Wear fill rising from bottom
+        fill_h = max(0, int(_BAR_H * wear))
+        if fill_h > 0:
+            p.setBrush(self._temp_color(temp))
+            p.drawRoundedRect(x, y + _BAR_H - fill_h, _BAR_W, fill_h, 3, 3)
+
+        f = QFont("Monospace", 7, QFont.Weight.Bold)
+        p.setFont(f)
+        p.setPen(_C_TXT)
+
+        if self._show_temp and temp > 0:
+            p.drawText(x, y + 1, _BAR_W, 13, Qt.AlignmentFlag.AlignCenter,
+                       f"{temp:.0f}°")
+
+        if self._show_wear_pct:
+            p.drawText(x, y + _BAR_H - 13, _BAR_W, 13, Qt.AlignmentFlag.AlignCenter,
                        f"{wear * 100:.0f}%")
-            ty += 16
 
-        if self._show_pressure:
-            txt = f"{pres:.1f} kPa" if pres > 0 else "---"
-            p.setFont(QFont("Monospace", 8)); p.setPen(C_TEXT)
-            p.drawText(x, ty, _CELL_W, 14,
-                       Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, txt)
+        p.restore()

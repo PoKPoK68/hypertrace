@@ -321,107 +321,13 @@ class LMUReader(BaseReader):
 
 
 # ---------------------------------------------------------------------------
-# Mock reader
-# ---------------------------------------------------------------------------
-
-class MockReader(BaseReader):
-    def __init__(self, update_hz: int = 50):
-        self._interval = 1.0 / update_hz
-        self._snapshot = LMUSnapshot()
-        self._lock     = threading.Lock()
-        self._running  = False
-        self._thread: threading.Thread | None = None
-        self._t        = 0.0
-
-    def start(self):
-        self._running = True
-        self._thread  = threading.Thread(target=self._loop, name="MockReader", daemon=True)
-        self._thread.start()
-        logger.info("MockReader started")
-
-    def stop(self):
-        self._running = False
-        if self._thread: self._thread.join(timeout=1.0)
-
-    def get(self) -> LMUSnapshot:
-        with self._lock: return self._snapshot
-
-    @property
-    def is_connected(self) -> bool: return True
-
-    def _loop(self):
-        while self._running:
-            t0 = time.perf_counter()
-            self._tick()
-            s = self._interval - (time.perf_counter() - t0)
-            if s > 0: time.sleep(s)
-
-    def _tick(self):
-        import math
-        self._t += self._interval
-        t = self._t
-
-        snap = LMUSnapshot(game_running=True, is_on_track=True, timestamp=time.time())
-
-        spd = 175. + 75. * math.sin(t * 0.3)
-        snap.vehicle.speed_ms    = spd / 3.6
-        snap.vehicle.speed_kmh   = spd
-        snap.vehicle.rpm         = 6000. + 2000. * math.sin(t * 0.7)
-        snap.vehicle.rpm_max     = 9000.
-        snap.vehicle.gear        = max(1, int(3 + 2 * math.sin(t * 0.2)))
-        snap.vehicle.throttle    = max(0., math.sin(t * 0.5))
-        snap.vehicle.brake       = max(0., -math.sin(t * 0.5) * 0.8)
-        snap.vehicle.clutch      = 0.
-        snap.vehicle.steering    = math.sin(t * 0.4) * 0.3
-        snap.vehicle.fuel        = max(0., 80. - t / 60. * 2.5)
-        snap.vehicle.fuel_capacity = 100.
-        snap.vehicle.virtual_energy = 0.5 + 0.4 * math.sin(t * 0.15)
-        snap.vehicle.delta_best  = math.sin(t * 0.1) * 1.5
-
-        for i in range(4):
-            o = i * 0.5
-            snap.tyres.temp_surface[i]  = 95. + 15. * math.sin(t * 0.2 + o)
-            snap.tyres.temp_inner[i]    = 100. + 10. * math.sin(t * 0.15 + o)
-            snap.tyres.temp_carcass[i]  = 90. + 8. * math.sin(t * 0.1 + o)
-            snap.tyres.wear[i]          = max(0., 1. - t / 3600.)
-            snap.tyres.pressure[i]      = 180. + 5. * math.sin(t * 0.05 + o)
-            snap.tyres.brake_temp[i]    = 200. + 100. * abs(math.sin(t * 0.3 + o))
-
-        snap.session.track_name             = "Circuit de la Sarthe"
-        snap.session.session_type           = 11  # race
-        snap.session.game_phase             = 5   # green flag
-        snap.session.max_laps               = 20
-        snap.session.track_length           = 13626.
-        snap.session.num_vehicles           = 10
-        snap.session.current_et             = t
-        snap.session.session_time_remaining = max(0., 3600. - t)
-        snap.session.ambient_temp           = 22.
-        snap.session.track_temp             = 35.
-        snap.session.player_name            = "Driver"
-        snap.session.vehicles = [
-            VehicleScoringEntry(
-                slot_id=i, driver_name=("YOU" if i==2 else f"Driver {i+1:02d}"),
-                place=i+1, total_laps=int(t/120)+1,
-                best_lap=115.4+i*1.2, last_lap=116.+i*0.8,
-                time_behind_leader=i*3.4, time_into_lap=float(i*3.2), estimated_lap_time=120.0,
-                is_player=(i==2), in_garage=False,
-                virtual_energy=max(0., 0.7 - i*0.05 - t/7200.) if i < 5 else 0.0,
-                fuel=max(0., 80. - i*5. - t/60.),
-            )
-            for i in range(10)
-        ]
-
-        with self._lock: self._snapshot = snap
-
-
-# ---------------------------------------------------------------------------
 # DataReader — façade publique
 # ---------------------------------------------------------------------------
 
 class DataReader:
-    def __init__(self, mock: bool = False, update_hz: int = 50):
-        self._reader: BaseReader = MockReader(update_hz) if mock else LMUReader(update_hz)
-        logger.info("DataReader: %s", "mock" if mock else "LMU")
+    def __init__(self, update_hz: int = 50):
+        self._reader: BaseReader = LMUReader(update_hz)
+        logger.info("DataReader: LMU")
 
     def start(self):  self._reader.start()
     def stop(self):   self._reader.stop()

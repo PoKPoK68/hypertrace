@@ -8,11 +8,11 @@ Only active classes (with non-garage drivers) appear.
 from __future__ import annotations
 from collections import defaultdict
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QFont, QPainter, QPen
+from PySide6.QtGui import QColor, QFont, QPainter
 from PySide6.QtWidgets import QSizePolicy
 from lmu_app.api.reader import DataReader, LMUSnapshot
 from lmu_app.widgets.base import BaseWidget
-from lmu_app.utils.class_colors import class_color
+from lmu_app.utils.class_colors import class_abbrev, class_color
 
 ROW_H = 20
 SEP_H = 4
@@ -27,13 +27,22 @@ def _char_px(font_size: int) -> int:
 def _badge_px(font_size: int) -> int:
     return max(14, round(_BADGE_PX_BASE * font_size / 9))
 
-# Fastest → slowest. Substring match (case-insensitive) so "GTE Pro" matches "gte".
-_CLASS_HIERARCHY = ["hypercar", "lmp2", "lmp3", "gte", "gt3", "gtc", "gt4"]
+# Fastest → slowest, with the same keyword sets as class_colors.CLASS_ENTRIES.
+# Each tuple lists all substrings that identify that class (uppercase match).
+_CLASS_KEYWORDS: list[tuple[str, ...]] = [
+    ("HYPERCAR", "LMH", "GTP", "HYPER"),   # Hypercar / GTP
+    ("LMP2", "P2"),                          # LMP2
+    ("LMP3", "P3"),                          # LMP3
+    ("GTE", "GT2"),                          # GTE / GT2
+    ("LMGT3", "GT3", "GTD"),                # GT3 / LMGT3
+    ("GTC",),
+    ("GT4",),
+]
 
 def _class_rank(cls_name: str) -> int:
-    low = cls_name.lower()
-    for i, h in enumerate(_CLASS_HIERARCHY):
-        if h in low:
+    vc = cls_name.strip().upper()
+    for i, keywords in enumerate(_CLASS_KEYWORDS):
+        if any(k in vc for k in keywords):
             return i
     return 99
 
@@ -118,6 +127,9 @@ def _compute_h(show_header: bool, entries: list, row_h: int = ROW_H) -> int:
 class StandingsWidget(BaseWidget):
     WIDGET_NAME = "Standings"
     CONFIG_SCHEMA = [
+        {"type": "separator", "label": "Window"},
+        {"key": "opacity", "label": "Opacity (%)", "type": "int",
+         "min": 0, "max": 100, "step": 5, "default": 85},
         {"type": "separator", "label": "Rows"},
         {"key": "top_n",    "label": "Leaders shown", "type": "int",
          "min": 1, "max": 6, "step": 1, "default": 3},
@@ -214,6 +226,7 @@ class StandingsWidget(BaseWidget):
         self._rh                  = _row_h(self._font_size)
         self._best_decimals       = max(0, min(3, int(best_decimals)))
         self._last_decimals       = max(0, min(3, int(last_decimals)))
+        self._opacity             = 85
         self._entries:  list[dict]    = []
         self._best_overall            = 9999.0
         self._player_fuel             = 0.0
@@ -250,6 +263,7 @@ class StandingsWidget(BaseWidget):
         self._rh                  = _row_h(self._font_size)
         self._best_decimals       = max(0, min(3, int(params.get("best_decimals", 3))))
         self._last_decimals       = max(0, min(3, int(params.get("last_decimals", 3))))
+        self._opacity             = max(0, min(100, int(params.get("opacity", 85))))
         # Column order from ordered_multiselect (contains all columns in user order)
         col_order = list(params.get("columns") or COLUMN_DEFS.keys())
         col_order = [c for c in col_order if c in COLUMN_DEFS]
@@ -337,7 +351,8 @@ class StandingsWidget(BaseWidget):
             cls_veh   = by_class[cls_name]
             shown     = cls_veh[:self._other_classes_top_n]
             cls_col   = class_color(cls_name, self._class_colors)
-            entries.append({"is_class_header": True, "label": cls_name, "cls_color": cls_col})
+            entries.append({"is_class_header": True, "label": cls_name,
+                            "cls_color": cls_col, "abbrev": class_abbrev(cls_name)})
             leader      = shown[0]
             leader_best = leader.best_lap if leader.best_lap > 0 else -1.0
             for rank, v in enumerate(shown):
@@ -384,7 +399,8 @@ class StandingsWidget(BaseWidget):
 
         if self._show_other_classes:
             cls_col = class_color(player_class, self._class_colors)
-            entries.append({"is_class_header": True, "label": player_class, "cls_color": cls_col})
+            entries.append({"is_class_header": True, "label": player_class,
+                            "cls_color": cls_col, "abbrev": class_abbrev(player_class)})
 
         for rank, i in enumerate(all_indices):
             if sep_after >= 0 and rank == sep_after + 1:
@@ -449,7 +465,7 @@ class StandingsWidget(BaseWidget):
         W   = _total_w(self.columns, ncw, self._font_size)
         H   = _compute_h(self._show_header, self._entries)
 
-        p.setBrush(C_BG); p.setPen(QPen(C_BORDER, 1))
+        p.setBrush(QColor(10, 10, 10, self._bg_alpha())); p.setPen(self._border_pen())
         p.drawRoundedRect(0, 0, W, H, 8, 8)
 
         if self._show_header:
@@ -476,15 +492,17 @@ class StandingsWidget(BaseWidget):
                 continue
 
             if e.get("is_class_header"):
+                abbrev  = e.get("abbrev", "???")[:3]
                 cls_col = e.get("cls_color")
+                chr_w   = _char_px(self._font_size)
+                bdg_w   = len(abbrev) * chr_w + 8
+                bdg_x, bdg_y, bdg_h = 4, y + 1, CLS_H - 2
                 if cls_col is not None:
-                    tint = QColor(cls_col.red(), cls_col.green(), cls_col.blue(), 50)
-                    p.setBrush(tint); p.setPen(Qt.PenStyle.NoPen)
-                    p.drawRect(1, y, W-2, CLS_H)
-                p.setFont(QFont("Monospace", max(6, self._font_size - 2), QFont.Weight.Bold)); p.setPen(C_DIM)
-                p.drawText(4, y, W-8, CLS_H,
-                           Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
-                           e.get("label", "").upper())
+                    p.setBrush(cls_col); p.setPen(Qt.PenStyle.NoPen)
+                    p.drawRoundedRect(bdg_x, bdg_y, bdg_w, bdg_h, 2, 2)
+                p.setFont(QFont("Monospace", max(6, self._font_size - 2), QFont.Weight.Bold))
+                p.setPen(QColor(255, 255, 255))
+                p.drawText(bdg_x, bdg_y, bdg_w, bdg_h, Qt.AlignmentFlag.AlignCenter, abbrev)
                 y += CLS_H
                 continue
 
