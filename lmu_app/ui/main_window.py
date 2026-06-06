@@ -178,6 +178,7 @@ class MainWindow(QWidget):
 
         self._toggles: dict[str, _OnOffBtn] = {}
         self._lock_toggle: _LockToggle | None = None
+        self._merge_btn: _OnOffBtn | None = None
 
         self._setup_ui()
         self._apply_lock_state()
@@ -208,6 +209,21 @@ class MainWindow(QWidget):
 
         for key, widget in self._entries:
             vl.addWidget(self._make_row(key, widget))
+
+        # Merge button — only shown when both calc widgets are registered
+        fc = self._find_widget("fuel_calc")
+        vc = self._find_widget("ve_calc")
+        if fc and vc:
+            vl.addWidget(_sep())
+            merge_row = QWidget()
+            merge_hl  = QHBoxLayout(merge_row)
+            merge_hl.setContentsMargins(0, 1, 0, 1)
+            merge_hl.setSpacing(6)
+            merge_hl.addWidget(QLabel("Merge Fuel & VE calc"), 1)
+            self._merge_btn = _OnOffBtn(self._config.merge_calc)
+            self._merge_btn.toggled.connect(self._on_merge_toggled)
+            merge_hl.addWidget(self._merge_btn)
+            vl.addWidget(merge_row)
 
         vl.addWidget(_sep())
 
@@ -322,6 +338,19 @@ class MainWindow(QWidget):
             widget.set_locked(locked)
         if self._lock_toggle is not None:
             self._lock_toggle.set_locked(locked)
+
+    def _find_widget(self, key: str):
+        return next((w for k, w in self._entries if k == key), None)
+
+    def _on_merge_toggled(self, enabled: bool) -> None:
+        self._config.merge_calc = enabled
+        self._config.save()
+        fc = self._find_widget("fuel_calc")
+        vc = self._find_widget("ve_calc")
+        if fc:
+            fc.set_merge(enabled)
+        if vc:
+            vc.set_merge(enabled)
 
     def _on_class_color_change(self, key: str) -> None:
         colors = self._config.class_colors()

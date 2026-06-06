@@ -71,6 +71,9 @@ class RelativeWidget(BaseWidget):
          ], "default": "full"},
         {"type": "separator", "label": "Display"},
         {"key": "show_badges",       "label": "PIT / OUT badges",      "type": "bool", "default": True},
+        {"key": "player_color",      "label": "Player row color",       "type": "color", "default": "#ffc800"},
+        {"key": "player_color_alpha","label": "Player row opacity (%)", "type": "int",
+         "min": 0, "max": 100, "step": 5, "default": 20},
         {"key": "interval_decimals", "label": "Interval decimals (0-3)","type": "int",
          "min": 0, "max": 3,  "step": 1, "default": 1},
         {"key": "font_size",         "label": "Font size",              "type": "int",
@@ -79,7 +82,6 @@ class RelativeWidget(BaseWidget):
 
     C_BG     = QColor(10, 10, 10, 215)
     C_BORDER = QColor(55, 55, 55, 180)
-    C_PLAYER = QColor(255, 200, 0, 50)
     C_TEXT   = QColor(220, 220, 220)
     C_DIM    = QColor(110, 110, 110)
     C_AHEAD  = QColor(100, 200, 255)
@@ -109,6 +111,7 @@ class RelativeWidget(BaseWidget):
         self._outlap_tracking: dict[int, int] = {}
         self._prev_in_pits:   dict[int, bool] = {}
         self._class_colors:   dict[str, str]  = {}
+        self._player_color = QColor(255, 200, 0, 50)
         self._opacity = 85
         super().__init__(reader, update_hz=10, **kw)
         self.setFixedSize(_widget_w(max_name_chars, self._font_size), _widget_h(drivers_ahead, drivers_behind, self._font_size))
@@ -129,6 +132,10 @@ class RelativeWidget(BaseWidget):
         self._name_format    = str(params.get("name_format", "full"))
         self._font_size      = max(7, min(14, int(params.get("font_size", 9))))
         self._opacity        = max(0, min(100, int(params.get("opacity", 85))))
+        _c = QColor(str(params.get("player_color", "#ffc800")))
+        if not _c.isValid(): _c = QColor(255, 200, 0)
+        _c.setAlpha(round(255 * max(0, min(100, int(params.get("player_color_alpha", 20)))) / 100))
+        self._player_color = _c
         self.setFixedSize(_widget_w(self._max_name_chars, self._font_size),
                           _widget_h(self._ahead, self._behind, self._font_size))
         self.update()
@@ -252,7 +259,7 @@ class RelativeWidget(BaseWidget):
             name  = _fmt_name(row["name_raw"], self._name_format)[:self._max_name_chars]
 
             if is_p:
-                p.setBrush(self.C_PLAYER); p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(self._player_color); p.setPen(Qt.PenStyle.NoPen)
                 p.drawRect(1, y, W-2, rh)
 
             fs  = self._font_size
@@ -271,8 +278,8 @@ class RelativeWidget(BaseWidget):
                 p.drawText(4, y, 22, rh, Qt.AlignmentFlag.AlignCenter, str(row["pos"]))
 
             # Name — always full width, badge overlays on top
-            p.setFont(QFont("Monospace", fs))
-            p.setPen(QColor(255, 220, 80) if is_p else self.C_TEXT)
+            p.setFont(QFont("Monospace", fs, QFont.Weight.Bold))
+            p.setPen(self.C_TEXT)
             p.drawText(28, y, ncw, rh, Qt.AlignmentFlag.AlignVCenter, name)
 
             # Badge overlaid at right edge of name zone

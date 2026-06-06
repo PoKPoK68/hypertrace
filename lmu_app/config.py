@@ -11,12 +11,15 @@ CONFIG_PATH = Path.home() / ".lmuapp" / "config.json"
 
 _DEFAULTS: dict = {
     "locked": False,
+    "merge_calc": False,
     "widgets": {
-        "speed":     {"enabled": True, "x": 50,  "y": 50},
-        "inputs":    {"enabled": True, "x": 50,  "y": 190},
-        "fuel":      {"enabled": True, "x": 50,  "y": 370},
-        "standings": {"enabled": True, "x": 350, "y": 50},
-        "relative":  {"enabled": True, "x": 350, "y": 310},
+        "speed":      {"enabled": True,  "x": 50,  "y": 50},
+        "inputs":     {"enabled": True,  "x": 50,  "y": 190},
+        "standings":  {"enabled": True,  "x": 350, "y": 50},
+        "relative":   {"enabled": True,  "x": 350, "y": 310},
+        "tyres":      {"enabled": True,  "x": 50,  "y": 390},
+        "fuel_calc":  {"enabled": True,  "x": 50,  "y": 540},
+        "ve_calc":    {"enabled": False, "x": 280, "y": 540},
     },
 }
 
@@ -83,6 +86,14 @@ class AppConfig:
 
     def set_class_colors(self, colors: dict[str, str]) -> None:
         self._data["class_colors"] = colors
+
+    @property
+    def merge_calc(self) -> bool:
+        return bool(self._data.get("merge_calc", False))
+
+    @merge_calc.setter
+    def merge_calc(self, v: bool) -> None:
+        self._data["merge_calc"] = v
 
     def widget_params(self, key: str) -> dict:
         return dict(self._w(key).get("params", {}))

@@ -8,10 +8,11 @@ from lmu_app.api.reader import DataReader
 from lmu_app.config import AppConfig
 from lmu_app.widgets.speed import SpeedWidget
 from lmu_app.widgets.inputs import InputsWidget
-from lmu_app.widgets.fuel import FuelWidget
 from lmu_app.widgets.standings import StandingsWidget
 from lmu_app.widgets.relative import RelativeWidget
 from lmu_app.widgets.tyres import TyresWidget
+from lmu_app.widgets.fuel_calc import FuelCalcWidget
+from lmu_app.widgets.ve_calc import VECalcWidget
 from lmu_app.ui.main_window import MainWindow
 
 
@@ -53,21 +54,29 @@ def main() -> int:
     app.setStyle("Fusion")        # consistent rendering
     app.setPalette(_dark_palette())  # makes arrows/indicators visible on dark bg
     app.setApplicationName("LMU App")
-    app.setApplicationVersion("0.1.1")
+    app.setApplicationVersion("0.2.0")
     app.setQuitOnLastWindowClosed(False)
 
     config = AppConfig()
     reader = DataReader(update_hz=args.hz)
     reader.start()
 
+    fuel_calc_w = FuelCalcWidget(reader, auto_hide=False)
+    ve_calc_w   = VECalcWidget(reader,   auto_hide=False)
+
     widget_entries: list[tuple[str, object]] = [
-        ("speed",     SpeedWidget(reader,     auto_hide=False)),
-        ("inputs",    InputsWidget(reader,    auto_hide=False)),
-        ("fuel",      FuelWidget(reader,      auto_hide=False)),
-        ("standings", StandingsWidget(reader, auto_hide=False)),
-        ("relative",  RelativeWidget(reader,  auto_hide=False)),
-        ("tyres",     TyresWidget(reader,     auto_hide=False)),
+        ("speed",      SpeedWidget(reader,     auto_hide=False)),
+        ("inputs",     InputsWidget(reader,    auto_hide=False)),
+        ("standings",  StandingsWidget(reader, auto_hide=False)),
+        ("relative",   RelativeWidget(reader,  auto_hide=False)),
+        ("tyres",      TyresWidget(reader,     auto_hide=False)),
+        ("fuel_calc",  fuel_calc_w),
+        ("ve_calc",    ve_calc_w),
     ]
+
+    merge = config.merge_calc
+    fuel_calc_w.set_merge(merge)
+    ve_calc_w.set_merge(merge)
 
     locked = config.locked
     for key, widget in widget_entries:

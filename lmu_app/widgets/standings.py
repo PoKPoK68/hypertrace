@@ -60,7 +60,6 @@ DEFAULT_COLUMNS = ["pos", "name", "gap", "interval", "best", "last"]
 C_BG      = QColor(10, 10, 10, 215)
 C_BORDER  = QColor(55, 55, 55, 180)
 C_SEP     = QColor(70, 70, 70, 180)
-C_PLAYER  = QColor(255, 200, 0, 40)
 C_TEXT    = QColor(220, 220, 220)
 C_DIM     = QColor(110, 110, 110)
 C_P1      = QColor(255, 215, 0)
@@ -155,6 +154,9 @@ class StandingsWidget(BaseWidget):
         {"key": "show_best_col",   "label": "Show Best lap column",    "type": "bool", "default": True},
         {"key": "show_last_col",   "label": "Show Last lap column",    "type": "bool", "default": True},
         {"key": "show_fuel_ve_col","label": "Show VE/Fuel column",     "type": "bool", "default": False},
+        {"key": "player_color",      "label": "Player row color",       "type": "color", "default": "#ffc800"},
+        {"key": "player_color_alpha","label": "Player row opacity (%)", "type": "int",
+         "min": 0, "max": 100, "step": 5, "default": 20},
         {"key": "font_size",       "label": "Font size",               "type": "int",
          "min": 7, "max": 14, "step": 1, "default": 9},
         {"type": "separator", "label": "Gaps"},
@@ -227,6 +229,7 @@ class StandingsWidget(BaseWidget):
         self._best_decimals       = max(0, min(3, int(best_decimals)))
         self._last_decimals       = max(0, min(3, int(last_decimals)))
         self._opacity             = 85
+        self._player_color        = QColor(255, 200, 0, 51)
         self._entries:  list[dict]    = []
         self._best_overall            = 9999.0
         self._player_fuel             = 0.0
@@ -264,6 +267,10 @@ class StandingsWidget(BaseWidget):
         self._best_decimals       = max(0, min(3, int(params.get("best_decimals", 3))))
         self._last_decimals       = max(0, min(3, int(params.get("last_decimals", 3))))
         self._opacity             = max(0, min(100, int(params.get("opacity", 85))))
+        _c = QColor(str(params.get("player_color", "#ffc800")))
+        if not _c.isValid(): _c = QColor(255, 200, 0)
+        _c.setAlpha(round(255 * max(0, min(100, int(params.get("player_color_alpha", 20)))) / 100))
+        self._player_color = _c
         # Column order from ordered_multiselect (contains all columns in user order)
         col_order = list(params.get("columns") or COLUMN_DEFS.keys())
         col_order = [c for c in col_order if c in COLUMN_DEFS]
@@ -509,7 +516,7 @@ class StandingsWidget(BaseWidget):
             # ── Regular driver row ──────────────────────────────────────
             rh = self._rh
             if e["is_player"]:
-                p.setBrush(C_PLAYER); p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(self._player_color); p.setPen(Qt.PenStyle.NoPen)
                 p.drawRect(1, y, W-2, rh)
 
             x = 2
@@ -530,7 +537,6 @@ class StandingsWidget(BaseWidget):
 
                 elif col == "name":
                     raw_badge = e["badge"]
-                    is_player = e["is_player"]
                     if raw_badge == "GAR" and not self._show_gar_badge:
                         raw_badge = ""
                     elif raw_badge == "OUT" and not self._show_out_badge:
@@ -540,8 +546,8 @@ class StandingsWidget(BaseWidget):
                     else:                    bg_c, fg_c = C_OUT_BG, C_OUT_FG
 
                     name_text = _fmt_name(e["name_raw"], self._name_format)[:self._max_name_chars]
-                    p.setFont(QFont("Monospace", fs))
-                    p.setPen(QColor(255, 220, 80) if is_player else C_TEXT)
+                    p.setFont(QFont("Monospace", fs, QFont.Weight.Bold))
+                    p.setPen(C_TEXT)
                     p.drawText(x+2, y, cw, rh, align, name_text)
 
                     if raw_badge:
@@ -556,11 +562,11 @@ class StandingsWidget(BaseWidget):
                 elif col == "best":
                     c = C_PURPLE if e["is_best"] else (C_GREEN if e["is_player"] else
                         C_DIM if e["best"] <= 0 else C_TEXT)
-                    p.setFont(QFont("Monospace", fsd)); p.setPen(c)
+                    p.setFont(QFont("Monospace", fsd, QFont.Weight.Bold)); p.setPen(c)
                     p.drawText(x, y, cw, rh, align, _fmt_lap(e["best"], self._best_decimals))
 
                 elif col == "last":
-                    p.setFont(QFont("Monospace", fsd))
+                    p.setFont(QFont("Monospace", fsd, QFont.Weight.Bold))
                     p.setPen(C_DIM if e["last"] <= 0 else C_TEXT)
                     p.drawText(x, y, cw, rh, align, _fmt_lap(e["last"], self._last_decimals))
 
@@ -568,14 +574,14 @@ class StandingsWidget(BaseWidget):
                     txt = ("" if e["pos"] == 1
                            else "-" if e["is_outlap"] and not e["is_race"]
                            else _fmt_gap(e["gap"], e["is_race"], self._gap_decimals))
-                    p.setFont(QFont("Monospace", fsd)); p.setPen(C_DIM if not txt else C_TEXT)
+                    p.setFont(QFont("Monospace", fsd, QFont.Weight.Bold)); p.setPen(C_DIM if not txt else C_TEXT)
                     p.drawText(x, y, cw, rh, align, txt)
 
                 elif col == "interval":
                     txt = ("" if e["pos"] == 1
                            else "-" if e["is_outlap"] and not e["is_race"]
                            else _fmt_gap(e["interval"], e["is_race"], self._interval_decimals))
-                    p.setFont(QFont("Monospace", fsd)); p.setPen(C_DIM if not txt else C_TEXT)
+                    p.setFont(QFont("Monospace", fsd, QFont.Weight.Bold)); p.setPen(C_DIM if not txt else C_TEXT)
                     p.drawText(x, y, cw, rh, align, txt)
 
                 elif col == "fuel_ve":
@@ -589,7 +595,7 @@ class StandingsWidget(BaseWidget):
                         col_c = C_TEXT
                     else:
                         txt, col_c = "---", C_DIM
-                    p.setFont(QFont("Monospace", fsd)); p.setPen(col_c)
+                    p.setFont(QFont("Monospace", fsd, QFont.Weight.Bold)); p.setPen(col_c)
                     p.drawText(x, y, cw, rh, align, txt)
 
                 x += cw
