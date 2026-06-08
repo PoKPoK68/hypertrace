@@ -14,7 +14,6 @@ Structure LMU (d'après lmu_data.py) :
 from __future__ import annotations
 
 import logging
-import sys
 import threading
 import time
 from dataclasses import dataclass, field
@@ -180,8 +179,7 @@ class LMUReader(BaseReader):
 
     def _connect(self):
         try:
-            sys.path.insert(0, "pyLMUSharedMemory")
-            from lmu_data import SimInfo  # type: ignore
+            from pyLMUSharedMemory.lmu_data import SimInfo  # type: ignore
             self._sim = SimInfo()
             self._connected = True
             logger.info("LMU shared memory connected")
