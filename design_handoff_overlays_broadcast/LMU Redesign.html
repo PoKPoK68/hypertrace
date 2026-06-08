@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LMU App — Refonte des overlays</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;600;700&family=Saira+Semi+Condensed:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Chakra+Petch:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="overlays.css">
+<style>
+  html, body { margin: 0; height: 100%; background: #0e0f12; }
+  #root { height: 100%; }
+  /* artboard inner stage fills the frame */
+  .ab-stage { width: 100%; height: 100%; }
+  .lede {
+    font-family: 'Saira Semi Condensed', sans-serif; color: #2b2b2b;
+    max-width: 560px; line-height: 1.5; font-size: 14px;
+  }
+  .lede h2 { font-family: 'Saira Condensed', sans-serif; letter-spacing: .04em; text-transform: uppercase; margin: 0 0 8px; font-size: 16px; }
+  .lede b { color: #111; }
+  .brief-card { width: 100%; height: 100%; background: #f4f1ea; padding: 26px 30px; }
+  .swatch { display:inline-block; width:11px; height:11px; border-radius:3px; vertical-align:-1px; margin: 0 1px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="widgets.js"></script>
+<script type="text/babel" src="design-canvas.jsx"></script>
+
+<script type="text/babel">
+const { DesignCanvas, DCSection, DCArtboard, DCPostIt } = window;
+const L = window.LMU;
+
+// inject a widget's HTML into a dark themed stage
+function Stage({ dir, html }) {
+  return (
+    <div className={"ov-stage ab-stage dir-" + dir}
+         dangerouslySetInnerHTML={{ __html: html }} />
+  );
+}
+
+// the widgets shown for every direction, with a fixed frame size each
+const WIDGETS = [
+  { id: 'speed',     label: 'Speed & Gear',  w: 300, h: 168, fn: () => L.renderSpeed() },
+  { id: 'inputs',    label: 'Inputs',        w: 284, h: 168, fn: () => L.renderInputs() },
+  { id: 'fuel',      label: 'Fuel & VE',     w: 330, h: 150, fn: () => L.renderFuel() },
+  { id: 'fuelcalc',  label: 'Fuel Calculator', w: 300, h: 175, fn: () => L.renderFuelCalc() },
+  { id: 'vecalc',    label: 'VE Calculator',   w: 300, h: 220, fn: () => L.renderVeCalc() },
+  { id: 'tyres',     label: 'Tyres',         w: 248, h: 230, fn: () => L.renderTyres() },
+  { id: 'relative',  label: 'Relative',      w: 360, h: 290, fn: () => L.renderRelative() },
+  { id: 'standings', label: 'Standings · multi-classe', w: 520, h: 360, fn: () => L.renderStandings() },
+  { id: 'control',   label: 'Control window', w: 330, h: 430, fn: () => L.renderControl() },
+];
+
+function DirectionSection({ dir }) {
+  return (
+    <DCSection id={dir.id} title={"Direction " + dir.name.toUpperCase()} subtitle={dir.tag}>
+      {WIDGETS.map((wdg) => (
+        <DCArtboard key={dir.id + '-' + wdg.id} id={dir.id + '-' + wdg.id}
+                    label={wdg.label} width={wdg.w} height={wdg.h}>
+          <Stage dir={dir.id} html={wdg.fn()} />
+        </DCArtboard>
+      ))}
+    </DCSection>
+  );
+}
+
+function App() {
+  return (
+    <DesignCanvas>
+      <DCSection id="brief" title="Refonte LMU App — 4 directions" subtitle="Choisis une direction (ou mixe). Tout est réimplémentable en QPainter.">
+        <DCArtboard id="brief-note" label="Brief & système" width={600} height={430}>
+          <div className="brief-card">
+            <div className="lede">
+              <h2>Le problème actuel</h2>
+              Tout est dessiné « à la main » au QPainter : fond <b>(10,10,10)</b>, mono partout,
+              barres plates, hiérarchie faible. Lisible, mais sans système.<br/><br/>
+              <h2>La proposition — un système, quatre peaux</h2>
+              Même structure de données ; le « skin » change via des tokens (couleur, type,
+              coins, barres). Chaque direction reste sobre — c'est un overlay <i>par-dessus
+              le jeu</i>, donc lisibilité d'abord.<br/><br/>
+              <b>A · Broadcast</b> — graphique TV endurance, accent ambre
+              <span className="swatch" style={{background:'#ecaa43'}}></span>, condensé élégant.<br/>
+              <b>B · Telemetry</b> — data-logger MoTeC, mono, barres LED, cyan
+              <span className="swatch" style={{background:'#36c4e1'}}></span>.<br/>
+              <b>C · Apex</b> — HUD de jeu, coins chanfreinés, lime
+              <span className="swatch" style={{background:'#b9f23f'}}></span>, énergique.<br/>
+              <b>D · Graphite</b> — minimal monochrome, hairline, couleur sémantique seule.<br/><br/>
+              Couleurs de classe conservées : HYP
+              <span className="swatch" style={{background:'#CC0000'}}></span> P2
+              <span className="swatch" style={{background:'#1050C8'}}></span> P3
+              <span className="swatch" style={{background:'#7020C0'}}></span> GT3
+              <span className="swatch" style={{background:'#00A040'}}></span> GTE
+              <span className="swatch" style={{background:'#E06010'}}></span>.
+            </div>
+          </div>
+        </DCArtboard>
+      </DCSection>
+      {L.DIRECTIONS.map((d) => <DirectionSection key={d.id} dir={d} />)}
+    </DesignCanvas>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

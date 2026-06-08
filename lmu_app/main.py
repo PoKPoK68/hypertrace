@@ -16,6 +16,44 @@ from lmu_app.widgets.ve_calc import VECalcWidget
 from lmu_app.ui.main_window import MainWindow
 
 
+_FONTS = [
+    "JetBrainsMono-Regular.ttf",
+    "JetBrainsMono-Medium.ttf",
+    "JetBrainsMono-Bold.ttf",
+    "SairaSemiCondensed-SemiBold.ttf",
+    "SairaSemiCondensed-Bold.ttf",
+]
+
+def _load_fonts() -> None:
+    from pathlib import Path
+    from PySide6.QtGui import QFontDatabase
+    from lmu_app.utils import theme
+    fonts_dir = Path(__file__).parent / "assets" / "fonts"
+    _text_set = False
+    _num_set  = False
+    for name in _FONTS:
+        path = fonts_dir / name
+        fid = QFontDatabase.addApplicationFont(str(path))
+        if fid < 0:
+            logging.warning("Font failed to load: %s", path)
+            continue
+        families = QFontDatabase.applicationFontFamilies(fid)
+        logging.info("Loaded font %s → fid=%d families=%s", name, fid, families)
+        if not families:
+            continue
+        family = families[0]
+        # Take the first file's registered name only — subsequent weights of the
+        # same typeface may register under "Family Bold" / "Family Medium" as
+        # separate families; we want the base family that covers all weights.
+        if "JetBrains" in name and not _text_set:
+            theme.T.F_TEXT = family
+            _text_set = True
+        elif "Saira" in name and not _num_set:
+            theme.T.F_NUM = family
+            _num_set = True
+    logging.info("Active font tokens — F_TEXT=%r  F_NUM=%r", theme.T.F_TEXT, theme.T.F_NUM)
+
+
 def _dark_palette() -> QPalette:
     """Fusion dark palette — makes spinbox/combobox arrows visible on dark backgrounds."""
     pal = QPalette()
@@ -51,10 +89,11 @@ def main() -> int:
     )
 
     app = QApplication(sys.argv)
+    _load_fonts()
     app.setStyle("Fusion")        # consistent rendering
     app.setPalette(_dark_palette())  # makes arrows/indicators visible on dark bg
     app.setApplicationName("LMU App")
-    app.setApplicationVersion("0.2.0")
+    app.setApplicationVersion("0.3.1")
     app.setQuitOnLastWindowClosed(False)
 
     config = AppConfig()

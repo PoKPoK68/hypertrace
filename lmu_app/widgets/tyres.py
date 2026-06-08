@@ -1,9 +1,12 @@
-"""Tyres overlay — 4 vertical wear bars (2×2) colored by temperature."""
+"""Tyres overlay — 4 vertical wear bars (2×2) colored by temperature — Direction A."""
 from __future__ import annotations
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QFont, QPainter
+
+from PySide6.QtCore import Qt, QRectF
+from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QSizePolicy
+
 from lmu_app.api.reader import DataReader, LMUSnapshot
+from lmu_app.utils.theme import T, label_font, num_font
 from lmu_app.widgets.base import BaseWidget
 
 _BAR_W = 33   # 100% at font 7 bold ≈ 28px + ~5px margin total
@@ -15,9 +18,7 @@ _GAP_Y = 6
 WIDGET_W = _PAD * 2 + _BAR_W * 2 + _GAP_X   # 82
 WIDGET_H = _PAD * 2 + _BAR_H * 2 + _GAP_Y   # 120
 
-_C_TRACK = QColor(30, 30, 30)
-_C_DIM   = QColor(90, 90, 90)
-_C_TXT   = QColor(240, 240, 240, 215)
+_LABELS = ["FL", "FR", "RL", "RR"]
 
 _POSITIONS = [
     (_PAD,                    _PAD),
@@ -88,7 +89,7 @@ class TyresWidget(BaseWidget):
         self.update()
 
     def _temp_color(self, t: float) -> QColor:
-        if t <= 0: return _C_DIM
+        if t <= 0: return QColor(T.DIM)
         if t < self._t_cold:
             return QColor(80, 140, 255)
         if t < self._t_opt_lo:
@@ -106,42 +107,52 @@ class TyresWidget(BaseWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.scale(self._scale, self._scale)
 
-        p.setBrush(QColor(10, 10, 10, self._bg_alpha()))
-        p.setPen(self._border_pen())
-        p.drawRoundedRect(0, 0, WIDGET_W, WIDGET_H, 8, 8)
+        self._draw_panel(p, WIDGET_W, WIDGET_H)
 
         for i, (x, y) in enumerate(_POSITIONS):
             self._draw_tyre(p, x, y, i)
         p.end()
 
     def _draw_tyre(self, p: QPainter, x: int, y: int, idx: int) -> None:
-        wear = max(0.0, min(1.0, self._wears[idx] if idx < 4 else 1.0))
-        temp =                   self._temps[idx]  if idx < 4 else 0.0
+        wear  = max(0.0, min(1.0, self._wears[idx] if idx < 4 else 1.0))
+        temp  =                   self._temps[idx]  if idx < 4 else 0.0
+        label = _LABELS[idx] if idx < 4 else ""
 
-        # Clip everything to the bar rect
         p.save()
         p.setClipRect(x, y, _BAR_W, _BAR_H)
 
-        # Dark background
-        p.setBrush(_C_TRACK); p.setPen(Qt.PenStyle.NoPen)
-        p.drawRoundedRect(x, y, _BAR_W, _BAR_H, 3, 3)
+        # Track background
+        p.setBrush(T.TRACK)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawRoundedRect(x, y, _BAR_W, _BAR_H, 4, 4)
 
-        # Wear fill rising from bottom
+        # Wear fill rising from bottom, colored by temperature
         fill_h = max(0, int(_BAR_H * wear))
         if fill_h > 0:
             p.setBrush(self._temp_color(temp))
-            p.drawRoundedRect(x, y + _BAR_H - fill_h, _BAR_W, fill_h, 3, 3)
+            p.drawRoundedRect(x, y + _BAR_H - fill_h, _BAR_W, fill_h, 4, 4)
 
-        f = QFont("Monospace", 7, QFont.Weight.Bold)
-        p.setFont(f)
-        p.setPen(_C_TXT)
+        txt_col = QColor(T.TEXT)
 
+        # Temperature — top center
         if self._show_temp and temp > 0:
-            p.drawText(x, y + 1, _BAR_W, 13, Qt.AlignmentFlag.AlignCenter,
+            p.setFont(num_font(7))
+            p.setPen(txt_col)
+            p.drawText(QRectF(x, y + 1, _BAR_W, 13),
+                       Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter,
                        f"{temp:.0f}°")
 
+        # Corner label (FL/FR/RL/RR) — centered in rectangle
+        p.setFont(label_font(6))
+        p.setPen(QColor(255, 255, 255, 140))
+        p.drawText(QRectF(x, y, _BAR_W, _BAR_H),
+                   Qt.AlignmentFlag.AlignCenter, label)
+
+        # Wear % — bottom center
         if self._show_wear_pct:
-            p.drawText(x, y + _BAR_H - 13, _BAR_W, 13, Qt.AlignmentFlag.AlignCenter,
-                       f"{wear * 100:.0f}%")
+            p.setFont(num_font(7))
+            p.setPen(txt_col)
+            p.drawText(QRectF(x, y + _BAR_H - 13, _BAR_W, 13),
+                       Qt.AlignmentFlag.AlignCenter, f"{wear * 100:.0f}%")
 
         p.restore()

@@ -1,21 +1,10 @@
-"""
-lmu_app/widgets/base.py
-
-Classe de base pour tous les widgets overlay.
-Gère :
-  - Fenêtre transparente sans bordure (overlay)
-  - Drag & drop pour repositionner
-  - QTimer pour le polling des données
-  - Auto-hide quand le joueur n'est pas en piste
-  - Sauvegarde/restauration de la position
-"""
-
+"""lmu_app/widgets/base.py — Base class for all overlay widgets."""
 from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING, Callable
 
-from PySide6.QtCore import QPoint, QTimer, Qt
+from PySide6.QtCore import QPoint, QRectF, QTimer, Qt
 from PySide6.QtGui import QColor, QMouseEvent, QPen
 from PySide6.QtWidgets import QWidget
 
@@ -26,13 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class BaseWidget(QWidget):
-    """
-    Widget overlay de base.
-
-    Sous-classes doivent implémenter :
-      - on_data(snapshot: LMUSnapshot) → met à jour l'affichage
-      - (optionnel) setup_ui() → construit l'UI interne
-    """
+    """Frameless, always-on-top overlay widget with drag-to-move and auto-hide."""
 
     WIDGET_NAME: str = "Widget"
 
@@ -55,34 +38,29 @@ class BaseWidget(QWidget):
         self._last_snap_ts: float = -1.0
         self._opacity: int = 85
 
-        # Fenêtre overlay : transparente, sans décoration, toujours au-dessus
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
-            | Qt.WindowType.Tool  # pas dans la taskbar
+            | Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
 
-        # Construction de l'UI du widget enfant
         self.setup_ui()
 
-        # Timer de mise à jour
         self._timer = QTimer(self)
         self._timer.setInterval(int(1000 / update_hz))
         self._timer.timeout.connect(self._update)
 
     # ------------------------------------------------------------------
-    # API publique
+    # Public API
     # ------------------------------------------------------------------
 
     def start(self) -> None:
-        """Démarre les mises à jour et affiche le widget."""
         self._timer.start()
         self.show()
 
     def stop(self) -> None:
-        """Arrête les mises à jour et cache le widget."""
         self._timer.stop()
         self.hide()
 
@@ -96,33 +74,32 @@ class BaseWidget(QWidget):
     def _bg_alpha(self) -> int:
         return round(255 * self._opacity / 100)
 
-    def _border_pen(self) -> QPen:
-        alpha = round(180 * self._opacity / 100)
-        if alpha == 0:
-            return QPen(Qt.PenStyle.NoPen)
-        return QPen(QColor(55, 55, 55, alpha), 1)
-
     def apply_class_colors(self, colors: dict) -> None:
         """Override in widgets that display car class colors."""
 
+    def _draw_panel(self, p, w: float, h: float, accent: bool = True) -> None:
+        """Broadcast panel: gradient fill + border + top amber accent hairline."""
+        from lmu_app.utils.theme import T, panel_brush, border_pen, accent_hairline
+        p.setBrush(panel_brush(0, 0, h, self._bg_alpha()))
+        p.setPen(border_pen(self._opacity))
+        p.drawRoundedRect(0, 0, w, h, T.RADIUS, T.RADIUS)
+        if accent:
+            p.fillRect(QRectF(9, 0, w - 18, 2), accent_hairline(w))
+
     # ------------------------------------------------------------------
-    # À surcharger dans les sous-classes
+    # Subclass hooks
     # ------------------------------------------------------------------
 
-    # Schéma des paramètres configurables.
-    # Chaque entrée : {"key": str, "label": str, "type": "int"|"float"|"bool"|"choice",
-    #                  "default": ..., "min": ..., "max": ..., "step": ...,
-    #                  "options": [{"value": ..., "label": str}, ...]}
     CONFIG_SCHEMA: list[dict] = []
 
     def setup_ui(self) -> None:
-        """Construire les éléments visuels du widget."""
+        pass
 
     def on_data(self, snapshot: LMUSnapshot) -> None:
-        """Appelé à chaque tick avec le snapshot courant. À surcharger."""
+        pass
 
     def apply_params(self, params: dict) -> None:
-        """Applique les paramètres de configuration. À surcharger."""
+        pass
 
     # ------------------------------------------------------------------
     # Drag & drop
@@ -144,13 +121,17 @@ class BaseWidget(QWidget):
                 self._on_position_changed(self.x(), self.y())
 
     # ------------------------------------------------------------------
-    # Tick interne
+    # Internal tick
     # ------------------------------------------------------------------
 
     def _update(self) -> None:
         snapshot = self._reader.get()
 
-        # Hide when player is in garage
+        if not snapshot.game_running:
+            if self.isVisible():
+                self.hide()
+            return
+
         if self._hide_in_garage and snapshot.player_in_garage:
             if self.isVisible():
                 self.hide()
@@ -158,17 +139,17 @@ class BaseWidget(QWidget):
         elif self._hide_in_garage and not self.isVisible():
             self.show()
 
-        # Auto-hide when not on track
         if self._auto_hide:
-            if snapshot.is_on_track or not snapshot.game_running:
+            if snapshot.is_on_track:
                 if not self.isVisible():
                     self.show()
             else:
                 if self.isVisible():
                     self.hide()
                 return
+        elif not self.isVisible():
+            self.show()
 
-        # Skip if data hasn't changed since last tick
         if snapshot.timestamp > 0 and snapshot.timestamp == self._last_snap_ts:
             return
         self._last_snap_ts = snapshot.timestamp

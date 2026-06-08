@@ -1,26 +1,36 @@
-"""Inputs overlay — throttle/brake/clutch bars + rotating steering wheel."""
+"""Inputs overlay — throttle/brake/clutch bars + rotating steering wheel — Direction A."""
 from __future__ import annotations
 import math
 from pathlib import Path
+
 from PySide6.QtCore import Qt, QRectF
-from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPen, QPixmap
+from PySide6.QtGui import QColor, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QSizePolicy
+
 from lmu_app.api.reader import DataReader, LMUSnapshot
+from lmu_app.utils.theme import T, label_font, num_font
 from lmu_app.widgets.base import BaseWidget
 
-BASE_W, BASE_H = 128, 88
+BASE_W, BASE_H = 154, 88
 
-_BAR_W, _BAR_H, _BAR_X0, _BAR_Y0, _BAR_GAP = 16, 58, 8, 13, 5
-_WHEEL_CX, _WHEEL_CY, _WHEEL_R              = 96, 40, 24
-_WHEEL_MAX                                   = 270
+_BAR_W   = 16
+_BAR_H   = 52
+_BAR_X0  = 10
+_BAR_Y0  = 19
+_BAR_GAP = 6
+
+_WHEEL_CX  = 112
+_WHEEL_CY  = 36
+_WHEEL_R   = 30
+_WHEEL_MAX = 270
+
+_RIM_COL = QColor("#D8D2C4")
 
 _ASSETS_DIR        = Path(__file__).parent.parent / "assets"
 _DEFAULT_WHEEL_SVG = _ASSETS_DIR / "wheel_default.svg"
 
 
 def _load_wheel_pixmap(path_str: str) -> QPixmap | None:
-    """Render a wheel image (SVG or raster) to a QPixmap of diameter 2*_WHEEL_R.
-    Returns None on failure (falls back to built-in draw)."""
     size = _WHEEL_R * 2
     path = Path(path_str) if path_str else _DEFAULT_WHEEL_SVG
     if not path.exists():
@@ -39,13 +49,12 @@ def _load_wheel_pixmap(path_str: str) -> QPixmap | None:
             return px
         except Exception:
             return None
-    else:
-        px = QPixmap(str(path))
-        if px.isNull():
-            return None
-        return px.scaled(size, size,
-                         Qt.AspectRatioMode.KeepAspectRatio,
-                         Qt.TransformationMode.SmoothTransformation)
+    px = QPixmap(str(path))
+    if px.isNull():
+        return None
+    return px.scaled(size, size,
+                     Qt.AspectRatioMode.KeepAspectRatio,
+                     Qt.TransformationMode.SmoothTransformation)
 
 
 class InputsWidget(BaseWidget):
@@ -55,25 +64,14 @@ class InputsWidget(BaseWidget):
         {"key": "opacity",     "label": "Opacity (%)", "type": "int",
          "min": 0,  "max": 100, "step": 5, "default": 85},
         {"key": "scale",       "label": "Size (%)",    "type": "int",
-         "min": 50, "max": 250, "step": 5, "default": 80},
+         "min": 50, "max": 250, "step": 5, "default": 65},
         {"key": "wheel_image", "label": "Wheel image", "type": "filepath",
          "default": ""},
     ]
 
-    C_BG    = QColor(10, 10, 10, 210)
-    C_BDR   = QColor(55, 55, 55, 180)
-    C_TRACK = QColor(35, 35, 35)
-    C_LBL   = QColor(110, 110, 110)
-    C_T     = QColor(60, 210, 90)
-    C_B     = QColor(220, 55, 55)
-    C_C     = QColor(70, 140, 220)
-    C_RIM   = QColor(190, 190, 190)
-    C_SPOKE = QColor(150, 150, 150)
-    C_HUB   = QColor(120, 120, 120)
-
     def __init__(self, reader: DataReader, **kw):
         self._t = self._b = self._c = self._s = 0.0
-        self._scale = 0.80
+        self._scale = 0.65
         self._wheel_image_path = ""
         self._wheel_pixmap: QPixmap | None = None
         super().__init__(reader, update_hz=60, **kw)
@@ -88,48 +86,66 @@ class InputsWidget(BaseWidget):
         if new_path != self._wheel_image_path:
             self._wheel_image_path = new_path
             self._wheel_pixmap = _load_wheel_pixmap(self._wheel_image_path)
-        self._scale   = int(params.get("scale", 80)) / 100.0
+        self._scale   = int(params.get("scale", 65)) / 100.0
         self._opacity = max(0, min(100, int(params.get("opacity", 85))))
         self.setFixedSize(int(BASE_W * self._scale), int(BASE_H * self._scale))
         self.update()
 
     def on_data(self, snap: LMUSnapshot):
         v = snap.vehicle
-        self._t = max(0., min(1., v.throttle))
-        self._b = max(0., min(1., v.brake))
-        self._c = max(0., min(1., v.clutch))
-        self._s = max(-1., min(1., v.steering))
-        self.update()
+        t = max(0., min(1., v.throttle))
+        b = max(0., min(1., v.brake))
+        c = max(0., min(1., v.clutch))
+        s = max(-1., min(1., v.steering))
+        if t != self._t or b != self._b or c != self._c or s != self._s:
+            self._t, self._b, self._c, self._s = t, b, c, s
+            self.update()
 
     def paintEvent(self, _):
         s = self._scale
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.scale(s, s)
-        p.setBrush(QColor(10, 10, 10, self._bg_alpha())); p.setPen(self._border_pen())
-        p.drawRoundedRect(0, 0, BASE_W, BASE_H, 8, 8)
+
+        self._draw_panel(p, BASE_W, BASE_H)
         self._draw_bars(p)
         self._draw_wheel(p)
         p.end()
 
     def _draw_bars(self, p: QPainter):
-        items = [("T", self._t, self.C_T), ("B", self._b, self.C_B), ("C", self._c, self.C_C)]
-        p.setFont(QFont("Monospace", 7, QFont.Weight.Bold))
+        items = [
+            ("T", self._t, QColor(T.THROTTLE)),
+            ("B", self._b, QColor(T.BRAKE)),
+            ("C", self._c, QColor(T.CLUTCH)),
+        ]
         for i, (lbl, val, col) in enumerate(items):
             x = _BAR_X0 + i * (_BAR_W + _BAR_GAP)
             y, bw, bh = _BAR_Y0, _BAR_W, _BAR_H
-            p.setBrush(self.C_TRACK); p.setPen(Qt.PenStyle.NoPen)
+
+            # Track
+            p.setBrush(T.TRACK)
+            p.setPen(Qt.PenStyle.NoPen)
             p.drawRoundedRect(x, y, bw, bh, 3, 3)
+
+            # Solid fill rising from bottom
             fh = int(bh * val)
             if fh > 0:
-                g = QLinearGradient(x, y + bh - fh, x, y + bh)
-                g.setColorAt(0., col.lighter(130)); g.setColorAt(1., col)
-                p.setBrush(g); p.drawRoundedRect(x, y + bh - fh, bw, fh, 3, 3)
-            p.setPen(self.C_LBL if val == 0 else col.lighter(150))
-            p.drawText(x-2, y - 13, bw+4, 12, Qt.AlignmentFlag.AlignHCenter,
-                       f"{int(val*100)}")
-            p.setPen(self.C_LBL)
-            p.drawText(x, y + bh + 3, bw, 12, Qt.AlignmentFlag.AlignHCenter, lbl)
+                p.setBrush(col)
+                p.setPen(Qt.PenStyle.NoPen)
+                p.drawRoundedRect(x, y + bh - fh, bw, fh, 3, 3)
+
+            # Value above bar — col when active, dim when zero
+            val_col = QColor(T.DIM) if val == 0 else col.lighter(150)
+            p.setFont(num_font(7))
+            p.setPen(val_col)
+            p.drawText(QRectF(x - 2, y - 15, bw + 4, 14),
+                       Qt.AlignmentFlag.AlignCenter, str(int(val * 100)))
+
+            # Letter below bar — always dim, uppercase tracking
+            p.setFont(label_font(6))
+            p.setPen(QColor(T.DIM))
+            p.drawText(QRectF(x, y + bh + 2, bw, 10),
+                       Qt.AlignmentFlag.AlignCenter, lbl)
 
     def _draw_wheel(self, p: QPainter):
         cx, cy, r = _WHEEL_CX, _WHEEL_CY, _WHEEL_R
@@ -147,23 +163,32 @@ class InputsWidget(BaseWidget):
 
         p.restore()
 
-        p.setFont(QFont("Monospace", 7)); p.setPen(self.C_LBL)
-        p.drawText(cx - 22, cy + r + 4, 44, 12, Qt.AlignmentFlag.AlignHCenter,
-                   f"{int(deg):+.0f}°" if abs(deg) > 1 else "0°")
+        # Angle label below wheel
+        angle_str = f"{int(deg):+d}°" if abs(deg) > 1 else "0°"
+        p.setFont(num_font(7))
+        p.setPen(QColor(T.DIM))
+        p.drawText(QRectF(cx - 32, cy + r + 4, 64, 12),
+                   Qt.AlignmentFlag.AlignCenter, angle_str)
 
     def _draw_wheel_builtin(self, p: QPainter, r: int):
         hub_r   = max(4, r // 5)
         spoke_r = r - 3
+
+        # Rim
         p.setBrush(Qt.BrushStyle.NoBrush)
-        p.setPen(QPen(self.C_RIM, 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        p.setPen(QPen(_RIM_COL, 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
         p.drawEllipse(-r, -r, r * 2, r * 2)
-        for deg_spoke in (30, 150):
-            rad = math.radians(deg_spoke)
-            xe  = int(spoke_r * math.cos(rad))
-            ye  = int(spoke_r * math.sin(rad))
-            xh  = int(hub_r   * math.cos(rad))
-            yh  = int(hub_r   * math.sin(rad))
-            p.setPen(QPen(self.C_SPOKE, 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+
+        # 3 branches: right (0°), bottom (π/2), left (π) — open at top
+        p.setPen(QPen(_RIM_COL, 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        for angle in (0.0, math.pi / 2, math.pi):
+            xe = int(spoke_r * math.cos(angle))
+            ye = int(spoke_r * math.sin(angle))
+            xh = int(hub_r   * math.cos(angle))
+            yh = int(hub_r   * math.sin(angle))
             p.drawLine(xh, yh, xe, ye)
-        p.setBrush(self.C_HUB); p.setPen(Qt.PenStyle.NoPen)
+
+        # Hub
+        p.setBrush(_RIM_COL)
+        p.setPen(Qt.PenStyle.NoPen)
         p.drawEllipse(-hub_r, -hub_r, hub_r * 2, hub_r * 2)

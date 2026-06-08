@@ -7,18 +7,21 @@ Only active classes (with non-garage drivers) appear.
 """
 from __future__ import annotations
 from collections import defaultdict
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QFont, QPainter
+
+from PySide6.QtCore import Qt, QRectF
+from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QSizePolicy
+
 from lmu_app.api.reader import DataReader, LMUSnapshot
-from lmu_app.widgets.base import BaseWidget
 from lmu_app.utils.class_colors import class_abbrev, class_color
+from lmu_app.utils.theme import T, label_font, num_font, text_font
+from lmu_app.widgets.base import BaseWidget
 
 ROW_H = 20
 SEP_H = 4
 CLS_H = 16
 
-_CHAR_PX_BASE  = 7
+_CHAR_PX_BASE  = 8
 _BADGE_PX_BASE = 22
 
 def _char_px(font_size: int) -> int:
@@ -47,7 +50,7 @@ def _class_rank(cls_name: str) -> int:
     return 99
 
 COLUMN_DEFS = {
-    "pos":      ("",      16, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
+    "pos":      ("",      16, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter),
     "name":     ("",      -1, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
     "gap":      ("GAP",   52, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight),
     "interval": ("INT",   52, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight),
@@ -57,22 +60,7 @@ COLUMN_DEFS = {
 }
 DEFAULT_COLUMNS = ["pos", "name", "gap", "interval", "best", "last"]
 
-C_BG      = QColor(10, 10, 10, 215)
-C_BORDER  = QColor(55, 55, 55, 180)
-C_SEP     = QColor(70, 70, 70, 180)
-C_TEXT    = QColor(220, 220, 220)
-C_DIM     = QColor(110, 110, 110)
-C_P1      = QColor(255, 215, 0)
-C_P2      = QColor(192, 192, 192)
-C_P3      = QColor(205, 127, 50)
-C_PURPLE  = QColor(180, 100, 255)
-C_GREEN   = QColor(80, 220, 80)
-C_GAR_BG  = QColor(70, 70, 70, 210)
-C_GAR_FG  = QColor(200, 200, 200)
-C_PIT_BG  = QColor(50, 110, 200, 210)
-C_PIT_FG  = QColor(240, 240, 240)
-C_OUT_BG  = QColor(190, 130, 0, 210)
-C_OUT_FG  = QColor(20, 20, 20)
+# All colors from theme.T — no hex literals in this module.
 
 
 def _fmt_lap(t: float, decimals: int = 3) -> str:
@@ -154,9 +142,9 @@ class StandingsWidget(BaseWidget):
         {"key": "show_best_col",   "label": "Show Best lap column",    "type": "bool", "default": True},
         {"key": "show_last_col",   "label": "Show Last lap column",    "type": "bool", "default": True},
         {"key": "show_fuel_ve_col","label": "Show VE/Fuel column",     "type": "bool", "default": False},
-        {"key": "player_color",      "label": "Player row color",       "type": "color", "default": "#ffc800"},
+        {"key": "player_color",      "label": "Player row color",       "type": "color", "default": "#ECAA43"},
         {"key": "player_color_alpha","label": "Player row opacity (%)", "type": "int",
-         "min": 0, "max": 100, "step": 5, "default": 20},
+         "min": 0, "max": 100, "step": 5, "default": 16},
         {"key": "font_size",       "label": "Font size",               "type": "int",
          "min": 7, "max": 14, "step": 1, "default": 9},
         {"type": "separator", "label": "Gaps"},
@@ -229,7 +217,7 @@ class StandingsWidget(BaseWidget):
         self._best_decimals       = max(0, min(3, int(best_decimals)))
         self._last_decimals       = max(0, min(3, int(last_decimals)))
         self._opacity             = 85
-        self._player_color        = QColor(255, 200, 0, 51)
+        self._player_color        = QColor(0xEC, 0xAA, 0x43, 41)
         self._entries:  list[dict]    = []
         self._best_overall            = 9999.0
         self._player_fuel             = 0.0
@@ -404,10 +392,9 @@ class StandingsWidget(BaseWidget):
         cls_leader      = player_cls_vehicles[0]
         cls_leader_best = cls_leader.best_lap if cls_leader.best_lap > 0 else -1.0
 
-        if self._show_other_classes:
-            cls_col = class_color(player_class, self._class_colors)
-            entries.append({"is_class_header": True, "label": player_class,
-                            "cls_color": cls_col, "abbrev": class_abbrev(player_class)})
+        cls_col = class_color(player_class, self._class_colors)
+        entries.append({"is_class_header": True, "label": player_class,
+                        "cls_color": cls_col, "abbrev": class_abbrev(player_class)})
 
         for rank, i in enumerate(all_indices):
             if sep_after >= 0 and rank == sep_after + 1:
@@ -470,69 +457,83 @@ class StandingsWidget(BaseWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         ncw = self._max_name_chars * _char_px(self._font_size)
         W   = _total_w(self.columns, ncw, self._font_size)
-        H   = _compute_h(self._show_header, self._entries)
+        H   = _compute_h(self._show_header, self._entries, self._rh)
 
-        p.setBrush(QColor(10, 10, 10, self._bg_alpha())); p.setPen(self._border_pen())
-        p.drawRoundedRect(0, 0, W, H, 8, 8)
+        self._draw_panel(p, W, H)
 
+        fs  = self._font_size
+        fsd = max(7, fs - 1)
+        fss = max(6, fs - 2)
+
+        # ── Column headers ────────────────────────────────────────────────
         if self._show_header:
-            p.setBrush(QColor(30, 30, 30)); p.setPen(Qt.PenStyle.NoPen)
-            p.drawRoundedRect(1, 1, W-2, 22, 7, 7)
+            p.setBrush(QColor(28, 30, 34, 200))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawRoundedRect(1, 1, W - 2, 22, T.RADIUS, T.RADIUS)
             x = 2
             for col in self.columns:
-                if col not in COLUMN_DEFS: continue
-                label, _, align = COLUMN_DEFS[col]
-                cw = _col_w(col, ncw, self._font_size)
-                if label:
-                    p.setFont(QFont("Monospace", max(6, self._font_size - 2))); p.setPen(C_DIM)
-                    p.drawText(x, 0, cw, 22, align, label)
+                if col not in COLUMN_DEFS:
+                    continue
+                hdr_label, _, align = COLUMN_DEFS[col]
+                cw = _col_w(col, ncw, fs)
+                if hdr_label:
+                    p.setFont(label_font(max(6, fss)))
+                    p.setPen(QColor(T.DIM))
+                    p.drawText(x, 0, cw, 22, align, hdr_label)
                 x += cw
 
-        y = (22 if self._show_header else 0) + 4  # 4px top padding
+        y = (22 if self._show_header else 0) + 4
 
         for e in self._entries:
 
+            # ── Separator ─────────────────────────────────────────────────
             if e.get("is_sep"):
-                p.setBrush(C_SEP); p.setPen(Qt.PenStyle.NoPen)
-                p.drawRect(2, y + 1, W - 4, 1)
+                p.fillRect(QRectF(2, y + 1, W - 4, 1), T.FAINT)
                 y += SEP_H
                 continue
 
+            # ── Class header ──────────────────────────────────────────────
             if e.get("is_class_header"):
                 abbrev  = e.get("abbrev", "???")[:3]
                 cls_col = e.get("cls_color")
-                chr_w   = _char_px(self._font_size)
-                bdg_w   = len(abbrev) * chr_w + 8
+                bdg_w   = len(abbrev) * _char_px(fs) + 8
                 bdg_x, bdg_y, bdg_h = 4, y + 1, CLS_H - 2
                 if cls_col is not None:
-                    p.setBrush(cls_col); p.setPen(Qt.PenStyle.NoPen)
+                    p.setBrush(cls_col)
+                    p.setPen(Qt.PenStyle.NoPen)
                     p.drawRoundedRect(bdg_x, bdg_y, bdg_w, bdg_h, 2, 2)
-                p.setFont(QFont("Monospace", max(6, self._font_size - 2), QFont.Weight.Bold))
-                p.setPen(QColor(255, 255, 255))
+                p.setFont(label_font(max(6, fss)))
+                p.setPen(QColor(T.TEXT))
                 p.drawText(bdg_x, bdg_y, bdg_w, bdg_h, Qt.AlignmentFlag.AlignCenter, abbrev)
+                # Class name in dim, next to badge
+                p.setFont(label_font(max(6, fss)))
+                p.setPen(QColor(T.DIM))
+                p.drawText(bdg_x + bdg_w + 4, bdg_y, W - bdg_x - bdg_w - 8, bdg_h,
+                           Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                           e.get("label", ""))
                 y += CLS_H
                 continue
 
-            # ── Regular driver row ──────────────────────────────────────
+            # ── Driver row ────────────────────────────────────────────────
             rh = self._rh
             if e["is_player"]:
-                p.setBrush(self._player_color); p.setPen(Qt.PenStyle.NoPen)
-                p.drawRect(1, y, W-2, rh)
+                p.setBrush(self._player_color)
+                p.setPen(Qt.PenStyle.NoPen)
+                p.drawRoundedRect(1, y, W - 2, rh, 3, 3)
 
             x = 2
             for col in self.columns:
-                if col not in COLUMN_DEFS: continue
+                if col not in COLUMN_DEFS:
+                    continue
                 _, _, align = COLUMN_DEFS[col]
-                cw = _col_w(col, ncw, self._font_size)
-
-                fs  = self._font_size
-                fsd = max(7, fs - 1)
-                fss = max(6, fs - 2)
+                cw = _col_w(col, ncw, fs)
 
                 if col == "pos":
                     pos = e["pos"]
-                    c   = C_P1 if pos==1 else C_P2 if pos==2 else C_P3 if pos==3 else C_DIM
-                    p.setFont(QFont("Monospace", fs, QFont.Weight.Bold)); p.setPen(c)
+                    pc  = (QColor(T.P1) if pos == 1 else QColor(T.P2) if pos == 2
+                           else QColor(T.P3) if pos == 3 else QColor(T.DIM))
+                    p.setFont(num_font(fs))
+                    p.setPen(pc)
                     p.drawText(x, y, cw, rh, align, str(pos))
 
                 elif col == "name":
@@ -541,61 +542,63 @@ class StandingsWidget(BaseWidget):
                         raw_badge = ""
                     elif raw_badge == "OUT" and not self._show_out_badge:
                         raw_badge = ""
-                    if raw_badge == "GAR":   bg_c, fg_c = C_GAR_BG, C_GAR_FG
-                    elif raw_badge == "PIT": bg_c, fg_c = C_PIT_BG, C_PIT_FG
-                    else:                    bg_c, fg_c = C_OUT_BG, C_OUT_FG
-
+                    badge_colors = {
+                        "GAR": (QColor(T.GAR_BG), QColor(T.GAR_FG)),
+                        "PIT": (QColor(T.PIT_BG), QColor(T.PIT_FG)),
+                        "OUT": (QColor(T.OUT_BG), QColor(T.OUT_FG)),
+                    }
                     name_text = _fmt_name(e["name_raw"], self._name_format)[:self._max_name_chars]
-                    p.setFont(QFont("Monospace", fs, QFont.Weight.Bold))
-                    p.setPen(C_TEXT)
-                    p.drawText(x+2, y, cw, rh, align, name_text)
-
-                    if raw_badge:
-                        bdg = _badge_px(self._font_size)
-                        bx2 = x + cw - bdg - 3; by2 = y + 3
+                    p.setFont(text_font(fs))
+                    p.setPen(QColor(T.TEXT))
+                    p.drawText(x + 2, y, cw, rh, align, name_text.upper())
+                    if raw_badge and raw_badge in badge_colors:
+                        bg_c, fg_c = badge_colors[raw_badge]
+                        bdg = _badge_px(fs)
+                        bx2, by2 = x + cw - bdg, y + 3
                         p.setBrush(bg_c); p.setPen(Qt.PenStyle.NoPen)
                         p.drawRoundedRect(bx2, by2, bdg, rh - 6, 2, 2)
-                        p.setFont(QFont("Monospace", fss, QFont.Weight.Bold)); p.setPen(fg_c)
-                        p.drawText(bx2, by2, bdg, rh - 6,
-                                   Qt.AlignmentFlag.AlignCenter, raw_badge)
+                        p.setFont(num_font(fss)); p.setPen(fg_c)
+                        p.drawText(bx2, by2, bdg, rh - 6, Qt.AlignmentFlag.AlignCenter, raw_badge)
 
                 elif col == "best":
-                    c = C_PURPLE if e["is_best"] else (C_GREEN if e["is_player"] else
-                        C_DIM if e["best"] <= 0 else C_TEXT)
-                    p.setFont(QFont("Monospace", fsd, QFont.Weight.Bold)); p.setPen(c)
+                    bc = (QColor(T.PURPLE) if e["is_best"]
+                          else QColor(T.GOOD) if e["is_player"]
+                          else QColor(T.DIM) if e["best"] <= 0
+                          else QColor(T.TEXT))
+                    p.setFont(num_font(fsd)); p.setPen(bc)
                     p.drawText(x, y, cw, rh, align, _fmt_lap(e["best"], self._best_decimals))
 
                 elif col == "last":
-                    p.setFont(QFont("Monospace", fsd, QFont.Weight.Bold))
-                    p.setPen(C_DIM if e["last"] <= 0 else C_TEXT)
+                    lc = QColor(T.DIM) if e["last"] <= 0 else QColor(T.TEXT)
+                    p.setFont(num_font(fsd)); p.setPen(lc)
                     p.drawText(x, y, cw, rh, align, _fmt_lap(e["last"], self._last_decimals))
 
                 elif col == "gap":
                     txt = ("" if e["pos"] == 1
                            else "-" if e["is_outlap"] and not e["is_race"]
                            else _fmt_gap(e["gap"], e["is_race"], self._gap_decimals))
-                    p.setFont(QFont("Monospace", fsd, QFont.Weight.Bold)); p.setPen(C_DIM if not txt else C_TEXT)
+                    p.setFont(num_font(fsd))
+                    p.setPen(QColor(T.DIM) if not txt else QColor(T.TEXT))
                     p.drawText(x, y, cw, rh, align, txt)
 
                 elif col == "interval":
                     txt = ("" if e["pos"] == 1
                            else "-" if e["is_outlap"] and not e["is_race"]
                            else _fmt_gap(e["interval"], e["is_race"], self._interval_decimals))
-                    p.setFont(QFont("Monospace", fsd, QFont.Weight.Bold)); p.setPen(C_DIM if not txt else C_TEXT)
+                    p.setFont(num_font(fsd))
+                    p.setPen(QColor(T.DIM) if not txt else QColor(T.TEXT))
                     p.drawText(x, y, cw, rh, align, txt)
 
                 elif col == "fuel_ve":
                     ve   = e["virtual_energy"]
                     fuel = e.get("fuel", 0.0)
                     if ve > 0.001:
-                        txt   = f"{ve*100:.0f}%"
-                        col_c = QColor(50, 190, 80)
+                        txt, vc = f"{ve*100:.0f}%", QColor(T.GOOD)
                     elif fuel > 0.01:
-                        txt   = f"{fuel:.1f}L"
-                        col_c = C_TEXT
+                        txt, vc = f"{fuel:.1f}L", QColor(T.TEXT)
                     else:
-                        txt, col_c = "---", C_DIM
-                    p.setFont(QFont("Monospace", fsd, QFont.Weight.Bold)); p.setPen(col_c)
+                        txt, vc = "---", QColor(T.DIM)
+                    p.setFont(num_font(fsd)); p.setPen(vc)
                     p.drawText(x, y, cw, rh, align, txt)
 
                 x += cw

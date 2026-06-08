@@ -6,18 +6,21 @@ Badge overlays the name text (no column shrink).
 """
 from __future__ import annotations
 import math as _math
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QFont, QPainter
+
+from PySide6.QtCore import Qt, QRectF
+from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QSizePolicy
+
 from lmu_app.api.reader import DataReader, LMUSnapshot
 from lmu_app.utils.class_colors import class_color
+from lmu_app.utils.theme import T, num_font, text_font
 from lmu_app.widgets.base import BaseWidget
 
 _W_BASE  = 74    # fixed: 28px pos column + 40px gap area + 6px margin
 
 
 def _char_px(font_size: int) -> int:
-    return max(4, round(7 * font_size / 9))
+    return max(4, round(8 * font_size / 9))
 
 
 def _badge_px(font_size: int) -> int:
@@ -71,25 +74,16 @@ class RelativeWidget(BaseWidget):
          ], "default": "full"},
         {"type": "separator", "label": "Display"},
         {"key": "show_badges",       "label": "PIT / OUT badges",      "type": "bool", "default": True},
-        {"key": "player_color",      "label": "Player row color",       "type": "color", "default": "#ffc800"},
+        {"key": "player_color",      "label": "Player row color",       "type": "color", "default": "#ECAA43"},
         {"key": "player_color_alpha","label": "Player row opacity (%)", "type": "int",
-         "min": 0, "max": 100, "step": 5, "default": 20},
+         "min": 0, "max": 100, "step": 5, "default": 16},
         {"key": "interval_decimals", "label": "Interval decimals (0-3)","type": "int",
          "min": 0, "max": 3,  "step": 1, "default": 1},
         {"key": "font_size",         "label": "Font size",              "type": "int",
          "min": 7, "max": 14, "step": 1, "default": 9},
     ]
 
-    C_BG     = QColor(10, 10, 10, 215)
-    C_BORDER = QColor(55, 55, 55, 180)
-    C_TEXT   = QColor(220, 220, 220)
-    C_DIM    = QColor(110, 110, 110)
-    C_AHEAD  = QColor(100, 200, 255)
-    C_BEHIND = QColor(255, 120, 80)
-    C_PIT_BG = QColor(50, 110, 200, 210)
-    C_PIT_FG = QColor(240, 240, 240)
-    C_OUT_BG = QColor(190, 130, 0, 210)
-    C_OUT_FG = QColor(20, 20, 20)
+    # All colors from theme.T — no hex literals in this class.
 
     def __init__(self, reader: DataReader,
                  drivers_ahead:      int = 4,
@@ -111,7 +105,7 @@ class RelativeWidget(BaseWidget):
         self._outlap_tracking: dict[int, int] = {}
         self._prev_in_pits:   dict[int, bool] = {}
         self._class_colors:   dict[str, str]  = {}
-        self._player_color = QColor(255, 200, 0, 50)
+        self._player_color = QColor(0xEC, 0xAA, 0x43, 41)
         self._opacity = 85
         super().__init__(reader, update_hz=10, **kw)
         self.setFixedSize(_widget_w(max_name_chars, self._font_size), _widget_h(drivers_ahead, drivers_behind, self._font_size))
@@ -237,66 +231,70 @@ class RelativeWidget(BaseWidget):
     def paintEvent(self, _):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        W = self.width()
-        H = self.height()
+        W   = self.width()
+        H   = self.height()
         ncw = self._max_name_chars * _char_px(self._font_size)
         bdg = _badge_px(self._font_size)
 
-        p.setBrush(QColor(10, 10, 10, self._bg_alpha())); p.setPen(self._border_pen())
-        p.drawRoundedRect(0, 0, W, H, 8, 8)
+        self._draw_panel(p, W, H)
 
-        player_row_idx = self._ahead  # index of player row in self._rows
+        fs  = self._font_size
+        fss = max(6, fs - 2)
+        rh  = _row_h(fs)
 
-        rh = _row_h(self._font_size)
+        badge_colors = {
+            "PIT": (QColor(T.PIT_BG), QColor(T.PIT_FG)),
+            "OUT": (QColor(T.OUT_BG), QColor(T.OUT_FG)),
+        }
+
         for i, row in enumerate(self._rows):
             y = 4 + i * rh
             if not row["name_raw"] and not row["is_player"]:
-                continue  # empty slot
+                continue
 
             is_p  = row["is_player"]
             gap   = row["gap"]
             badge = row["badge"] if self._show_badges else ""
             name  = _fmt_name(row["name_raw"], self._name_format)[:self._max_name_chars]
 
+            # Player row highlight
             if is_p:
-                p.setBrush(self._player_color); p.setPen(Qt.PenStyle.NoPen)
-                p.drawRect(1, y, W-2, rh)
+                p.setBrush(self._player_color)
+                p.setPen(Qt.PenStyle.NoPen)
+                p.drawRoundedRect(1, y, W - 2, rh, 3, 3)
 
-            fs  = self._font_size
-            fss = max(6, fs - 2)
-
-            # Position — class color background (fully opaque)
+            # Position chip — class color background, white text
             if row["pos"] > 0:
                 cc = class_color(row.get("cls", ""), self._class_colors)
                 if cc:
                     c2 = QColor(cc); c2.setAlpha(255)
                     p.setBrush(c2); p.setPen(Qt.PenStyle.NoPen)
                     p.drawRoundedRect(4, y + 1, 22, rh - 2, 2, 2)
-            p.setFont(QFont("Monospace", fs, QFont.Weight.Bold))
-            p.setPen(QColor(255, 220, 80) if is_p else self.C_TEXT)
-            if row["pos"] > 0:
+                p.setFont(num_font(fs))
+                p.setPen(QColor(T.TEXT))
                 p.drawText(4, y, 22, rh, Qt.AlignmentFlag.AlignCenter, str(row["pos"]))
 
-            # Name — always full width, badge overlays on top
-            p.setFont(QFont("Monospace", fs, QFont.Weight.Bold))
-            p.setPen(self.C_TEXT)
-            p.drawText(28, y, ncw, rh, Qt.AlignmentFlag.AlignVCenter, name)
+            # Driver name
+            name_col = QColor(T.TEXT)
+            p.setFont(text_font(fs))
+            p.setPen(name_col)
+            p.drawText(28, y, ncw, rh, Qt.AlignmentFlag.AlignVCenter, name.upper())
 
             # Badge overlaid at right edge of name zone
-            if badge:
-                bx2 = 28 + ncw - bdg; by2 = y + 3
-                bg  = self.C_PIT_BG if badge == "PIT" else self.C_OUT_BG
-                fg  = self.C_PIT_FG if badge == "PIT" else self.C_OUT_FG
-                p.setBrush(bg); p.setPen(Qt.PenStyle.NoPen)
+            if badge and badge in badge_colors:
+                bg_c, fg_c = badge_colors[badge]
+                bx2, by2 = 28 + ncw - bdg, y + 3
+                p.setBrush(bg_c); p.setPen(Qt.PenStyle.NoPen)
                 p.drawRoundedRect(bx2, by2, bdg, rh - 6, 2, 2)
-                p.setFont(QFont("Monospace", fss, QFont.Weight.Bold)); p.setPen(fg)
+                p.setFont(num_font(fss)); p.setPen(fg_c)
                 p.drawText(bx2, by2, bdg, rh - 6, Qt.AlignmentFlag.AlignCenter, badge)
 
-            # Gap value — white, drawn right-aligned after name zone
+            # Gap
             if not is_p and row["pos"] > 0:
-                p.setPen(self.C_TEXT)
-                p.setFont(QFont("Monospace", fs, QFont.Weight.Bold))
+                p.setFont(num_font(fs))
+                p.setPen(QColor(T.TEXT))
                 p.drawText(28 + ncw, y, W - 28 - ncw - 4, rh,
                            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
                            _fmt_gap(gap, self._interval_decimals))
+
         p.end()

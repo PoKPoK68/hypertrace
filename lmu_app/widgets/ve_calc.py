@@ -3,13 +3,13 @@ from __future__ import annotations
 import math
 from collections import deque
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QFont, QPainter
+from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QSizePolicy
 from lmu_app.api.reader import DataReader, LMUSnapshot
+from lmu_app.utils.theme import T, label_font, num_font, draw_panel
 from lmu_app.widgets.base import BaseWidget
 from lmu_app.widgets.fuel_calc import (
     _BH, _LVL_H, _PAD, _HDR, _RH,
-    _C_LABEL, _C_VALUE, _C_GOOD, _C_SEP, _C_VE,
     _draw_bar, _draw_level, _laps_remaining, _fuel_col, _calc,
     _col_layout, _widget_w, _HDR_NAMES, _class_has_ve,
 )
@@ -49,7 +49,6 @@ class VECalcWidget(BaseWidget):
     ]
 
     def __init__(self, reader: DataReader, **kw):
-        # Display flags (match CONFIG_SCHEMA defaults)
         self._show_ve_bar     = True
         self._show_ve_level   = True
         self._show_fuel_bar   = True
@@ -71,8 +70,8 @@ class VECalcWidget(BaseWidget):
         self._fuel_at_lap_start = -1.0
         self._fuel_prev_tick    = -1.0
 
-        self._ve_history:  deque[float] = deque(maxlen=5)  # VE fraction / lap
-        self._last_lap_ratio = 0.0  # L per %VE, last lap only
+        self._ve_history:  deque[float] = deque(maxlen=5)
+        self._last_lap_ratio = 0.0
 
         self._last_lap_ve   = 0.0
         self._last_lap_fuel = 0.0
@@ -82,7 +81,6 @@ class VECalcWidget(BaseWidget):
         self._fuel_cap     = 100.0
         self._laps_remaining = 0.0
 
-        # Computed layout state (set by _refresh_layout)
         self._w          = _widget_w(4)
         self._bw         = self._w - 2 * _PAD
         self._layout_h   = 147
@@ -100,22 +98,31 @@ class VECalcWidget(BaseWidget):
     def setup_ui(self):
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
+    def _update(self) -> None:
+        if self._merge:
+            snap = self._reader.get()
+            if snap.game_running:
+                player_sc = next((x for x in snap.session.vehicles if x.is_player), None)
+                if player_sc and player_sc.vehicle_class:
+                    if not _class_has_ve(player_sc.vehicle_class):
+                        if self.isVisible():
+                            self.hide()
+                        return
+                elif not self.isVisible():
+                    return  # class unknown, stay hidden
+        super()._update()
+
     def start(self) -> None:
         super().start()
         if self._merge:
-            self.hide()  # on_data will show when VE is present
+            self.hide()
 
     def set_merge(self, enabled: bool) -> None:
         self._merge = enabled
 
     def _refresh_layout(self) -> None:
-        sv_bar = self._show_ve_bar
-        sv_lvl = self._show_ve_level
-        sf_bar = self._show_fuel_bar
-        sf_lvl = self._show_fuel_level
-
-        ve_h   = _BH if sv_bar else (_LVL_H if sv_lvl else 0)
-        fuel_h = _BH if sf_bar else (_LVL_H if sf_lvl else 0)
+        ve_h   = _BH if self._show_ve_bar   else (_LVL_H if self._show_ve_level   else 0)
+        fuel_h = _BH if self._show_fuel_bar else (_LVL_H if self._show_fuel_level else 0)
         inter  = 4 if ve_h > 0 and fuel_h > 0 else 0
         bars_h = ve_h + inter + fuel_h
 
@@ -177,11 +184,6 @@ class VECalcWidget(BaseWidget):
         self._current_fuel = v.fuel
         self._fuel_cap     = max(1.0, v.fuel_capacity)
 
-        if self._merge:
-            player_sc = next((x for x in s.vehicles if x.is_player), None)
-            if player_sc and player_sc.vehicle_class:
-                self.setVisible(_class_has_ve(player_sc.vehicle_class))
-
         if player:
             if self._fuel_prev_tick >= 0 and (v.fuel - self._fuel_prev_tick) > 2.0:
                 self._fuel_at_lap_start = v.fuel
@@ -222,22 +224,21 @@ class VECalcWidget(BaseWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.scale(self._scale, self._scale)
 
-        p.setBrush(QColor(10, 10, 10, self._bg_alpha()))
-        p.setPen(self._border_pen())
-        p.drawRoundedRect(0, 0, self._w, self._layout_h, 8, 8)
+        draw_panel(p, self._w, self._layout_h, self._opacity, self._bg_alpha())
 
         y = _PAD
-        fuel_ratio = self._current_fuel / self._fuel_cap
+        fuel_col = _fuel_col(self._current_fuel / self._fuel_cap)
 
         # ── VE bar / level ─────────────────────────────────────────────────
         if self._show_ve_bar:
-            _draw_bar(p, _PAD, y, self._bw, _BH, self._current_ve, _C_VE,
+            _draw_bar(p, _PAD, y, self._bw, _BH, self._current_ve,
+                      QColor(T.VE_LO), QColor(T.VE_HI),
                       "VE", f"{self._current_ve * 100:.1f} %",
                       show_val=self._show_ve_level)
             y += _BH
         elif self._show_ve_level:
             _draw_level(p, _PAD, y, self._bw, _LVL_H,
-                        "VE", f"{self._current_ve * 100:.1f} %", _C_VE)
+                        "VE", f"{self._current_ve * 100:.1f} %", QColor(T.VE_LO))
             y += _LVL_H
 
         if self._inter_h:
@@ -245,30 +246,30 @@ class VECalcWidget(BaseWidget):
 
         # ── Fuel bar / level ───────────────────────────────────────────────
         if self._show_fuel_bar:
-            _draw_bar(p, _PAD, y, self._bw, _BH, fuel_ratio, _fuel_col(fuel_ratio),
+            _draw_bar(p, _PAD, y, self._bw, _BH,
+                      self._current_fuel / self._fuel_cap,
+                      fuel_col[0], fuel_col[1],
                       "FUEL", f"{self._current_fuel:.1f} L",
                       show_val=self._show_fuel_level)
             y += _BH
         elif self._show_fuel_level:
             _draw_level(p, _PAD, y, self._bw, _LVL_H,
-                        "FUEL", f"{self._current_fuel:.1f} L", _fuel_col(fuel_ratio))
+                        "FUEL", f"{self._current_fuel:.1f} L", fuel_col[0])
             y += _LVL_H
 
-        has_below = self._has_table or self._ratio_h > 0
-        if not has_below:
+        if not (self._has_table or self._ratio_h > 0):
             p.end(); return
 
         # ── Separator ──────────────────────────────────────────────────────
         if self._sep_h:
             y += 4
-            p.setBrush(_C_SEP); p.setPen(Qt.PenStyle.NoPen)
-            p.drawRect(_PAD, y, self._bw, 1)
+            p.fillRect(_PAD, y, self._bw, 1, T.FAINT)
             y += 6
 
         if self._has_table:
             # ── Column headers ──────────────────────────────────────────────
-            p.setFont(QFont("Monospace", 6, QFont.Weight.Bold))
-            p.setPen(_C_LABEL)
+            p.setFont(label_font(8))
+            p.setPen(QColor(T.DIM))
             for k, (cx, cw) in self._col_pos.items():
                 if k != "label":
                     p.drawText(cx, y, cw, _HDR,
@@ -288,44 +289,45 @@ class VECalcWidget(BaseWidget):
             for lbl, ve_frac in rows:
                 ve_pct = ve_frac * 100.
                 laps_on, refuel_pct, finish_pct = _calc(ve_pct, cur_pct, rem, sfty)
-                p.setFont(QFont("Monospace", 7, QFont.Weight.Bold))
 
                 cx, cw = self._col_pos["label"]
-                p.setPen(_C_LABEL)
+                p.setFont(label_font(10)); p.setPen(QColor(T.DIM))
                 p.drawText(cx, y, cw, _RH, Qt.AlignmentFlag.AlignVCenter, lbl)
 
                 if "usage" in self._col_pos:
                     cx, cw = self._col_pos["usage"]
-                    p.setPen(_C_VALUE)
+                    p.setFont(num_font(12)); p.setPen(QColor(T.TEXT))
                     p.drawText(cx, y, cw, _RH,
                                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
                                _fmt_ve(ve_pct) if ve_pct > 0.001 else "---")
 
                 if "laps" in self._col_pos:
                     cx, cw = self._col_pos["laps"]
-                    p.setPen(_C_VALUE)
+                    p.setFont(num_font(12)); p.setPen(QColor(T.TEXT))
                     p.drawText(cx, y, cw, _RH,
                                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
                                f"{laps_on:.1f}" if laps_on is not None else "---")
 
                 if "refuel" in self._col_pos:
                     cx, cw = self._col_pos["refuel"]
+                    p.setFont(num_font(12))
                     if refuel_pct is None:
-                        p.setPen(_C_LABEL); ref_str = "---"
+                        p.setPen(QColor(T.DIM)); ref_str = "---"
                     elif refuel_pct < 0.05:
-                        p.setPen(_C_GOOD); ref_str = "OK"
+                        p.setPen(QColor(T.GOOD)); ref_str = "OK"
                     else:
-                        p.setPen(_C_VALUE); ref_str = _fmt_ref_ve(refuel_pct)
+                        p.setPen(QColor(T.TEXT)); ref_str = _fmt_ref_ve(refuel_pct)
                     p.drawText(cx, y, cw, _RH,
                                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
                                ref_str)
 
                 if "finish" in self._col_pos:
                     cx, cw = self._col_pos["finish"]
+                    p.setFont(num_font(12))
                     if finish_pct is None:
-                        p.setPen(_C_LABEL); fin_str = "---"
+                        p.setPen(QColor(T.DIM)); fin_str = "---"
                     else:
-                        p.setPen(_C_VALUE); fin_str = _fmt_ve(finish_pct)
+                        p.setPen(QColor(T.TEXT)); fin_str = _fmt_ve(finish_pct)
                     p.drawText(cx, y, cw, _RH,
                                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
                                fin_str)
@@ -337,10 +339,9 @@ class VECalcWidget(BaseWidget):
             y += 5
             ratio = self._last_lap_ratio
             ratio_str = f"{math.ceil(ratio * 100) / 100:.2f}" if ratio > 0 else "---"
-            p.setFont(QFont("Monospace", 7, QFont.Weight.Bold))
-            p.setPen(_C_LABEL)
+            p.setFont(label_font(10)); p.setPen(QColor(T.DIM))
             p.drawText(_PAD, y, self._bw // 2, _RH, Qt.AlignmentFlag.AlignVCenter, "FUEL RATIO")
-            p.setPen(_C_VALUE)
+            p.setFont(num_font(12)); p.setPen(QColor(T.TEXT))
             p.drawText(_PAD, y, self._bw, _RH,
                        Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight, ratio_str)
 

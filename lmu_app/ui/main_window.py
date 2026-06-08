@@ -1,10 +1,12 @@
-"""lmu_app/ui/main_window.py — Tabbed main control panel."""
+"""lmu_app/ui/main_window.py — Tabbed main control panel — Direction A "Broadcast"."""
 from __future__ import annotations
 
+import math
+from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QRect, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QPainter, QPen
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -19,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from lmu_app.utils.class_colors import CLASS_ENTRIES
+from lmu_app.utils.theme import T, label_font, panel_brush, border_pen
 
 if TYPE_CHECKING:
     from lmu_app.config import AppConfig
@@ -29,18 +32,22 @@ if TYPE_CHECKING:
 # ON / OFF toggle button
 # ---------------------------------------------------------------------------
 
-_SS_ON  = ("QPushButton { background:#1a5c1a; color:#88ff88; "
-           "border:1px solid #3a8a3a; border-radius:10px; "
-           "font-weight:bold; font-size:10px; }"
-           "QPushButton:hover { background:#1e6e1e; }")
-_SS_OFF = ("QPushButton { background:#5c1a1a; color:#ff8888; "
-           "border:1px solid #8a3a3a; border-radius:10px; "
-           "font-weight:bold; font-size:10px; }"
-           "QPushButton:hover { background:#6e1e1e; }")
+_SS_ON = (
+    f"QPushButton {{ background: #00A040; color: #FFFFFF; "
+    f"border: 1px solid #00A040; border-radius: 2px; "
+    f"font-weight: bold; font-size: 10px; font-family: '{T.F_TEXT}'; }}"
+    f"QPushButton:hover {{ background: #00B848; border-color: #00B848; }}"
+)
+_SS_OFF = (
+    f"QPushButton {{ background: #CC0000; color: #FFFFFF; "
+    f"border: 1px solid #CC0000; border-radius: 2px; "
+    f"font-weight: bold; font-size: 10px; font-family: '{T.F_TEXT}'; }}"
+    f"QPushButton:hover {{ background: #E00000; border-color: #E00000; }}"
+)
 
 
 class _OnOffBtn(QPushButton):
-    """Pill-shaped ON / OFF toggle button."""
+    """Pill-shaped ON / OFF toggle."""
 
     def __init__(self, enabled: bool, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -56,20 +63,74 @@ class _OnOffBtn(QPushButton):
 
 
 # ---------------------------------------------------------------------------
+# Gear cog icon button
+# ---------------------------------------------------------------------------
+
+class _CogBtn(QPushButton):
+    """Round button that draws a proper gear cog via QPainterPath."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setFixedSize(22, 22)
+        self.setFlat(True)
+        self.setStyleSheet(
+            "QPushButton { background: transparent; border: none; border-radius: 11px; }"
+            "QPushButton:hover { background: rgba(255,255,255,0.09); }"
+        )
+
+    def paintEvent(self, _) -> None:
+        super().paintEvent(_)
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        self._draw_cog(p, 11.0, 11.0, 13.0)
+        p.end()
+
+    @staticmethod
+    def _draw_cog(p: QPainter, cx: float, cy: float, size: float) -> None:
+        n       = 8
+        r_out   = size / 2
+        r_in    = size * 0.68 / 2
+        r_hole  = size * 0.30 / 2
+        step    = math.pi / n          # half tooth angular width
+        tooth_w = step * 0.55          # flat-top fraction
+
+        path = QPainterPath()
+        first = True
+        for i in range(n):
+            base = 2 * math.pi * i / n
+            for ang, r in (
+                (base - step + tooth_w, r_in),
+                (base - tooth_w,        r_out),
+                (base + tooth_w,        r_out),
+                (base + step - tooth_w, r_in),
+            ):
+                x, y = cx + r * math.cos(ang), cy + r * math.sin(ang)
+                if first:
+                    path.moveTo(x, y); first = False
+                else:
+                    path.lineTo(x, y)
+        path.closeSubpath()
+
+        hole = QPainterPath()
+        hole.addEllipse(cx - r_hole, cy - r_hole, r_hole * 2, r_hole * 2)
+        p.fillPath(path.subtracted(hole), QColor(T.DIM))
+
+
+# ---------------------------------------------------------------------------
 # Sliding lock / unlock toggle
 # ---------------------------------------------------------------------------
 
 class _LockToggle(QWidget):
     """Animated pill toggle: FREE (left) ↔ LOCK (right)."""
 
-    toggled = Signal(bool)   # True = locked
+    toggled = Signal(bool)
 
     _W, _H = 52, 28
 
     def __init__(self, locked: bool = False, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._locked = locked
-        self._t = 1.0 if locked else 0.0   # animation progress 0=free, 1=locked
+        self._t = 1.0 if locked else 0.0
         self._timer = QTimer(self)
         self._timer.setInterval(14)
         self._timer.timeout.connect(self._step)
@@ -103,64 +164,65 @@ class _LockToggle(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         W, H, t = self._W, self._H, self._t
-        pad = 3
-        knob_d = H - pad * 2
-        travel = W - pad * 2 - knob_d
+        pad = 3; knob_d = H - pad * 2; travel = W - pad * 2 - knob_d
 
-        # Track background: dark green (free) → dark gold (locked)
-        r = int(22 + 46 * t)
-        g = int(50 +  8 * t)
-        b = int(22 - 14 * t)
-        p.setBrush(QColor(r, g, b))
-        p.setPen(QPen(QColor(70, 65, 40), 1))
+        def lerp(a, b): return round(a + (b - a) * t)
+        track = QColor(lerp(38, 0xEC), lerp(38, 0xAA), lerp(38, 0x43), lerp(40, 255))
+        p.setBrush(track)
+        p.setPen(QPen(QColor(255, 255, 255, 30), 1))
         p.drawRoundedRect(0, 0, W, H, H // 2, H // 2)
 
-        # Sliding knob
         knob_x = pad + int(travel * t)
-        kr = int(195 + 25 * t)
-        kg = int(215 - 35 * t)
-        kb = int(175 - 80 * t)
-        p.setBrush(QColor(kr, kg, kb))
+        p.setBrush(QColor(0x1A, 0x14, 0x07) if t > 0.5 else QColor(0xF4, 0xF1, 0xEA))
         p.setPen(Qt.PenStyle.NoPen)
         p.drawEllipse(knob_x, pad, knob_d, knob_d)
-
-        # Padlock icon on the knob
-        self._draw_padlock(p, knob_x + knob_d // 2, pad + knob_d // 2, knob_d, t > 0.5)
         p.end()
-
-    def _draw_padlock(self, p: QPainter, cx: int, cy: int,
-                      size: int, locked: bool) -> None:
-        s = max(1, size // 5)
-        # Body
-        bw = s * 2 + 2
-        bh = s + s // 2 + 2
-        bx = cx - bw // 2
-        by = cy
-        p.setBrush(QColor(35, 28, 18))
-        p.setPen(Qt.PenStyle.NoPen)
-        p.drawRoundedRect(bx, by, bw, bh, 1, 1)
-        # Keyhole dot
-        kr = max(1, s // 2)
-        p.setBrush(QColor(190, 160, 60))
-        p.drawEllipse(cx - kr, by + bh // 2 - kr, kr * 2, kr * 2)
-        # Shackle arc
-        arc_r = s + 1
-        arc_rect = QRect(cx - arc_r, by - arc_r * 2 + 1, arc_r * 2, arc_r * 2)
-        p.setPen(QPen(QColor(35, 28, 18), max(1, s // 2 + 1),
-                      Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        if locked:
-            p.drawArc(arc_rect, 0, 180 * 16)
-        else:
-            p.drawArc(arc_rect, 40 * 16, 140 * 16)
 
 
 # ---------------------------------------------------------------------------
 # Main window
 # ---------------------------------------------------------------------------
 
+_check_svg = (Path(__file__).parent.parent / "assets" / "check.svg").as_posix()
+
+_WINDOW_SS = f"""
+QWidget {{
+    color: {T.TEXT};
+    font-family: '{T.F_TEXT}';
+    font-size: 12px;
+}}
+QTabWidget::pane {{ border: none; background: transparent; }}
+QTabBar::tab {{
+    background: transparent;
+    color: {T.DIM};
+    font-family: '{T.F_TEXT}';
+    font-size: 11px;
+    padding: 6px 14px;
+    border: none;
+    border-bottom: 2px solid transparent;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+}}
+QTabBar::tab:selected {{
+    color: {T.TEXT};
+    border-bottom: 2px solid {T.ACCENT};
+}}
+QTabBar::tab:hover {{ color: {T.TEXT}; }}
+QScrollBar:vertical {{ background: transparent; width: 6px; }}
+QScrollBar::handle:vertical {{ background: rgba(255,255,255,0.15); border-radius: 3px; }}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+QCheckBox {{ spacing: 6px; color: {T.DIM}; }}
+QCheckBox::indicator {{
+    width: 14px; height: 14px; border-radius: 3px;
+    border: 1px solid rgba(255,255,255,0.20);
+    background: rgba(255,255,255,0.05);
+}}
+QCheckBox::indicator:checked {{ background: {T.ACCENT}; border-color: {T.ACCENT}; image: url({_check_svg}); }}
+"""
+
+
 class MainWindow(QWidget):
-    """Tabbed control panel."""
+    """Tabbed control panel — Direction A Broadcast."""
 
     def __init__(
         self,
@@ -174,24 +236,38 @@ class MainWindow(QWidget):
         self.setWindowTitle("LMU App")
         self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
-        self.setFixedWidth(290)
+        self.setFixedWidth(295)
+        self.setStyleSheet(_WINDOW_SS)
 
         self._toggles: dict[str, _OnOffBtn] = {}
         self._lock_toggle: _LockToggle | None = None
+        self._lock_label: QLabel | None = None
         self._merge_btn: _OnOffBtn | None = None
 
         self._setup_ui()
         self._apply_lock_state()
         self._broadcast_class_colors()
 
+    def paintEvent(self, _) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w, h = self.width(), self.height()
+        p.setBrush(panel_brush(0, 0, h, 248))
+        p.setPen(border_pen(100))
+        p.drawRoundedRect(1, 1, w - 2, h - 2, 9, 9)
+        p.end()
+
     def _setup_ui(self) -> None:
         root = QVBoxLayout(self)
         root.setSpacing(6)
-        root.setContentsMargins(8, 8, 8, 8)
+        root.setContentsMargins(10, 10, 10, 10)
 
-        title = QLabel("LMU App")
+        # Title
+        title = QLabel("LMU APP")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet("font-size: 15px; font-weight: bold; color: #ffd700; padding: 2px 0;")
+        f = label_font(13)
+        title.setFont(f)
+        title.setStyleSheet(f"color: {T.ACCENT}; padding: 2px 0 4px 0;")
         root.addWidget(title)
 
         tabs = QTabWidget()
@@ -210,19 +286,20 @@ class MainWindow(QWidget):
         for key, widget in self._entries:
             vl.addWidget(self._make_row(key, widget))
 
-        # Merge button — only shown when both calc widgets are registered
         fc = self._find_widget("fuel_calc")
         vc = self._find_widget("ve_calc")
         if fc and vc:
             vl.addWidget(_sep())
             merge_row = QWidget()
-            merge_hl  = QHBoxLayout(merge_row)
-            merge_hl.setContentsMargins(0, 1, 0, 1)
-            merge_hl.setSpacing(6)
-            merge_hl.addWidget(QLabel("Merge Fuel & VE calc"), 1)
+            hl = QHBoxLayout(merge_row)
+            hl.setContentsMargins(0, 1, 0, 1)
+            hl.setSpacing(6)
+            lbl = QLabel("Merge Fuel & VE calc")
+            lbl.setStyleSheet(f"color: {T.DIM}; font-size: 11px;")
+            hl.addWidget(lbl, 1)
             self._merge_btn = _OnOffBtn(self._config.merge_calc)
             self._merge_btn.toggled.connect(self._on_merge_toggled)
-            merge_hl.addWidget(self._merge_btn)
+            hl.addWidget(self._merge_btn)
             vl.addWidget(merge_row)
 
         vl.addWidget(_sep())
@@ -230,13 +307,34 @@ class MainWindow(QWidget):
         self._garage_cb = QCheckBox("Hide overlays in garage")
         self._garage_cb.setChecked(self._config.hide_in_garage)
         self._garage_cb.toggled.connect(self._toggle_garage_hide)
+        _svg = (Path(__file__).parent.parent / "assets" / "check.svg").as_posix()
+        self._garage_cb.setStyleSheet(f"""
+QCheckBox {{ color: {T.TEXT}; font-family: '{T.F_TEXT}'; font-size: 12px; spacing: 9px; }}
+QCheckBox::indicator {{
+    width: 15px; height: 15px; border-radius: 3px;
+    border: 1px solid rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.03);
+}}
+QCheckBox::indicator:checked {{
+    background: {T.ACCENT}; border-color: {T.ACCENT};
+    image: url({_svg});
+}}
+""")
         vl.addWidget(self._garage_cb)
 
         vl.addWidget(_sep())
 
+        lock_row = QWidget()
+        lock_hl  = QHBoxLayout(lock_row)
+        lock_hl.setContentsMargins(0, 0, 0, 0)
+        lock_hl.setSpacing(8)
         self._lock_toggle = _LockToggle(self._config.locked)
         self._lock_toggle.toggled.connect(self._on_lock_toggled)
-        vl.addWidget(self._lock_toggle, alignment=Qt.AlignmentFlag.AlignLeft)
+        lock_hl.addWidget(self._lock_toggle)
+        self._lock_label = QLabel(self._lock_text(self._config.locked))
+        self._lock_label.setStyleSheet(f"color: {T.DIM}; font-size: 11px;")
+        lock_hl.addWidget(self._lock_label, 1)
+        vl.addWidget(lock_row)
 
         vl.addStretch()
         return w
@@ -244,18 +342,18 @@ class MainWindow(QWidget):
     def _make_row(self, key: str, widget: BaseWidget) -> QWidget:
         row = QWidget()
         hl  = QHBoxLayout(row)
-        hl.setContentsMargins(0, 1, 0, 1)
+        hl.setContentsMargins(0, 2, 0, 2)
         hl.setSpacing(6)
 
         lbl = QLabel(widget.WIDGET_NAME)
+        lbl.setStyleSheet(f"color: {T.TEXT}; font-size: 12px;")
         hl.addWidget(lbl, 1)
 
         if widget.CONFIG_SCHEMA:
-            cfg_btn = QPushButton("⚙")
-            cfg_btn.setFixedSize(22, 22)
-            cfg_btn.setToolTip(f"Configure {widget.WIDGET_NAME}")
-            cfg_btn.clicked.connect(lambda _, k=key, w=widget: self._open_config(k, w))
-            hl.addWidget(cfg_btn)
+            cog = _CogBtn()
+            cog.setToolTip(f"Configure {widget.WIDGET_NAME}")
+            cog.clicked.connect(lambda _, k=key, w=widget: self._open_config(k, w))
+            hl.addWidget(cog)
 
         btn = _OnOffBtn(self._config.widget_enabled(key))
         btn.toggled.connect(lambda checked, k=key, w=widget: self._on_toggle(k, w, checked))
@@ -273,7 +371,7 @@ class MainWindow(QWidget):
         vl.setContentsMargins(6, 8, 6, 8)
 
         info = QLabel("Background color per car class.\nApplied automatically from class name.")
-        info.setStyleSheet("color: #888; font-size: 11px;")
+        info.setStyleSheet(f"color: {T.DIM}; font-size: 11px;")
         info.setWordWrap(True)
         vl.addWidget(info)
 
@@ -285,13 +383,11 @@ class MainWindow(QWidget):
             hl  = QHBoxLayout(row)
             hl.setContentsMargins(0, 2, 0, 2)
             hl.setSpacing(8)
-
             lbl = QLabel(entry["label"])
             lbl.setMinimumWidth(120)
+            lbl.setStyleSheet(f"color: {T.TEXT};")
             btn = _ClassColorBtn(saved.get(entry["key"], entry["default"]))
-            btn.color_changed.connect(
-                lambda k=entry["key"]: self._on_class_color_change(k)
-            )
+            btn.color_changed.connect(lambda k=entry["key"]: self._on_class_color_change(k))
             self._class_btns[entry["key"]] = btn
             hl.addWidget(lbl, 1)
             hl.addWidget(btn)
@@ -300,6 +396,11 @@ class MainWindow(QWidget):
         vl.addWidget(_sep())
 
         reset_btn = QPushButton("Reset to defaults")
+        reset_btn.setStyleSheet(
+            f"QPushButton {{ color: {T.DIM}; background: rgba(255,255,255,0.06); "
+            f"border: 1px solid rgba(255,255,255,0.12); border-radius: 4px; padding: 4px 10px; }}"
+            f"QPushButton:hover {{ background: rgba(255,255,255,0.12); }}"
+        )
         reset_btn.clicked.connect(self._reset_class_colors)
         vl.addWidget(reset_btn)
         vl.addStretch()
@@ -320,9 +421,15 @@ class MainWindow(QWidget):
         from lmu_app.ui.widget_config_dialog import WidgetConfigDialog
         WidgetConfigDialog(self._config, key, widget, parent=self).exec()
 
+    @staticmethod
+    def _lock_text(locked: bool) -> str:
+        return "LOCK — overlays fixed" if locked else "FREE — overlays draggable"
+
     def _on_lock_toggled(self, locked: bool) -> None:
         self._config.locked = locked
         self._config.save()
+        if self._lock_label is not None:
+            self._lock_label.setText(self._lock_text(locked))
         for _, widget in self._entries:
             widget.set_locked(locked)
 
@@ -393,7 +500,7 @@ class _ClassColorBtn(QPushButton):
         lum = (self._color.red()*299 + self._color.green()*587 + self._color.blue()*114) // 1000
         txt = "#000" if lum > 128 else "#fff"
         self.setStyleSheet(
-            f"QPushButton {{ background:{h}; color:{txt}; border:1px solid #666; "
+            f"QPushButton {{ background:{h}; color:{txt}; border:1px solid rgba(255,255,255,0.2); "
             f"padding:2px 8px; border-radius:3px; }}"
         )
         self.setText(h.upper())
@@ -419,4 +526,5 @@ def _sep() -> QFrame:
     line = QFrame()
     line.setFrameShape(QFrame.Shape.HLine)
     line.setFrameShadow(QFrame.Shadow.Plain)
+    line.setStyleSheet("color: rgba(255,255,255,0.08);")
     return line

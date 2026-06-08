@@ -1,0 +1,477 @@
+/* ============================================================================
+   LMU App — overlay design system
+   One markup, four skins. A `.dir-{broadcast|telemetry|apex|graphite}` class on
+   the stage sets the tokens; every overlay inherits them. Everything here maps
+   cleanly to QPainter (rounded rects, linear gradients, strokes, text, clips).
+   ============================================================================ */
+
+/* ---- semantic palette (shared) ------------------------------------------- */
+:root {
+  --sem-good:  #46c86e;
+  --sem-warn:  #e0a52a;
+  --sem-crit:  #e0433d;
+  --sem-cold:  #4e90ff;
+  --sem-purple:#b664ff;
+  --in-t: #38d06a;  /* throttle */
+  --in-b: #e0433d;  /* brake    */
+  --in-c: #4a8ce0;  /* clutch   */
+}
+
+/* ---- stage: dark backdrop so panel translucency reads correctly ---------- */
+.ov-stage {
+  width: 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  background:
+    radial-gradient(120% 90% at 30% 20%, #23262c 0%, #16181c 55%, #0e0f12 100%);
+  position: relative; overflow: hidden;
+}
+.ov-stage::after {            /* faint motion streaks — pure CSS asphalt feel */
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(98deg, rgba(255,255,255,.022) 0 2px, transparent 2px 26px);
+  opacity: .5;
+}
+.ov-stage--light { background: #2c2f35; }
+
+/* ============================================================================
+   TOKENS PER DIRECTION
+   ============================================================================ */
+.dir-broadcast {
+  --bg: rgba(13,14,16,.90);
+  --bg-grad: linear-gradient(180deg, rgba(28,30,34,.92), rgba(13,14,16,.92));
+  --border: rgba(255,255,255,.10);
+  --radius: 7px;
+  --accent: #ecaa43; --accent-ink:#1a1407;
+  --text: #f4f1ea; --dim: #908d86; --faint: rgba(255,255,255,.06);
+  --f-disp: 'JetBrains Mono', monospace;
+  --f-num:  'Saira Semi Condensed', sans-serif;
+  --track: rgba(255,255,255,.10);
+  --num-feat: "tnum" 1, "lnum" 1;
+  --label-ls: .14em; --label-tt: uppercase;
+}
+.dir-telemetry {
+  --bg: rgba(9,12,15,.93);
+  --bg-grad: linear-gradient(180deg, rgba(14,20,24,.93), rgba(8,11,14,.94));
+  --border: rgba(74,184,214,.22);
+  --radius: 3px;
+  --accent: #36c4e1; --accent-ink:#04161b;
+  --text: #dce8ec; --dim: #6f8a95; --faint: rgba(74,184,214,.10);
+  --f-disp: 'JetBrains Mono', monospace;
+  --f-num:  'JetBrains Mono', monospace;
+  --track: rgba(120,160,175,.14);
+  --num-feat: normal;
+  --label-ls: .12em; --label-tt: uppercase;
+}
+.dir-apex {
+  --bg: rgba(10,10,12,.90);
+  --bg-grad: linear-gradient(180deg, rgba(18,19,22,.92), rgba(9,9,11,.93));
+  --border: rgba(255,255,255,.07);
+  --radius: 0px;
+  --accent: #b9f23f; --accent-ink:#13200a;
+  --accent2: #ff3d7f;
+  --text: #ffffff; --dim: #828f7c; --faint: rgba(255,255,255,.05);
+  --f-disp: 'Chakra Petch', sans-serif;
+  --f-num:  'Chakra Petch', sans-serif;
+  --track: rgba(255,255,255,.08);
+  --num-feat: "tnum" 1;
+  --label-ls: .16em; --label-tt: uppercase;
+}
+.dir-graphite {
+  --bg: rgba(17,18,20,.74);
+  --bg-grad: linear-gradient(180deg, rgba(22,23,26,.74), rgba(15,16,18,.76));
+  --border: rgba(255,255,255,.06);
+  --radius: 6px;
+  --accent: #cfd3d8; --accent-ink:#14151700;
+  --text: #edeef0; --dim: #767b81; --faint: rgba(255,255,255,.04);
+  --f-disp: 'Saira Semi Condensed', sans-serif;
+  --f-num:  'Saira Semi Condensed', sans-serif;
+  --track: rgba(255,255,255,.08);
+  --num-feat: "tnum" 1;
+  --label-ls: .14em; --label-tt: uppercase;
+}
+
+/* ============================================================================
+   BASE PANEL
+   ============================================================================ */
+.ov, .ov * { box-sizing: border-box; }
+.ov {
+  position: relative;
+  color: var(--text);
+  font-family: var(--f-disp);
+  background: var(--bg-grad);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  -webkit-font-smoothing: antialiased;
+}
+.ov b { font-weight: 700; }
+.ov .ov-num, .ov [class*="c-"], .ov .ov-fbar__val, .ov .ov-tyre__temp,
+.ov .ov-tyre__wear, .ov .ov-ibar__val, .ov .ov-inputs__deg, .ov .ov-speed__spd b {
+  font-family: var(--f-num);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: var(--num-feat);
+}
+
+/* Apex chamfered corners + accent edge */
+.dir-apex .ov {
+  clip-path: polygon(11px 0, 100% 0, 100% calc(100% - 11px), calc(100% - 11px) 100%, 0 100%, 0 11px);
+}
+.dir-apex .ov::before {
+  content: ""; position: absolute; left: 0; top: 11px; bottom: 0; width: 3px;
+  background: var(--accent); box-shadow: 0 0 10px -1px var(--accent);
+}
+/* Broadcast top accent hairline */
+.dir-broadcast .ov::before {
+  content: ""; position: absolute; left: 9px; right: 9px; top: 0; height: 2px;
+  background: linear-gradient(90deg, var(--accent), transparent 80%);
+  border-radius: 2px;
+}
+/* Telemetry corner registration ticks */
+.dir-telemetry .ov::before,
+.dir-telemetry .ov::after {
+  content: ""; position: absolute; width: 6px; height: 6px; pointer-events: none;
+  border-color: var(--accent); border-style: solid; opacity: .55;
+}
+.dir-telemetry .ov::before { top: 3px; left: 3px; border-width: 1px 0 0 1px; }
+.dir-telemetry .ov::after  { bottom: 3px; right: 3px; border-width: 0 1px 1px 0; }
+
+/* ============================================================================
+   SPEED & GEAR
+   ============================================================================ */
+.ov-speed { width: 232px; padding: 10px 12px 11px; }
+.ov-speed__row { display: flex; align-items: flex-end; justify-content: space-between; margin-top: 9px; }
+.ov-speed__spd { display: flex; align-items: baseline; gap: 6px; line-height: .8; }
+.ov-speed__spd b { font-size: 52px; letter-spacing: -.02em; }
+.ov-speed__spd .ov-unit {
+  font-family: var(--f-disp); font-size: 11px; font-weight: 600;
+  color: var(--dim); letter-spacing: var(--label-ls); text-transform: var(--label-tt);
+}
+.ov-speed__gear {
+  font-family: var(--f-num); font-weight: 700; font-size: 50px; line-height: .8;
+  color: var(--accent); min-width: 44px; text-align: right; letter-spacing: -.02em;
+}
+.dir-graphite .ov-speed__gear { color: var(--text); }
+
+/* segmented RPM / shift bar */
+.ov-rpm { display: flex; gap: 2px; height: 9px; }
+.ov-rpm__seg {
+  flex: 1; border-radius: 1px; background: var(--track);
+  transition: none;
+}
+.ov-rpm__seg.on.z-lo  { background: var(--sem-good); }
+.ov-rpm__seg.on.z-mid { background: var(--sem-warn); }
+.ov-rpm__seg.on.z-hi  { background: var(--sem-crit); }
+.dir-broadcast .ov-rpm { gap: 1px; height: 7px; }
+.dir-broadcast .ov-rpm__seg { border-radius: 0; }
+.dir-broadcast .ov-rpm__seg:first-child { border-radius: 3px 0 0 3px; }
+.dir-broadcast .ov-rpm__seg:last-child  { border-radius: 0 3px 3px 0; }
+.dir-apex .ov-rpm__seg { border-radius: 0; transform: skewX(-18deg); }
+.dir-apex .ov-rpm { gap: 3px; }
+.dir-graphite .ov-rpm { height: 5px; gap: 2px; }
+.dir-graphite .ov-rpm__seg.on.z-lo { background: var(--text); }
+.dir-telemetry .ov-rpm__seg { border-radius: 0; }
+
+/* ============================================================================
+   INPUTS
+   ============================================================================ */
+.ov-inputs { width: 212px; padding: 12px; display: flex; gap: 14px; align-items: center; }
+.ov-inputs__bars { display: flex; gap: 7px; }
+.ov-ibar { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 26px; }
+.ov-ibar__val { font-size: 11px; font-weight: 700; color: var(--dim); }
+.ov-ibar.k-t .ov-ibar__val { color: var(--in-t); }
+.ov-ibar.k-b .ov-ibar__val { color: var(--in-b); }
+.ov-ibar.k-c .ov-ibar__val { color: var(--in-c); }
+.ov-ibar__track {
+  position: relative; width: 18px; height: 86px; border-radius: 4px;
+  background: var(--track); overflow: hidden;
+}
+.ov-ibar__track i {
+  position: absolute; left: 0; right: 0; bottom: 0; height: calc(var(--p) * 100%);
+  border-radius: 4px;
+}
+.ov-ibar.k-t i { background: linear-gradient(0deg, var(--in-t), color-mix(in srgb, var(--in-t) 60%, #fff)); }
+.ov-ibar.k-b i { background: linear-gradient(0deg, var(--in-b), color-mix(in srgb, var(--in-b) 60%, #fff)); }
+.ov-ibar.k-c i { background: linear-gradient(0deg, var(--in-c), color-mix(in srgb, var(--in-c) 60%, #fff)); }
+.ov-ibar__lbl {
+  font-family: var(--f-disp); font-size: 10px; font-weight: 700; color: var(--dim);
+  letter-spacing: .05em;
+}
+/* steering wheel */
+.ov-inputs__wheel { display: flex; flex-direction: column; align-items: center; gap: 5px; flex: 1; }
+.ov-wheel { width: 64px; height: 64px; transform: rotate(var(--deg)); }
+.ov-wheel__rim   { fill: none; stroke: #c8c8c8; stroke-width: 6; }
+.ov-wheel__spoke { stroke: #9a9a9a; stroke-width: 6; stroke-linecap: round; }
+.ov-wheel__hub   { fill: #b0b0b0; }
+.dir-broadcast .ov-wheel__rim { stroke: #d8d2c4; }
+.dir-telemetry .ov-wheel__rim { stroke: var(--accent); }
+.dir-telemetry .ov-wheel__spoke { stroke: color-mix(in srgb, var(--accent) 60%, #6f8a95); }
+.dir-telemetry .ov-wheel__hub { fill: var(--accent); }
+.dir-apex .ov-wheel__rim { stroke: var(--accent); }
+.dir-apex .ov-wheel__hub { fill: var(--accent); }
+.dir-graphite .ov-wheel__rim { stroke: #9aa0a6; stroke-width: 5; }
+.ov-inputs__deg { font-size: 12px; font-weight: 700; color: var(--text); }
+
+/* segmented LED treatment for telemetry vertical/horizontal fills */
+.dir-telemetry .ov-ibar__track i,
+.dir-telemetry .ov-fbar__track i,
+.dir-telemetry .ov-tyre__bar i {
+  -webkit-mask-image: repeating-linear-gradient(0deg, #000 0 5px, transparent 5px 7px);
+          mask-image: repeating-linear-gradient(0deg, #000 0 5px, transparent 5px 7px);
+}
+.dir-telemetry .ov-fbar__track i {
+  -webkit-mask-image: repeating-linear-gradient(90deg, #000 0 7px, transparent 7px 9px);
+          mask-image: repeating-linear-gradient(90deg, #000 0 7px, transparent 7px 9px);
+}
+
+/* ============================================================================
+   FUEL & VIRTUAL ENERGY
+   ============================================================================ */
+.ov-fuel { width: 268px; padding: 11px 12px; display: flex; flex-direction: column; gap: 8px; }
+.ov-fbar { position: relative; height: 26px; border-radius: 5px; overflow: hidden; background: var(--track); }
+.dir-apex .ov-fbar, .dir-telemetry .ov-fbar { border-radius: 0; }
+.ov-fbar__track { position: absolute; inset: 0; }
+.ov-fbar__track i {
+  position: absolute; left: 0; top: 0; bottom: 0; width: calc(var(--p) * 100%);
+  border-radius: inherit;
+}
+.ov-fbar.k-fuel.lvl-ok   i { background: linear-gradient(90deg, #1e64d2, #4a90e8); }
+.ov-fbar.k-fuel.lvl-warn i { background: linear-gradient(90deg, #d29600, #e8b53a); }
+.ov-fbar.k-fuel.lvl-crit i { background: linear-gradient(90deg, #d22828, #e85a5a); }
+.ov-fbar.k-ve i { background: linear-gradient(90deg, #1c9a4a, #3fd06a); }
+.ov-fbar__lbl {
+  position: absolute; left: 9px; top: 0; height: 100%; display: flex; align-items: center;
+  font-family: var(--f-disp); font-size: 10px; font-weight: 700; color: #fff;
+  letter-spacing: var(--label-ls); text-transform: var(--label-tt);
+  text-shadow: 0 1px 2px rgba(0,0,0,.5);
+}
+.ov-fbar__val {
+  position: absolute; right: 9px; top: 0; height: 100%; display: flex; align-items: center;
+  font-size: 14px; font-weight: 700; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.5);
+}
+.ov-fbar__val small { font-size: 9px; color: rgba(255,255,255,.75); margin-left: 2px; font-weight: 600; }
+
+/* ============================================================================
+   TYRES
+   ============================================================================ */
+.ov-tyres { padding: 8px; width: 168px; }
+.ov-tyres__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.ov-tyre {
+  position: relative; height: 88px; border-radius: 4px; overflow: hidden;
+  background: var(--track);
+}
+.dir-apex .ov-tyre, .dir-telemetry .ov-tyre { border-radius: 0; }
+.ov-tyre__bar { position: absolute; inset: 0; }
+.ov-tyre__bar i {
+  position: absolute; left: 0; right: 0; bottom: 0; height: calc(var(--p) * 100%);
+  border-radius: inherit; opacity: .92;
+}
+.ov-tyre__temp, .ov-tyre__wear {
+  position: absolute; left: 0; right: 0; text-align: center; font-size: 12px; font-weight: 700;
+  color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.65); z-index: 2;
+}
+.ov-tyre__temp { top: 4px; }
+.ov-tyre__wear { bottom: 4px; font-size: 11px; }
+.ov-tyre__corner {
+  position: absolute; top: 3px; left: 5px; z-index: 2;
+  font-family: var(--f-disp); font-size: 8px; font-weight: 700; letter-spacing: .08em;
+  color: rgba(255,255,255,.55);
+}
+.dir-graphite .ov-tyre { background: rgba(255,255,255,.05); }
+.dir-graphite .ov-tyre__bar i { opacity: .8; }
+
+/* ============================================================================
+   STANDINGS
+   ============================================================================ */
+.ov-standings {
+  width: 446px; padding: 5px 6px 7px;
+  --cols: 22px minmax(120px, 1fr) 50px 46px 64px 64px;
+}
+.ov-strow {
+  display: grid; grid-template-columns: var(--cols); align-items: center;
+  height: 23px; padding: 0 4px; column-gap: 4px;
+}
+.ov-strow--head {
+  height: 19px; margin-bottom: 2px;
+}
+.ov-strow--head span {
+  font-family: var(--f-disp); font-size: 9px; font-weight: 700; color: var(--dim);
+  letter-spacing: var(--label-ls); text-transform: var(--label-tt);
+}
+.ov-strow--head .c-gap, .ov-strow--head .c-int,
+.ov-strow--head .c-best, .ov-strow--head .c-last { text-align: right; }
+.dir-telemetry .ov-strow--head { border-bottom: 1px solid var(--faint); }
+
+.ov-strow .c-pos {
+  font-size: 13px; font-weight: 700; color: var(--dim); text-align: left;
+}
+.ov-strow .c-pos.p1 { color: #ffd24a; }
+.ov-strow .c-pos.p2 { color: #cfd3d8; }
+.ov-strow .c-pos.p3 { color: #d98a44; }
+.ov-strow .c-name {
+  display: flex; align-items: center; gap: 6px; min-width: 0;
+}
+.ov-strow .c-name b {
+  font-family: var(--f-disp); font-size: 13px; font-weight: 600; color: var(--text);
+  letter-spacing: .01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.dir-telemetry .ov-strow .c-name b { font-weight: 500; font-size: 12px; }
+.ov-strow .c-gap, .ov-strow .c-int, .ov-strow .c-best, .ov-strow .c-last {
+  font-size: 12px; font-weight: 600; text-align: right; color: var(--text);
+}
+.ov-strow .c-gap, .ov-strow .c-int { color: var(--dim); }
+.ov-strow .c-best { color: var(--text); }
+.ov-strow .c-last { color: var(--dim); }
+.ov-strow .c-best.v-purple { color: var(--sem-purple); font-weight: 700; }
+.ov-strow .c-best.v-green  { color: var(--sem-good); font-weight: 700; }
+
+.ov-strow.is-player { background: color-mix(in srgb, var(--accent) 16%, transparent); border-radius: 3px; }
+.dir-apex .ov-strow.is-player { box-shadow: inset 2px 0 0 var(--accent); }
+.dir-graphite .ov-strow.is-player { background: rgba(255,255,255,.07); }
+
+.ov-stsep { height: 1px; background: var(--faint); margin: 3px 4px; }
+.ov-clshdr { display: flex; align-items: center; gap: 7px; padding: 4px 4px 2px; }
+.ov-clschip {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 26px; height: 15px; padding: 0 5px; border-radius: 2px;
+  background: var(--cc); color: #fff; font-family: var(--f-disp);
+  font-size: 9px; font-weight: 700; letter-spacing: .06em;
+}
+.ov-clsname {
+  font-family: var(--f-disp); font-size: 9px; font-weight: 700; color: var(--dim);
+  letter-spacing: var(--label-ls); text-transform: var(--label-tt);
+}
+
+/* badges */
+.ov-badge {
+  font-family: var(--f-num); font-size: 8px; font-weight: 700; line-height: 1;
+  padding: 2px 3px; border-radius: 2px; letter-spacing: .04em; flex: none;
+}
+.ov-badge.b-pit { background: #3270c8; color: #fff; }
+.ov-badge.b-out { background: #be8200; color: #14140a; }
+.ov-badge.b-gar { background: #4a4a4a; color: #c8c8c8; }
+
+/* ============================================================================
+   RELATIVE
+   ============================================================================ */
+.ov-relative {
+  width: 296px; padding: 5px 6px;
+  --cols: 26px minmax(120px,1fr) 56px;
+}
+.ov-relrow {
+  display: grid; grid-template-columns: var(--cols); align-items: center;
+  height: 24px; padding: 0 4px; column-gap: 7px;
+}
+.ov-relrow .c-chip {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 17px; border-radius: 2px; background: var(--cc); color: #fff;
+  font-family: var(--f-num); font-size: 11px; font-weight: 700;
+}
+.ov-relrow .c-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.ov-relrow .c-name b {
+  font-family: var(--f-disp); font-size: 13px; font-weight: 600; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.dir-telemetry .ov-relrow .c-name b { font-weight: 500; font-size: 12px; }
+.ov-relrow .c-gap { text-align: right; font-size: 13px; font-weight: 700; }
+.ov-relrow .c-gap.g-ahead  { color: #5ab6ff; }
+.ov-relrow .c-gap.g-behind { color: #ff8a55; }
+.ov-relrow .c-gap.g-self   { color: var(--accent); }
+.dir-graphite .ov-relrow .c-gap.g-self { color: var(--text); }
+.ov-relrow.is-player { background: color-mix(in srgb, var(--accent) 16%, transparent); border-radius: 3px; }
+.dir-apex .ov-relrow.is-player { box-shadow: inset 2px 0 0 var(--accent); }
+.dir-graphite .ov-relrow.is-player { background: rgba(255,255,255,.07); }
+.ov-relrow.is-player .c-name b { color: var(--accent); }
+.dir-graphite .ov-relrow.is-player .c-name b { color: var(--text); }
+
+/* ============================================================================
+   FUEL / VE CALCULATORS (fuel_calc.py / ve_calc.py)
+   ============================================================================ */
+.ov-calc { width: 244px; padding: 8px; }
+.ov-cbar {
+  position: relative; height: 22px; border-radius: 5px; overflow: hidden;
+  background: var(--track); margin-bottom: 4px;
+}
+.dir-apex .ov-cbar, .dir-telemetry .ov-cbar { border-radius: 0; }
+.ov-cbar:last-of-type { margin-bottom: 0; }
+.ov-cbar i { position: absolute; left: 0; top: 0; bottom: 0; width: calc(var(--p) * 100%); border-radius: inherit; }
+.ov-cbar.k-fuel i { background: linear-gradient(90deg, #1e64d2, #4a90e8); }
+.ov-cbar.k-ve i   { background: linear-gradient(90deg, #1c9a4a, #3fd06a); }
+.dir-telemetry .ov-cbar i { -webkit-mask-image: repeating-linear-gradient(90deg, #000 0 7px, transparent 7px 9px); mask-image: repeating-linear-gradient(90deg, #000 0 7px, transparent 7px 9px); }
+.ov-cbar__lbl {
+  position: absolute; left: 8px; top: 0; height: 100%; display: flex; align-items: center;
+  font-family: var(--f-disp); font-size: 9px; font-weight: 700; color: #fff;
+  letter-spacing: var(--label-ls); text-transform: var(--label-tt); text-shadow: 0 1px 2px rgba(0,0,0,.5);
+}
+.ov-cbar__val {
+  position: absolute; right: 8px; top: 0; height: 100%; display: flex; align-items: center;
+  font-family: var(--f-num); font-variant-numeric: tabular-nums; font-size: 13px; font-weight: 700;
+  color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.5);
+}
+.ov-cbar__val small { font-size: 9px; color: rgba(255,255,255,.75); margin-left: 2px; }
+.ov-calc__sep { height: 1px; background: var(--faint); margin: 7px 1px; }
+.ov-calc__table { display: grid; grid-template-columns: 40px 1fr 1fr 1fr 1fr; row-gap: 3px; column-gap: 4px; align-items: center; }
+.ov-calc__table .h {
+  font-family: var(--f-disp); font-size: 8px; font-weight: 700; color: var(--dim);
+  letter-spacing: var(--label-ls); text-transform: uppercase; text-align: right; padding-bottom: 2px;
+}
+.ov-calc__table .rl, .ov-calc__ratio .rl {
+  font-family: var(--f-disp); font-size: 10px; font-weight: 700; color: var(--dim);
+  text-transform: uppercase; letter-spacing: .06em;
+}
+.ov-calc__table .v, .ov-calc__ratio .v {
+  font-family: var(--f-num); font-variant-numeric: tabular-nums; font-size: 12px; font-weight: 600;
+  color: var(--text); text-align: right;
+}
+.ov-calc__table .v.ok { color: var(--sem-good); }
+.ov-calc__ratio { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; }
+.ov-calc__ratio .v { font-weight: 700; }
+
+/* ============================================================================
+   CONTROL WINDOW (main panel)
+   ============================================================================ */
+.cw {
+  width: 290px; color: var(--text); font-family: var(--f-disp);
+  background: var(--bg-grad); border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 2px); overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+.cw-titlebar {
+  display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px;
+  background: rgba(0,0,0,.28); border-bottom: 1px solid var(--faint);
+}
+.cw-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.cw-title { font-size: 13px; font-weight: 700; letter-spacing: .14em; color: var(--text); }
+.cw-winbtns { margin-left: auto; display: flex; gap: 6px; }
+.cw-winbtns i { width: 11px; height: 2px; background: var(--dim); border-radius: 2px; align-self: center; }
+.cw-winbtns i.x { width: 8px; height: 8px; background: none; position: relative; }
+.cw-tabs { display: flex; gap: 2px; padding: 7px 8px 0; }
+.cw-tab {
+  font-family: var(--f-disp); font-size: 11px; font-weight: 600; letter-spacing: .03em;
+  color: var(--dim); background: none; border: none; padding: 5px 11px 7px; cursor: default;
+  border-bottom: 2px solid transparent;
+}
+.cw-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+.cw-body { padding: 8px 10px 11px; }
+.cw-row { display: flex; align-items: center; gap: 8px; height: 28px; }
+.cw-name { flex: 1; font-size: 13px; font-weight: 500; color: var(--text); }
+.cw-gear {
+  width: 22px; height: 22px; border-radius: 4px; border: 1px solid var(--faint);
+  background: rgba(255,255,255,.03); color: var(--dim); display: grid; place-items: center; cursor: default;
+}
+.cw-toggle {
+  width: 46px; height: 22px; border-radius: 11px; border: 1px solid; cursor: default;
+  font-family: var(--f-disp); font-size: 10px; font-weight: 700; letter-spacing: .05em;
+}
+.dir-apex .cw-toggle { border-radius: 2px; }
+.cw-toggle.on  { background: color-mix(in srgb, var(--sem-good) 22%, transparent); border-color: color-mix(in srgb, var(--sem-good) 55%, transparent); color: #8fe6a0; }
+.cw-toggle.off { background: color-mix(in srgb, var(--sem-crit) 18%, transparent); border-color: color-mix(in srgb, var(--sem-crit) 50%, transparent); color: #e88c8c; }
+.cw-divider { height: 1px; background: var(--faint); margin: 8px 0; }
+.cw-check { display: flex; align-items: center; gap: 9px; font-size: 12px; color: var(--text); padding: 2px 0; }
+.cw-box { width: 15px; height: 15px; border-radius: 3px; border: 1px solid var(--border); background: rgba(255,255,255,.03); position: relative; }
+.cw-box.checked { background: var(--accent); border-color: var(--accent); }
+.cw-box.checked::after { content: ""; position: absolute; left: 4px; top: 1px; width: 4px; height: 8px; border: solid var(--accent-ink); border-width: 0 2px 2px 0; transform: rotate(42deg); }
+.dir-graphite .cw-box.checked::after { border-color: #14151a; }
+.cw-lockrow { display: flex; align-items: center; gap: 10px; }
+.cw-lock { width: 46px; height: 24px; border-radius: 12px; background: rgba(70,140,70,.3); border: 1px solid rgba(80,150,80,.4); position: relative; }
+.cw-lock.locked { background: rgba(150,110,40,.35); border-color: rgba(160,120,50,.5); }
+.cw-lockknob { position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #bcd7af; }
+.cw-lock.locked .cw-lockknob { left: 24px; background: #d8b86a; }
+.cw-lockcap { font-size: 11px; color: var(--dim); letter-spacing: .03em; }
