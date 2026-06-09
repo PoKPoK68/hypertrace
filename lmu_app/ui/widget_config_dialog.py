@@ -1,10 +1,11 @@
 """lmu_app/ui/widget_config_dialog.py — Widget config dialog (live update)."""
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtCore import Qt, QSize, Signal
+from PySide6.QtGui import QColor, QIcon, QPainter
 from PySide6.QtWidgets import (
     QCheckBox,
     QColorDialog,
@@ -23,36 +24,133 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from lmu_app.utils.theme import T, label_font, panel_brush, border_pen
+
 if TYPE_CHECKING:
     from lmu_app.config import AppConfig
     from lmu_app.widgets.base import BaseWidget
 
-_STYLE = """
-QDialog, QWidget { font-family: "Segoe UI", sans-serif; font-size: 12px; }
-QSpinBox, QDoubleSpinBox, QComboBox { min-height: 28px; }
-QPushButton {
-    padding: 4px 14px; border-radius: 4px;
-    border: 1px solid #555;
-}
-QPushButton:hover { background: #3a3a3a; }
-QPushButton#arrow {
+_check_svg      = (Path(__file__).parent.parent / "assets" / "check.svg").as_posix()
+_chevron_svg    = (Path(__file__).parent.parent / "assets" / "chevron-down.svg").as_posix()
+_chevron_up_svg = (Path(__file__).parent.parent / "assets" / "chevron-up.svg").as_posix()
+
+_STYLE = f"""
+QDialog {{
+    background: rgb({T.PANEL_TOP[0]}, {T.PANEL_TOP[1]}, {T.PANEL_TOP[2]});
+}}
+QWidget {{
+    color: {T.TEXT};
+    font-family: '{T.F_TEXT}';
+    font-size: 12px;
+    background: transparent;
+}}
+QSpinBox, QDoubleSpinBox {{
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 4px;
+    color: {T.TEXT};
+    min-height: 24px;
+    padding: 0 4px;
+}}
+QSpinBox:hover, QDoubleSpinBox:hover {{
+    border-color: rgba(255,255,255,0.25);
+}}
+QSpinBox::up-button, QDoubleSpinBox::up-button,
+QSpinBox::down-button, QDoubleSpinBox::down-button {{
+    width: 16px;
+    border: none;
+    border-left: 1px solid rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.06);
+}}
+QSpinBox::up-button, QDoubleSpinBox::up-button {{
+    border-top-right-radius: 3px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+}}
+QSpinBox::down-button, QDoubleSpinBox::down-button {{
+    border-bottom-right-radius: 3px;
+}}
+QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
+QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {{
+    background: rgba(255,255,255,0.14);
+}}
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{
+    image: url({_chevron_up_svg}); width: 8px; height: 6px;
+}}
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{
+    image: url({_chevron_svg}); width: 8px; height: 6px;
+}}
+QLineEdit {{
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 4px;
+    color: {T.TEXT};
+    min-height: 24px;
+    padding: 0 6px;
+}}
+QLineEdit:hover {{ border-color: rgba(255,255,255,0.25); }}
+QComboBox {{
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 4px;
+    padding: 2px 6px;
+    color: {T.TEXT};
+    min-height: 24px;
+}}
+QComboBox:hover {{ border-color: rgba(255,255,255,0.25); }}
+QComboBox::drop-down {{ border: none; width: 20px; }}
+QComboBox::down-arrow {{ image: url({_chevron_svg}); width: 10px; height: 6px; }}
+QComboBox QAbstractItemView {{
+    background: #2A2C30;
+    border: 1px solid rgba(255,255,255,0.15);
+    selection-background-color: rgba(236,170,67,0.2);
+    color: {T.TEXT}; outline: none; padding: 2px;
+}}
+QCheckBox {{ spacing: 6px; color: {T.DIM}; }}
+QCheckBox::indicator {{
+    width: 14px; height: 14px; border-radius: 3px;
+    border: 1px solid rgba(255,255,255,0.20);
+    background: rgba(255,255,255,0.05);
+}}
+QCheckBox::indicator:checked {{
+    background: {T.ACCENT}; border-color: {T.ACCENT};
+    image: url({_check_svg});
+}}
+QPushButton {{
+    color: {T.DIM};
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 4px;
+    padding: 4px 14px;
+    font-size: 11px;
+}}
+QPushButton:hover {{ background: rgba(255,255,255,0.12); color: {T.TEXT}; }}
+QPushButton:disabled {{
+    color: rgba(255,255,255,0.18);
+    background: rgba(255,255,255,0.02);
+    border-color: rgba(255,255,255,0.05);
+}}
+QPushButton#arrow {{
     padding: 0px; min-width: 26px; max-width: 26px;
-    min-height: 24px; max-height: 24px; font-size: 13px;
-    font-weight: bold;
-}
-QPushButton#icon_btn {
+    min-height: 24px; max-height: 24px;
+}}
+QPushButton#icon_btn {{
     padding: 0px; min-width: 26px; max-width: 26px;
-    min-height: 26px; max-height: 26px; font-size: 13px;
-}
-QScrollArea { border: none; }
+    min-height: 26px; max-height: 26px;
+    font-size: 13px;
+}}
+QScrollArea {{ border: none; background: transparent; }}
+QScrollBar:vertical {{ background: transparent; width: 6px; }}
+QScrollBar::handle:vertical {{ background: rgba(255,255,255,0.15); border-radius: 3px; }}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
 """
 
 
 class WidgetConfigDialog(QDialog):
     """Generic dialog: reads CONFIG_SCHEMA and applies changes live.
 
-    Separator entries create collapsible sections; spin/combo boxes
-    ignore mouse-wheel to avoid accidental value changes while scrolling.
+    Entries with ``"side_panel": True`` in the schema are placed in a right
+    column instead of the main scrollable form — reducing scroll length for
+    widgets that have both many settings and a reorder panel (e.g. Standings).
     """
 
     def __init__(
@@ -71,9 +169,22 @@ class WidgetConfigDialog(QDialog):
 
         self.setWindowTitle(f"Configure — {widget.WIDGET_NAME}")
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(_STYLE)
-        self.setMinimumWidth(400)
+
+        has_side = any(e.get("side_panel") for e in self._schema)
+        self.setMinimumWidth(510 if has_side else 380)
+
         self._setup_ui()
+
+    def paintEvent(self, _) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w, h = self.width(), self.height()
+        p.setBrush(panel_brush(0, 0, h, 255))
+        p.setPen(border_pen(100))
+        p.drawRect(0, 0, w, h)
+        p.end()
 
     # ------------------------------------------------------------------
 
@@ -83,119 +194,220 @@ class WidgetConfigDialog(QDialog):
         root.setContentsMargins(14, 14, 14, 14)
 
         title = QLabel(self._widget.WIDGET_NAME)
-        title.setStyleSheet(
-            "font-size: 14px; font-weight: bold; color: #ffd700; padding-bottom: 4px;"
-        )
+        title.setFont(label_font(12))
+        title.setStyleSheet(f"color: {T.ACCENT}; padding-bottom: 4px;")
         root.addWidget(title)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(scroll.Shape.NoFrame)
-        inner = QWidget()
-        vl    = QVBoxLayout(inner)
-        vl.setSpacing(2)
-        vl.setContentsMargins(0, 0, 0, 0)
+        saved    = self._config.widget_params(self._key)
+        has_side = any(e.get("side_panel") for e in self._schema)
 
-        saved = self._config.widget_params(self._key)
+        if has_side:
+            body    = QWidget()
+            body_hl = QHBoxLayout(body)
+            body_hl.setContentsMargins(0, 0, 0, 0)
+            body_hl.setSpacing(20)
+            root.addWidget(body, 1)
 
-        # Entries before the first separator go into a plain pre-form
-        pre_widget = QWidget()
-        pre_form   = QFormLayout(pre_widget)
-        pre_form.setSpacing(8)
-        pre_form.setContentsMargins(0, 0, 0, 0)
-        pre_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        vl.addWidget(pre_widget)
-        current_form: QFormLayout = pre_form
+            # Left: scrollable main form (all entries without side_panel)
+            left_scroll = QScrollArea()
+            left_scroll.setWidgetResizable(True)
+            left_scroll.setFrameShape(left_scroll.Shape.NoFrame)
+            left_inner = QWidget()
+            left_vl    = QVBoxLayout(left_inner)
+            left_vl.setSpacing(2)
+            left_vl.setContentsMargins(0, 0, 8, 0)
+            pre_w, pre_form = self._make_pre_form()
+            left_vl.addWidget(pre_w)
+            current_form = pre_form
 
-        for entry in self._schema:
-            kind = entry.get("type")
+            for entry in self._schema:
+                if entry.get("side_panel"):
+                    continue
+                current_form = self._add_entry_to_form(entry, left_vl, current_form, saved)
 
-            if kind == "separator":
-                section      = _CollapsibleSection(entry.get("label", ""))
-                current_form = section.form()
-                vl.addWidget(section)
-                continue
+            if pre_form.rowCount() == 0:
+                pre_w.hide()
+            left_vl.addStretch()
+            left_scroll.setWidget(left_inner)
+            body_hl.addWidget(left_scroll, 1)
 
-            if "key" not in entry:
-                continue
+            # Right: side panel (side_panel entries)
+            right_panel = QWidget()
+            right_panel.setObjectName("sidePanel")
+            right_panel.setStyleSheet(
+                "#sidePanel { background: rgba(255,255,255,0.05); border-radius: 4px; }"
+            )
+            right_panel.setMinimumWidth(155)
+            right_vl = QVBoxLayout(right_panel)
+            right_vl.setContentsMargins(8, 6, 8, 6)
+            right_vl.setSpacing(4)
 
-            key     = entry["key"]
-            label   = entry["label"]
-            default = entry.get("default")
-            current = saved.get(key, default)
-            ctrl: QWidget
+            for entry in self._schema:
+                if not entry.get("side_panel"):
+                    continue
+                kind = entry.get("type")
+                if kind == "separator":
+                    lbl = QLabel(entry.get("label", "").upper())
+                    lbl.setStyleSheet(
+                        f"color: {T.ACCENT}; font-size: 10px; "
+                        f"letter-spacing: 1px; font-weight: bold; padding-bottom: 2px;"
+                    )
+                    right_vl.addWidget(lbl)
+                    continue
+                ctrl = self._make_ctrl(entry, saved)
+                if ctrl is not None:
+                    right_vl.addWidget(ctrl)
 
-            if kind == "bool":
-                ctrl = QCheckBox()
-                ctrl.setChecked(bool(current) if current is not None else bool(default))
-                ctrl.toggled.connect(self._apply_live)
+            right_vl.addStretch()
+            body_hl.addWidget(right_panel, 0)
 
-            elif kind == "int":
-                ctrl = _NoScrollSpin()
-                ctrl.setMinimum(entry.get("min", 0))
-                ctrl.setMaximum(entry.get("max", 9999))
-                ctrl.setSingleStep(entry.get("step", 1))
-                ctrl.setValue(int(current) if current is not None else int(default))
-                ctrl.valueChanged.connect(self._apply_live)
+        else:
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(scroll.Shape.NoFrame)
+            inner = QWidget()
+            vl    = QVBoxLayout(inner)
+            vl.setSpacing(2)
+            vl.setContentsMargins(0, 0, 0, 0)
+            pre_w, pre_form = self._make_pre_form()
+            vl.addWidget(pre_w)
+            current_form = pre_form
 
-            elif kind == "float":
-                ctrl = _NoScrollDoubleSpin()
-                ctrl.setMinimum(entry.get("min", 0.0))
-                ctrl.setMaximum(entry.get("max", 9999.0))
-                ctrl.setSingleStep(entry.get("step", 0.1))
-                ctrl.setDecimals(entry.get("decimals", 2))
-                ctrl.setValue(float(current) if current is not None else float(default))
-                ctrl.valueChanged.connect(self._apply_live)
+            for entry in self._schema:
+                current_form = self._add_entry_to_form(entry, vl, current_form, saved)
 
-            elif kind == "choice":
-                ctrl    = _NoScrollCombo()
-                cur_val = current if current is not None else default
-                for i, opt in enumerate(entry.get("options", [])):
-                    ctrl.addItem(opt["label"], opt["value"])
-                    if opt["value"] == cur_val:
-                        ctrl.setCurrentIndex(i)
-                ctrl.currentIndexChanged.connect(self._apply_live)
+            if pre_form.rowCount() == 0:
+                pre_w.hide()
+            vl.addStretch()
+            scroll.setWidget(inner)
+            root.addWidget(scroll)
 
-            elif kind == "multiselect":
-                ctrl = _MultiSelectWidget(
-                    entry["options"],
-                    list(current) if current is not None else list(default),
-                )
-                ctrl.changed.connect(self._apply_live)
+        self._link_show_keys()
 
-            elif kind == "ordered_multiselect":
-                ctrl = _OrderedMultiSelectWidget(
-                    entry["options"],
-                    list(current) if current is not None else list(default),
-                )
-                ctrl.changed.connect(self._apply_live)
+        close_btn = QPushButton("Close")
+        close_btn.setStyleSheet(
+            f"QPushButton {{ color: {T.ACCENT_INK}; background: {T.ACCENT}; "
+            f"border: 1px solid {T.ACCENT}; border-radius: 4px; "
+            f"padding: 5px 18px; font-weight: bold; font-size: 11px; }}"
+            f"QPushButton:hover {{ background: #F0B54A; }}"
+        )
+        close_btn.clicked.connect(self.accept)
+        root.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignRight)
 
-            elif kind == "color":
-                ctrl = _ColorButton(
-                    current if (current and QColor(current).isValid()) else default
-                )
-                ctrl.color_changed.connect(self._apply_live)
+    # ------------------------------------------------------------------
 
-            elif kind == "filepath":
-                ctrl = _FilePathWidget(current or "")
-                ctrl.changed.connect(self._apply_live)
+    @staticmethod
+    def _make_pre_form() -> tuple[QWidget, QFormLayout]:
+        w = QWidget()
+        f = QFormLayout(w)
+        f.setSpacing(8)
+        f.setContentsMargins(0, 0, 0, 0)
+        f.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        return w, f
 
-            else:
-                continue
+    def _add_entry_to_form(
+        self,
+        entry: dict,
+        vl: QVBoxLayout,
+        current_form: QFormLayout,
+        saved: dict,
+    ) -> QFormLayout:
+        """Process one schema entry into the left-panel form. Returns the active form."""
+        kind = entry.get("type")
+        if kind == "separator":
+            section      = _CollapsibleSection(entry.get("label", ""))
+            current_form = section.form()
+            vl.addWidget(section)
+            return current_form
 
+        if "key" not in entry:
+            return current_form
+
+        ctrl = self._make_ctrl(entry, saved)
+        if ctrl is None:
+            return current_form
+
+        label = entry.get("label", "")
+        if label:
+            lbl_w = QLabel(label)
+            lbl_w.setStyleSheet(f"color: {T.DIM}; font-size: 11px;")
+            lbl_w.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            current_form.addRow(lbl_w, ctrl)
+        else:
+            current_form.addRow(ctrl)
+
+        return current_form
+
+    def _make_ctrl(self, entry: dict, saved: dict) -> QWidget | None:
+        """Build and register the control widget for one schema entry."""
+        kind    = entry.get("type")
+        key     = entry.get("key", "")
+        default = entry.get("default")
+        current = saved.get(key, default) if key else default
+
+        ctrl: QWidget | None = None
+
+        if kind == "bool":
+            ctrl = QCheckBox()
+            ctrl.setChecked(bool(current) if current is not None else bool(default))
+            ctrl.toggled.connect(self._apply_live)
+
+        elif kind == "int":
+            ctrl = _NoScrollSpin()
+            ctrl.setMinimum(entry.get("min", 0))
+            ctrl.setMaximum(entry.get("max", 9999))
+            ctrl.setSingleStep(entry.get("step", 1))
+            ctrl.setValue(int(current) if current is not None else int(default))
+            ctrl.valueChanged.connect(self._apply_live)
+
+        elif kind == "float":
+            ctrl = _NoScrollDoubleSpin()
+            ctrl.setMinimum(entry.get("min", 0.0))
+            ctrl.setMaximum(entry.get("max", 9999.0))
+            ctrl.setSingleStep(entry.get("step", 0.1))
+            ctrl.setDecimals(entry.get("decimals", 2))
+            ctrl.setValue(float(current) if current is not None else float(default))
+            ctrl.valueChanged.connect(self._apply_live)
+
+        elif kind == "choice":
+            ctrl    = _NoScrollCombo()
+            cur_val = current if current is not None else default
+            for i, opt in enumerate(entry.get("options", [])):
+                ctrl.addItem(opt["label"], opt["value"])
+                if opt["value"] == cur_val:
+                    ctrl.setCurrentIndex(i)
+            ctrl.currentIndexChanged.connect(self._apply_live)
+
+        elif kind == "multiselect":
+            ctrl = _MultiSelectWidget(
+                entry["options"],
+                list(current) if current is not None else list(default),
+            )
+            ctrl.changed.connect(self._apply_live)
+
+        elif kind == "ordered_multiselect":
+            ctrl = _OrderedMultiSelectWidget(
+                entry["options"],
+                list(current) if current is not None else list(default),
+            )
+            ctrl.changed.connect(self._apply_live)
+
+        elif kind == "color":
+            ctrl = _ColorButton(
+                current if (current and QColor(current).isValid()) else default
+            )
+            ctrl.color_changed.connect(self._apply_live)
+
+        elif kind == "filepath":
+            ctrl = _FilePathWidget(current or "")
+            ctrl.changed.connect(self._apply_live)
+
+        if ctrl is not None and key:
             self._controls[key] = ctrl
-            if label:
-                lbl_w = QLabel(label)
-                lbl_w.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-                current_form.addRow(lbl_w, ctrl)
-            else:
-                current_form.addRow(ctrl)
 
-        # Hide the pre-form area if nothing was added there
-        if pre_form.rowCount() == 0:
-            pre_widget.hide()
+        return ctrl
 
-        # Link show_keys visibility controls to their ordered_multiselect widget
+    def _link_show_keys(self) -> None:
         for entry in self._schema:
             if entry.get("type") != "ordered_multiselect":
                 continue
@@ -212,14 +424,6 @@ class WidgetConfigDialog(QDialog):
                     value_to_ctrl[col_value] = bool_ctrl
             if value_to_ctrl:
                 ctrl.set_visibility_controls(value_to_ctrl)
-
-        vl.addStretch()
-        scroll.setWidget(inner)
-        root.addWidget(scroll)
-
-        close_btn = QPushButton("Close")
-        close_btn.clicked.connect(self.accept)
-        root.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignRight)
 
     # ------------------------------------------------------------------
 
@@ -255,7 +459,7 @@ class WidgetConfigDialog(QDialog):
 
 
 # ---------------------------------------------------------------------------
-# No-scroll wrappers (prevent scroll from changing values while navigating)
+# No-scroll wrappers
 
 class _NoScrollSpin(QSpinBox):
     def wheelEvent(self, e): e.ignore()
@@ -283,10 +487,11 @@ class _CollapsibleSection(QWidget):
         self._btn.setCheckable(True)
         self._btn.setChecked(True)
         self._btn.setStyleSheet(
-            "QPushButton { text-align: left; padding: 3px 8px; font-weight: bold; "
-            "font-size: 11px; color: #ffd700; background: #252525; "
-            "border: none; border-bottom: 1px solid #3a3a3a; }"
-            "QPushButton:hover { background: #2e2e2e; }"
+            f"QPushButton {{ text-align: left; padding: 4px 8px; font-weight: bold; "
+            f"font-size: 11px; color: {T.ACCENT}; background: rgba(255,255,255,0.04); "
+            f"border: none; border-bottom: 1px solid rgba(255,255,255,0.08); "
+            f"border-radius: 0px; letter-spacing: 1px; }}"
+            f"QPushButton:hover {{ background: rgba(255,255,255,0.08); }}"
         )
         self._btn.toggled.connect(self._on_toggle)
         vl.addWidget(self._btn)
@@ -322,10 +527,6 @@ class _MultiSelectWidget(QWidget):
 
 
 class _OrderedMultiSelectWidget(QWidget):
-    """Vertical ordered list — arrow buttons only, no checkboxes.
-    Column visibility is controlled by separate bool keys linked via set_visibility_controls().
-    selected_values() returns ALL items in their current order (filtering done by widget).
-    """
     changed = Signal()
 
     def __init__(self, options, selected_ordered, parent=None):
@@ -342,7 +543,6 @@ class _OrderedMultiSelectWidget(QWidget):
         self._rebuild()
 
     def set_visibility_controls(self, value_to_ctrl: dict) -> None:
-        """Link each column value to its show/hide QCheckBox; rebuilds on toggle."""
         self._vis_ctrls = value_to_ctrl
         for ctrl in value_to_ctrl.values():
             ctrl.toggled.connect(lambda _: self._rebuild())
@@ -367,9 +567,12 @@ class _OrderedMultiSelectWidget(QWidget):
         hl.setContentsMargins(0, 0, 0, 0)
         hl.setSpacing(4)
         lbl = QLabel(self._label.get(value, value))
+        lbl.setStyleSheet(f"color: {T.TEXT}; font-size: 11px;")
         lbl.setMinimumWidth(80)
-        up = QPushButton("▲"); up.setObjectName("arrow"); up.setEnabled(not is_first)
-        dn = QPushButton("▼"); dn.setObjectName("arrow"); dn.setEnabled(not is_last)
+        up = QPushButton(); up.setObjectName("arrow"); up.setEnabled(not is_first)
+        up.setIcon(QIcon(_chevron_up_svg)); up.setIconSize(QSize(8, 6))
+        dn = QPushButton(); dn.setObjectName("arrow"); dn.setEnabled(not is_last)
+        dn.setIcon(QIcon(_chevron_svg)); dn.setIconSize(QSize(8, 6))
         up.clicked.connect(lambda _, v=value: self._move_value(v, -1))
         dn.clicked.connect(lambda _, v=value: self._move_value(v, +1))
         hl.addWidget(lbl, 1)
@@ -443,7 +646,11 @@ class _ColorButton(QPushButton):
         h = self._color.name()
         lum = (self._color.red()*299+self._color.green()*587+self._color.blue()*114)//1000
         txt = "#000" if lum > 128 else "#fff"
-        self.setStyleSheet(f"QPushButton{{background:{h};color:{txt};border:1px solid #666;padding:3px 8px;border-radius:3px;}}")
+        self.setStyleSheet(
+            f"QPushButton {{ background:{h}; color:{txt}; "
+            f"border: 1px solid rgba(255,255,255,0.20); "
+            f"padding: 3px 8px; border-radius: 3px; }}"
+        )
         self.setText(h.upper())
     def _pick(self):
         c = QColorDialog.getColor(self._color, self)

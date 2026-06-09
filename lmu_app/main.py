@@ -93,7 +93,7 @@ def main() -> int:
     app.setStyle("Fusion")        # consistent rendering
     app.setPalette(_dark_palette())  # makes arrows/indicators visible on dark bg
     app.setApplicationName("LMU App")
-    app.setApplicationVersion("0.3.2")
+    app.setApplicationVersion("0.4.0")
     app.setQuitOnLastWindowClosed(False)
 
     config = AppConfig()
@@ -139,7 +139,7 @@ def main() -> int:
         if config.widget_enabled(key):
             widget.start()
 
-    main_win = MainWindow(config, widget_entries)
+    main_win = MainWindow(config, widget_entries, reader=reader)
     main_win.show()
 
     def on_quit() -> None:

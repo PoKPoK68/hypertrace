@@ -83,6 +83,16 @@ def _fmt_name(raw: str, fmt: str) -> str:
         return f"{parts[0][0]}. {' '.join(parts[1:])}"
     return raw
 
+def _apply_case(name: str, case: str) -> str:
+    if case == "title":
+        return name.title()
+    if case == "mixed":
+        parts = name.rsplit(" ", 1)
+        if len(parts) == 2:
+            return f"{parts[0].title()} {parts[1].upper()}"
+        return name.upper()
+    return name.upper()
+
 def _col_w(col: str, ncw: int, font_size: int = 9) -> int:
     if col == "name":
         return ncw
@@ -135,6 +145,12 @@ class StandingsWidget(BaseWidget):
              {"value": "initial", "label": "F. Last"},
              {"value": "last",    "label": "Last only"},
          ], "default": "full"},
+        {"key": "name_case", "label": "Name casing", "type": "choice",
+         "options": [
+             {"value": "upper", "label": "NAME LASTNAME"},
+             {"value": "mixed", "label": "Name LASTNAME"},
+             {"value": "title", "label": "Name Lastname"},
+         ], "default": "upper"},
         {"type": "separator", "label": "Display"},
         {"key": "show_header",     "label": "Column headers",          "type": "bool", "default": False},
         {"key": "show_gar_badge",  "label": "GAR badge (garage)",      "type": "bool", "default": True},
@@ -144,7 +160,7 @@ class StandingsWidget(BaseWidget):
         {"key": "show_fuel_ve_col","label": "Show VE/Fuel column",     "type": "bool", "default": False},
         {"key": "player_color",      "label": "Player row color",       "type": "color", "default": "#ECAA43"},
         {"key": "player_color_alpha","label": "Player row opacity (%)", "type": "int",
-         "min": 0, "max": 100, "step": 5, "default": 16},
+         "min": 0, "max": 100, "step": 5, "default": 20},
         {"key": "font_size",       "label": "Font size",               "type": "int",
          "min": 7, "max": 14, "step": 1, "default": 9},
         {"type": "separator", "label": "Gaps"},
@@ -159,8 +175,8 @@ class StandingsWidget(BaseWidget):
          "min": 0, "max": 3, "step": 1, "default": 3},
         {"key": "last_decimals", "label": "Last lap decimals (0-3)", "type": "int",
          "min": 0, "max": 3, "step": 1, "default": 3},
-        {"type": "separator", "label": "Column order"},
-        {"key": "columns", "label": "", "type": "ordered_multiselect",
+        {"type": "separator", "label": "Column order", "side_panel": True},
+        {"key": "columns", "label": "", "type": "ordered_multiselect", "side_panel": True,
          "options": [
              {"value": "pos",      "label": "Position"},
              {"value": "name",     "label": "Name"},
@@ -185,7 +201,7 @@ class StandingsWidget(BaseWidget):
                  top_n: int = 3, around_n: int = 2,
                  show_header: bool = False, max_name_chars: int = 16,
                  gap_decimals: int = 1, interval_decimals: int = 1,
-                 name_format: str = "full",
+                 name_format: str = "full", name_case: str = "upper",
                  show_gar_badge: bool = True, show_out_badge: bool = True,
                  show_other_classes: bool = False, other_classes_top_n: int = 3,
                  show_gap_col: bool = True, show_interval_col: bool = True,
@@ -208,6 +224,7 @@ class StandingsWidget(BaseWidget):
         self._gap_decimals        = gap_decimals
         self._interval_decimals   = interval_decimals
         self._name_format         = name_format
+        self._name_case           = name_case
         self._show_gar_badge      = show_gar_badge
         self._show_out_badge      = show_out_badge
         self._show_other_classes  = show_other_classes
@@ -217,7 +234,7 @@ class StandingsWidget(BaseWidget):
         self._best_decimals       = max(0, min(3, int(best_decimals)))
         self._last_decimals       = max(0, min(3, int(last_decimals)))
         self._opacity             = 85
-        self._player_color        = QColor(0xEC, 0xAA, 0x43, 41)
+        self._player_color        = QColor(0xEC, 0xAA, 0x43, 51)
         self._entries:  list[dict]    = []
         self._best_overall            = 9999.0
         self._player_fuel             = 0.0
@@ -245,6 +262,7 @@ class StandingsWidget(BaseWidget):
         self._gap_decimals        = int(params.get("gap_decimals", 1))
         self._interval_decimals   = int(params.get("interval_decimals", self._gap_decimals))
         self._name_format         = str(params.get("name_format", "full"))
+        self._name_case           = str(params.get("name_case", "upper"))
         self._show_header         = bool(params.get("show_header", False))
         self._show_gar_badge      = bool(params.get("show_gar_badge", True))
         self._show_out_badge      = bool(params.get("show_out_badge", True))
@@ -505,12 +523,6 @@ class StandingsWidget(BaseWidget):
                 p.setFont(label_font(max(6, fss)))
                 p.setPen(QColor(T.TEXT))
                 p.drawText(bdg_x, bdg_y, bdg_w, bdg_h, Qt.AlignmentFlag.AlignCenter, abbrev)
-                # Class name in dim, next to badge
-                p.setFont(label_font(max(6, fss)))
-                p.setPen(QColor(T.DIM))
-                p.drawText(bdg_x + bdg_w + 4, bdg_y, W - bdg_x - bdg_w - 8, bdg_h,
-                           Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
-                           e.get("label", ""))
                 y += CLS_H
                 continue
 
@@ -547,10 +559,10 @@ class StandingsWidget(BaseWidget):
                         "PIT": (QColor(T.PIT_BG), QColor(T.PIT_FG)),
                         "OUT": (QColor(T.OUT_BG), QColor(T.OUT_FG)),
                     }
-                    name_text = _fmt_name(e["name_raw"], self._name_format)[:self._max_name_chars]
+                    name_text = _apply_case(_fmt_name(e["name_raw"], self._name_format)[:self._max_name_chars], self._name_case)
                     p.setFont(text_font(fs))
                     p.setPen(QColor(T.TEXT))
-                    p.drawText(x + 2, y, cw, rh, align, name_text.upper())
+                    p.drawText(x + 2, y, cw, rh, align, name_text)
                     if raw_badge and raw_badge in badge_colors:
                         bg_c, fg_c = badge_colors[raw_badge]
                         bdg = _badge_px(fs)

@@ -4,6 +4,21 @@ All notable changes to LMU App are documented here.
 
 ---
 
+## [0.4.0] — UI polish
+
+### Main window
+- **Presets** — save the current position and settings of all overlays as a named preset, load or overwrite it at any time
+- Main window no longer stays on top of other apps
+
+### Settings dialogs
+- Visual style now matches the main window
+- Standings settings use a two-column layout (less scrolling)
+
+### Standings & Relative
+- New name casing option: ALL CAPS / Name LASTNAME / Name Lastname
+
+---
+
 ## [0.3.2] — Polish & bug fixes
 
 ### Speed

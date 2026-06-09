@@ -100,3 +100,57 @@ class AppConfig:
 
     def set_widget_params(self, key: str, params: dict) -> None:
         self._w(key)["params"] = params
+
+    # ------------------------------------------------------------------
+    # Presets
+    # ------------------------------------------------------------------
+
+    def presets(self) -> list[dict]:
+        return list(self._data.get("presets", []))
+
+    def preset_names(self) -> list[str]:
+        return [p["name"] for p in self._data.get("presets", [])]
+
+    def preset_by_name(self, name: str) -> dict | None:
+        return next((p for p in self._data.get("presets", []) if p.get("name") == name), None)
+
+    def upsert_preset(self, name: str, data: dict) -> None:
+        ps = self._data.setdefault("presets", [])
+        for i, p in enumerate(ps):
+            if p.get("name") == name:
+                ps[i] = {"name": name, **data}
+                return
+        ps.append({"name": name, **data})
+
+    def rename_preset(self, old_name: str, new_name: str) -> None:
+        for p in self._data.get("presets", []):
+            if p.get("name") == old_name:
+                p["name"] = new_name
+                break
+        sp = self._data.get("session_presets", {})
+        for k, v in list(sp.items()):
+            if v == old_name:
+                sp[k] = new_name
+
+    def delete_preset(self, name: str) -> None:
+        self._data["presets"] = [p for p in self._data.get("presets", []) if p.get("name") != name]
+        sp = self._data.get("session_presets", {})
+        for k in list(sp.keys()):
+            if sp[k] == name:
+                del sp[k]
+
+    @property
+    def session_presets(self) -> dict[str, str]:
+        return dict(self._data.get("session_presets", {}))
+
+    @session_presets.setter
+    def session_presets(self, v: dict[str, str]) -> None:
+        self._data["session_presets"] = v
+
+    @property
+    def auto_load_preset(self) -> bool:
+        return bool(self._data.get("auto_load_preset", False))
+
+    @auto_load_preset.setter
+    def auto_load_preset(self, v: bool) -> None:
+        self._data["auto_load_preset"] = v

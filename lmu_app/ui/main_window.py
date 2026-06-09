@@ -5,16 +5,19 @@ import math
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
+from PySide6.QtCore import Qt, QSize, QTimer, Signal
+from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QColorDialog,
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
+    QScrollArea,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -183,7 +186,10 @@ class _LockToggle(QWidget):
 # Main window
 # ---------------------------------------------------------------------------
 
-_check_svg = (Path(__file__).parent.parent / "assets" / "check.svg").as_posix()
+_check_svg   = (Path(__file__).parent.parent / "assets" / "check.svg").as_posix()
+_edit_svg    = (Path(__file__).parent.parent / "assets" / "edit.svg").as_posix()
+_trash_svg   = (Path(__file__).parent.parent / "assets" / "trash.svg").as_posix()
+_chevron_svg = (Path(__file__).parent.parent / "assets" / "chevron-down.svg").as_posix()
 
 _WINDOW_SS = f"""
 QWidget {{
@@ -218,7 +224,50 @@ QCheckBox::indicator {{
     background: rgba(255,255,255,0.05);
 }}
 QCheckBox::indicator:checked {{ background: {T.ACCENT}; border-color: {T.ACCENT}; image: url({_check_svg}); }}
+QComboBox {{
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 4px; padding: 2px 6px;
+    color: {T.TEXT}; min-height: 22px;
+}}
+QComboBox:hover {{ border-color: rgba(255,255,255,0.25); }}
+QComboBox::drop-down {{ border: none; width: 20px; }}
+QComboBox::down-arrow {{ image: url({_chevron_svg}); width: 10px; height: 6px; }}
+QComboBox QAbstractItemView {{
+    background: #2A2C30;
+    border: 1px solid rgba(255,255,255,0.15);
+    selection-background-color: rgba(236,170,67,0.2);
+    color: {T.TEXT}; outline: none; padding: 2px;
+}}
 """
+
+
+_SS_BTN = (
+    f"QPushButton {{ color: {T.DIM}; background: rgba(255,255,255,0.06); "
+    f"border: 1px solid rgba(255,255,255,0.12); border-radius: 4px; "
+    f"padding: 3px 8px; font-size: 11px; }}"
+    f"QPushButton:hover {{ background: rgba(255,255,255,0.12); color: {T.TEXT}; }}"
+)
+_SS_BTN_ACCENT = (
+    f"QPushButton {{ color: {T.ACCENT_INK}; background: {T.ACCENT}; "
+    f"border: 1px solid {T.ACCENT}; border-radius: 4px; "
+    f"padding: 4px 10px; font-weight: bold; font-size: 11px; }}"
+    f"QPushButton:hover {{ background: #F0B54A; }}"
+)
+_SS_BTN_DANGER = (
+    f"QPushButton {{ color: #FF7070; background: rgba(255,50,50,0.08); "
+    f"border: 1px solid rgba(255,80,80,0.20); border-radius: 3px; "
+    f"padding: 2px 5px; font-size: 10px; }}"
+    f"QPushButton:hover {{ background: rgba(255,50,50,0.20); }}"
+)
+
+
+def _session_category(session_type: int) -> str:
+    if session_type >= 10:
+        return "race"
+    if 5 <= session_type <= 8:
+        return "qualifying"
+    return "practice"
 
 
 class MainWindow(QWidget):
@@ -228,25 +277,43 @@ class MainWindow(QWidget):
         self,
         config: AppConfig,
         widget_entries: list[tuple[str, BaseWidget]],
+        reader=None,
     ) -> None:
         super().__init__()
-        self._config  = config
-        self._entries = widget_entries
+        self._config        = config
+        self._entries       = widget_entries
+        self._get_snapshot  = reader.get if reader is not None else None
+        self._last_session_cat: str | None = None
 
         self.setWindowTitle("LMU App")
-        self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
-        self.setFixedWidth(295)
+        self.setFixedWidth(330)
         self.setStyleSheet(_WINDOW_SS)
 
         self._toggles: dict[str, _OnOffBtn] = {}
         self._lock_toggle: _LockToggle | None = None
         self._lock_label: QLabel | None = None
         self._merge_btn: _OnOffBtn | None = None
+        self._preset_list_layout: QVBoxLayout | None = None
+        self._session_combos: dict[str, QComboBox] = {}
+        self._save_btn: QPushButton | None = None
+        self._new_preset_edit: QLineEdit | None = None
+        self._save_mode: bool = False
 
         self._setup_ui()
         self._apply_lock_state()
         self._broadcast_class_colors()
+
+        if not self._config.preset_names():
+            self._config.upsert_preset("Default", self._capture_state())
+            self._config.save()
+            self._rebuild_preset_ui()
+
+        if self._get_snapshot is not None:
+            self._session_timer = QTimer(self)
+            self._session_timer.setInterval(1000)
+            self._session_timer.timeout.connect(self._on_session_watch)
+            self._session_timer.start()
 
     def paintEvent(self, _) -> None:
         p = QPainter(self)
@@ -272,6 +339,7 @@ class MainWindow(QWidget):
 
         tabs = QTabWidget()
         tabs.addTab(self._make_overlays_tab(), "Overlays")
+        tabs.addTab(self._make_presets_tab(), "Presets")
         tabs.addTab(self._make_class_colors_tab(), "Class Colors")
         root.addWidget(tabs)
 
@@ -362,7 +430,410 @@ QCheckBox::indicator:checked {{
 
         return row
 
-    # ------------------------------------------------------------------ Tab 2
+    # ------------------------------------------------------------------ Tab 2 — Presets
+
+    def _make_presets_tab(self) -> QWidget:
+        w = QWidget()
+        vl = QVBoxLayout(w)
+        vl.setSpacing(6)
+        vl.setContentsMargins(6, 8, 6, 8)
+
+        self._save_btn = QPushButton("+ Save current state as preset…")
+        self._save_btn.setStyleSheet(_SS_BTN_ACCENT)
+        self._save_btn.clicked.connect(self._toggle_save_mode)
+        vl.addWidget(self._save_btn)
+
+        # Scrollable preset list
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setStyleSheet("QScrollArea { background: transparent; }")
+        list_container = QWidget()
+        list_container.setStyleSheet("background: transparent;")
+        self._preset_list_layout = QVBoxLayout(list_container)
+        self._preset_list_layout.setSpacing(3)
+        self._preset_list_layout.setContentsMargins(0, 0, 0, 0)
+        self._preset_list_layout.addStretch()
+        scroll.setWidget(list_container)
+        scroll.setFixedHeight(140)
+        vl.addWidget(scroll)
+
+        vl.addWidget(_sep())
+
+        # Auto-load section
+        self._auto_load_cb = QCheckBox("Auto-load on session change")
+        self._auto_load_cb.setChecked(self._config.auto_load_preset)
+        self._auto_load_cb.toggled.connect(self._on_auto_load_toggled)
+        vl.addWidget(self._auto_load_cb)
+
+        for session_key, session_label in [
+            ("practice",   "Practice"),
+            ("qualifying", "Qualifying"),
+            ("race",       "Race"),
+        ]:
+            row = QWidget()
+            hl  = QHBoxLayout(row)
+            hl.setContentsMargins(0, 1, 0, 1)
+            hl.setSpacing(8)
+            lbl = QLabel(session_label)
+            lbl.setStyleSheet(f"color: {T.DIM}; font-size: 11px;")
+            lbl.setFixedWidth(72)
+            combo = QComboBox()
+            combo.currentIndexChanged.connect(
+                lambda _, k=session_key: self._on_session_combo_changed(k)
+            )
+            self._session_combos[session_key] = combo
+            hl.addWidget(lbl)
+            hl.addWidget(combo, 1)
+            vl.addWidget(row)
+
+        vl.addStretch()
+        self._rebuild_preset_ui()
+        return w
+
+    def _rebuild_preset_ui(self) -> None:
+        if self._preset_list_layout is None:
+            return
+        self._new_preset_edit = None
+
+        # Clear existing rows (keep stretch at end)
+        while self._preset_list_layout.count() > 1:
+            item = self._preset_list_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        insert_at = 0
+
+        if self._save_mode:
+            # -- "New Preset" row at top --
+            new_row = QWidget()
+            new_row.setObjectName("newPresetRow")
+            new_row.setStyleSheet(
+                f"#newPresetRow {{ background: rgba(236,170,67,0.10); border-radius: 4px; "
+                f"border: 1px solid rgba(236,170,67,0.30); }}"
+            )
+            new_hl = QHBoxLayout(new_row)
+            new_hl.setContentsMargins(8, 4, 4, 4)
+            new_hl.setSpacing(4)
+            new_lbl = QLabel("New")
+            new_lbl.setFixedWidth(26)
+            new_lbl.setStyleSheet(f"color: {T.ACCENT}; font-size: 11px; font-weight: bold; background: transparent;")
+            new_hl.addWidget(new_lbl)
+            edit = QLineEdit("New Preset")
+            edit.setFixedHeight(20)
+            edit.setStyleSheet(
+                f"QLineEdit {{ background: rgba(255,255,255,0.08); "
+                f"border: 1px solid {T.ACCENT}; border-radius: 3px; "
+                f"color: {T.TEXT}; font-size: 11px; padding: 0 4px; }}"
+            )
+            self._new_preset_edit = edit
+            new_hl.addWidget(edit, 1)
+            cancel_btn = QPushButton("✕")
+            cancel_btn.setFixedSize(26, 22)
+            cancel_btn.setStyleSheet(_SS_BTN)
+            cancel_btn.setToolTip("Cancel")
+            cancel_btn.clicked.connect(self._exit_save_mode)
+            new_hl.addWidget(cancel_btn)
+            confirm_btn = QPushButton()
+            confirm_btn.setIcon(QIcon(_check_svg))
+            confirm_btn.setIconSize(QSize(13, 13))
+            confirm_btn.setFixedSize(26, 22)
+            confirm_btn.setStyleSheet(
+                f"QPushButton {{ background: {T.ACCENT}; border: 1px solid {T.ACCENT}; "
+                f"border-radius: 4px; padding: 0px; }}"
+                f"QPushButton:hover {{ background: #F0B54A; }}"
+            )
+            confirm_btn.setToolTip("Create preset")
+            confirm_btn.clicked.connect(self._confirm_new_preset)
+            new_hl.addWidget(confirm_btn)
+
+            edit.returnPressed.connect(self._confirm_new_preset)
+            orig_kp = edit.keyPressEvent
+            def _nkp(event, orig=orig_kp):
+                if event.key() == Qt.Key.Key_Escape:
+                    self._exit_save_mode()
+                elif event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                    self._confirm_new_preset()
+                else:
+                    orig(event)
+            edit.keyPressEvent = _nkp
+
+            self._preset_list_layout.insertWidget(insert_at, new_row)
+            insert_at += 1
+
+        for name in self._config.preset_names():
+            if self._save_mode:
+                # -- Clickable save-target row --
+                row = QWidget()
+                row.setObjectName("saveTargetRow")
+                row.setStyleSheet(
+                    "#saveTargetRow { background: rgba(255,255,255,0.04); border-radius: 4px; "
+                    "border: 1px solid transparent; }"
+                    "#saveTargetRow:hover { background: rgba(236,170,67,0.12); "
+                    "border-color: rgba(236,170,67,0.35); }"
+                )
+                row.setCursor(Qt.CursorShape.PointingHandCursor)
+                hl = QHBoxLayout(row)
+                hl.setContentsMargins(8, 6, 8, 6)
+                hl.setSpacing(4)
+                lbl = QLabel(name)
+                lbl.setStyleSheet(f"color: {T.TEXT}; font-size: 11px; background: transparent;")
+                hl.addWidget(lbl, 1)
+                arrow = QLabel("→")
+                arrow.setStyleSheet(f"color: {T.ACCENT}; font-size: 11px; background: transparent;")
+                hl.addWidget(arrow)
+                row.mousePressEvent = lambda e, n=name: self._save_to_existing_preset(n)
+            else:
+                # -- Normal row with Load / rename / delete --
+                row = QWidget()
+                row.setStyleSheet(
+                    "QWidget { background: rgba(255,255,255,0.04); border-radius: 4px; }"
+                )
+                hl = QHBoxLayout(row)
+                hl.setContentsMargins(8, 4, 4, 4)
+                hl.setSpacing(4)
+
+                lbl = QLabel(name)
+                lbl.setStyleSheet(f"color: {T.TEXT}; font-size: 11px; background: transparent;")
+                hl.addWidget(lbl, 1)
+
+                inline_edit = QLineEdit(name)
+                inline_edit.setFixedHeight(20)
+                inline_edit.setStyleSheet(
+                    f"QLineEdit {{ background: rgba(255,255,255,0.08); "
+                    f"border: 1px solid {T.ACCENT}; border-radius: 3px; "
+                    f"color: {T.TEXT}; font-size: 11px; padding: 0 4px; }}"
+                )
+                inline_edit.hide()
+                hl.addWidget(inline_edit, 1)
+
+                load_btn = QPushButton("Load")
+                load_btn.setFixedSize(44, 22)
+                load_btn.setStyleSheet(_SS_BTN)
+                load_btn.clicked.connect(lambda _, n=name: self._load_preset(n))
+                hl.addWidget(load_btn)
+
+                rename_btn = QPushButton()
+                rename_btn.setIcon(QIcon(_edit_svg))
+                rename_btn.setIconSize(QSize(15, 15))
+                rename_btn.setFixedSize(28, 24)
+                rename_btn.setStyleSheet(_SS_BTN)
+                rename_btn.setToolTip("Rename")
+                hl.addWidget(rename_btn)
+
+                del_btn = QPushButton()
+                del_btn.setIcon(QIcon(_trash_svg))
+                del_btn.setIconSize(QSize(15, 15))
+                del_btn.setFixedSize(28, 24)
+                del_btn.setStyleSheet(_SS_BTN_DANGER)
+                del_btn.setToolTip("Delete")
+                del_btn.clicked.connect(lambda _, n=name: self._delete_preset(n))
+                hl.addWidget(del_btn)
+
+                # ---- inline rename wiring ----
+                def _commit(n=name, l=lbl, e=inline_edit):
+                    new = e.text().strip()
+                    e.blockSignals(True); e.hide(); e.blockSignals(False)
+                    if new and new != n:
+                        self._config.rename_preset(n, new)
+                        self._config.save()
+                        self._rebuild_preset_ui()
+                    else:
+                        l.show()
+
+                def _cancel(l=lbl, e=inline_edit):
+                    e.blockSignals(True); e.hide(); e.blockSignals(False)
+                    l.show()
+
+                def _start(l=lbl, e=inline_edit):
+                    l.hide(); e.show(); e.setFocus(); e.selectAll()
+
+                orig_kp = inline_edit.keyPressEvent
+                def _kp(event, commit=_commit, cancel=_cancel, orig=orig_kp):
+                    if event.key() == Qt.Key.Key_Escape:
+                        cancel()
+                    elif event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                        commit()
+                    else:
+                        orig(event)
+                inline_edit.keyPressEvent = _kp
+
+                orig_foe = inline_edit.focusOutEvent
+                def _foe(event, commit=_commit, orig=orig_foe, e=inline_edit):
+                    orig(event)
+                    if e.isVisible():
+                        commit()
+                inline_edit.focusOutEvent = _foe
+
+                rename_btn.clicked.connect(lambda _, start=_start: start())
+
+            self._preset_list_layout.insertWidget(insert_at, row)
+            insert_at += 1
+
+        self._update_session_combos()
+
+    def _toggle_save_mode(self) -> None:
+        if self._save_mode:
+            self._exit_save_mode()
+        else:
+            self._save_mode = True
+            self._rebuild_preset_ui()
+            if self._new_preset_edit is not None:
+                QTimer.singleShot(0, self._new_preset_edit.setFocus)
+                QTimer.singleShot(0, self._new_preset_edit.selectAll)
+
+    def _exit_save_mode(self) -> None:
+        self._save_mode = False
+        self._rebuild_preset_ui()
+
+    def _confirm_new_preset(self) -> None:
+        if self._new_preset_edit is None:
+            return
+        name = self._new_preset_edit.text().strip()
+        if not name:
+            return
+        self._config.upsert_preset(name, self._capture_state())
+        self._config.save()
+        self._exit_save_mode()
+
+    def _save_to_existing_preset(self, name: str) -> None:
+        self._config.upsert_preset(name, self._capture_state())
+        self._config.save()
+        self._exit_save_mode()
+
+    def _update_session_combos(self) -> None:
+        names = self._config.preset_names()
+        sp    = self._config.session_presets
+        for session_key, combo in self._session_combos.items():
+            combo.blockSignals(True)
+            combo.clear()
+            combo.addItem("— None —", "")
+            for n in names:
+                combo.addItem(n, n)
+            current = sp.get(session_key, "")
+            idx = combo.findData(current)
+            combo.setCurrentIndex(max(0, idx))
+            combo.blockSignals(False)
+
+    def _load_preset(self, name: str) -> None:
+        preset = self._config.preset_by_name(name)
+        if preset:
+            self._apply_preset_data(preset)
+
+    def _delete_preset(self, name: str) -> None:
+        self._config.delete_preset(name)
+        self._config.save()
+        self._rebuild_preset_ui()
+
+    def _capture_state(self) -> dict:
+        data: dict = {
+            "locked":        self._config.locked,
+            "merge_calc":    self._config.merge_calc,
+            "hide_in_garage": self._config.hide_in_garage,
+            "widgets":       {},
+        }
+        for key, widget in self._entries:
+            data["widgets"][key] = {
+                "enabled": self._config.widget_enabled(key),
+                "x":       widget.x(),
+                "y":       widget.y(),
+                "params":  dict(self._config.widget_params(key)),
+            }
+        return data
+
+    def _apply_preset_data(self, data: dict) -> None:
+        locked = data.get("locked", self._config.locked)
+        self._config.locked = locked
+        for _, w in self._entries:
+            w.set_locked(locked)
+        if self._lock_toggle:
+            self._lock_toggle.set_locked(locked)
+        if self._lock_label:
+            self._lock_label.setText(self._lock_text(locked))
+
+        hide = data.get("hide_in_garage", self._config.hide_in_garage)
+        self._config.hide_in_garage = hide
+        for _, w in self._entries:
+            w.set_hide_in_garage(hide)
+        if hasattr(self, "_garage_cb"):
+            self._garage_cb.setChecked(hide)
+
+        merge = data.get("merge_calc", self._config.merge_calc)
+        self._config.merge_calc = merge
+        fc = self._find_widget("fuel_calc")
+        vc = self._find_widget("ve_calc")
+        if fc:
+            fc.set_merge(merge)
+        if vc:
+            vc.set_merge(merge)
+        if self._merge_btn:
+            self._merge_btn.setChecked(merge)
+
+        for key, widget in self._entries:
+            wdata = data.get("widgets", {}).get(key)
+            if not wdata:
+                continue
+            x, y = wdata.get("x"), wdata.get("y")
+            if x is not None and y is not None:
+                widget.move(int(x), int(y))
+                self._config.set_widget_pos(key, int(x), int(y))
+            params = wdata.get("params")
+            if params:
+                widget.apply_params(params)
+                self._config.set_widget_params(key, params)
+            enabled = wdata.get("enabled")
+            if enabled is not None:
+                self._config.set_widget_enabled(key, bool(enabled))
+                if bool(enabled):
+                    if not widget._timer.isActive():
+                        widget.start()
+                else:
+                    if widget._timer.isActive():
+                        widget.stop()
+                if key in self._toggles:
+                    self._toggles[key].setChecked(bool(enabled))
+
+        self._config.save()
+
+    def _on_auto_load_toggled(self, checked: bool) -> None:
+        self._config.auto_load_preset = checked
+        self._config.save()
+
+    def _on_session_combo_changed(self, session_key: str) -> None:
+        combo = self._session_combos.get(session_key)
+        if combo is None:
+            return
+        sp = dict(self._config.session_presets)
+        value = combo.currentData()
+        if value:
+            sp[session_key] = value
+        else:
+            sp.pop(session_key, None)
+        self._config.session_presets = sp
+        self._config.save()
+
+    def _on_session_watch(self) -> None:
+        if self._get_snapshot is None:
+            return
+        snap = self._get_snapshot()
+        if not snap.game_running:
+            self._last_session_cat = None
+            return
+        cat = _session_category(snap.session.session_type)
+        if cat == self._last_session_cat:
+            return
+        self._last_session_cat = cat
+        if not self._config.auto_load_preset:
+            return
+        preset_name = self._config.session_presets.get(cat, "")
+        if not preset_name:
+            return
+        preset = self._config.preset_by_name(preset_name)
+        if preset:
+            self._apply_preset_data(preset)
+
+    # ------------------------------------------------------------------ Tab 3
 
     def _make_class_colors_tab(self) -> QWidget:
         w = QWidget()

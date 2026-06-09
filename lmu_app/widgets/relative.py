@@ -48,6 +48,16 @@ def _fmt_name(raw: str, fmt: str) -> str:
         return f"{parts[0][0]}. {' '.join(parts[1:])}"
     return raw
 
+def _apply_case(name: str, case: str) -> str:
+    if case == "title":
+        return name.title()
+    if case == "mixed":
+        parts = name.rsplit(" ", 1)
+        if len(parts) == 2:
+            return f"{parts[0].title()} {parts[1].upper()}"
+        return name.upper()
+    return name.upper()
+
 def _fmt_gap(g: float, decimals: int = 1) -> str:
     return f"{g:+.{decimals}f}"
 
@@ -72,11 +82,17 @@ class RelativeWidget(BaseWidget):
              {"value": "initial", "label": "F. Last"},
              {"value": "last",    "label": "Last only"},
          ], "default": "full"},
+        {"key": "name_case",         "label": "Name casing",           "type": "choice",
+         "options": [
+             {"value": "upper", "label": "NAME LASTNAME"},
+             {"value": "mixed", "label": "Name LASTNAME"},
+             {"value": "title", "label": "Name Lastname"},
+         ], "default": "upper"},
         {"type": "separator", "label": "Display"},
         {"key": "show_badges",       "label": "PIT / OUT badges",      "type": "bool", "default": True},
         {"key": "player_color",      "label": "Player row color",       "type": "color", "default": "#ECAA43"},
         {"key": "player_color_alpha","label": "Player row opacity (%)", "type": "int",
-         "min": 0, "max": 100, "step": 5, "default": 16},
+         "min": 0, "max": 100, "step": 5, "default": 20},
         {"key": "interval_decimals", "label": "Interval decimals (0-3)","type": "int",
          "min": 0, "max": 3,  "step": 1, "default": 1},
         {"key": "font_size",         "label": "Font size",              "type": "int",
@@ -92,6 +108,7 @@ class RelativeWidget(BaseWidget):
                  show_badges:        bool = True,
                  max_name_chars:     int = 16,
                  name_format:        str = "full",
+                 name_case:          str = "upper",
                  font_size:          int = 9,
                  **kw):
         self._ahead              = drivers_ahead
@@ -100,12 +117,13 @@ class RelativeWidget(BaseWidget):
         self._show_badges        = show_badges
         self._max_name_chars = max_name_chars
         self._name_format    = name_format
+        self._name_case      = name_case
         self._font_size      = max(7, min(14, int(font_size)))
         self._rows:  list    = []
         self._outlap_tracking: dict[int, int] = {}
         self._prev_in_pits:   dict[int, bool] = {}
         self._class_colors:   dict[str, str]  = {}
-        self._player_color = QColor(0xEC, 0xAA, 0x43, 41)
+        self._player_color = QColor(0xEC, 0xAA, 0x43, 51)
         self._opacity = 85
         super().__init__(reader, update_hz=10, **kw)
         self.setFixedSize(_widget_w(max_name_chars, self._font_size), _widget_h(drivers_ahead, drivers_behind, self._font_size))
@@ -124,6 +142,7 @@ class RelativeWidget(BaseWidget):
         self._show_badges       = bool(params.get("show_badges", True))
         self._max_name_chars = int(params.get("max_name_chars", 16))
         self._name_format    = str(params.get("name_format", "full"))
+        self._name_case      = str(params.get("name_case", "upper"))
         self._font_size      = max(7, min(14, int(params.get("font_size", 9))))
         self._opacity        = max(0, min(100, int(params.get("opacity", 85))))
         _c = QColor(str(params.get("player_color", "#ffc800")))
@@ -255,7 +274,7 @@ class RelativeWidget(BaseWidget):
             is_p  = row["is_player"]
             gap   = row["gap"]
             badge = row["badge"] if self._show_badges else ""
-            name  = _fmt_name(row["name_raw"], self._name_format)[:self._max_name_chars]
+            name  = _apply_case(_fmt_name(row["name_raw"], self._name_format)[:self._max_name_chars], self._name_case)
 
             # Player row highlight
             if is_p:
@@ -278,7 +297,7 @@ class RelativeWidget(BaseWidget):
             name_col = QColor(T.TEXT)
             p.setFont(text_font(fs))
             p.setPen(name_col)
-            p.drawText(28, y, ncw, rh, Qt.AlignmentFlag.AlignVCenter, name.upper())
+            p.drawText(28, y, ncw, rh, Qt.AlignmentFlag.AlignVCenter, name)
 
             # Badge overlaid at right edge of name zone
             if badge and badge in badge_colors:
