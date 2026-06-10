@@ -31,7 +31,7 @@ _POSITIONS = [
 class TyresWidget(BaseWidget):
     WIDGET_NAME = "Tyres"
     CONFIG_SCHEMA = [
-        {"type": "separator", "label": "Window"},
+        {"type": "separator", "label": "Appearance"},
         {"key": "opacity", "label": "Opacity (%)", "type": "int",
          "min": 0, "max": 100, "step": 5, "default": 85},
         {"key": "scale",   "label": "Size (%)",    "type": "int",

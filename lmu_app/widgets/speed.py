@@ -9,9 +9,9 @@ from lmu_app.api.reader import DataReader, LMUSnapshot
 from lmu_app.utils.theme import T, label_font, rpm_seg_color
 from lmu_app.widgets.base import BaseWidget
 
-BASE_W, BASE_H = 200, 104
-_PAD_X, _PAD_Y = 10, 10
-_RPM_H  = 7
+BASE_W, BASE_H = 90, 50
+_PAD_X, _PAD_Y = 5, 5
+_RPM_H  = 4
 _RPM_Y  = _PAD_Y
 _RPM_GAP = 1
 
@@ -28,11 +28,11 @@ def _num_px(px: int) -> QFont:
 class SpeedWidget(BaseWidget):
     WIDGET_NAME = "Speed & Gear"
     CONFIG_SCHEMA = [
-        {"type": "separator", "label": "Window"},
+        {"type": "separator", "label": "Appearance"},
         {"key": "opacity", "label": "Opacity (%)",  "type": "int",
          "min": 0,  "max": 100, "step": 5, "default": 85},
         {"key": "scale",   "label": "Size (%)",     "type": "int",
-         "min": 50, "max": 250, "step": 5, "default": 75},
+         "min": 50, "max": 250, "step": 5, "default": 100},
     ]
 
     def __init__(self, reader: DataReader, **kw):
@@ -40,7 +40,7 @@ class SpeedWidget(BaseWidget):
         self._gear    = 0
         self._rpm     = 0.0
         self._rpm_max = 9000.0
-        self._scale   = 0.75
+        self._scale   = 1.0
         super().__init__(reader, update_hz=30, **kw)
         self.setFixedSize(int(BASE_W * self._scale), int(BASE_H * self._scale))
 
@@ -48,7 +48,7 @@ class SpeedWidget(BaseWidget):
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
     def apply_params(self, params: dict) -> None:
-        self._scale   = int(params.get("scale", 75)) / 100.0
+        self._scale   = int(params.get("scale", 100)) / 100.0
         self._opacity = max(0, min(100, int(params.get("opacity", 85))))
         self.setFixedSize(int(BASE_W * self._scale), int(BASE_H * self._scale))
         self.update()
@@ -94,22 +94,23 @@ class SpeedWidget(BaseWidget):
         avc       = Qt.AlignmentFlag.AlignVCenter
         speed_str = str(int(self._speed))
 
-        # Speed — left-aligned so digits start flush with left padding
+        # Speed — right-aligned in a fixed 3-digit-wide zone so digits don't jump
         p.setFont(_num_px(num_px))
         fm_spd   = p.fontMetrics()
         spd_base = content_y + (content_h - fm_spd.height()) / 2 + fm_spd.ascent()
-        spd_adv  = fm_spd.horizontalAdvance(speed_str)
+        ref_w    = fm_spd.horizontalAdvance("000")
         p.setPen(QColor(T.TEXT))
-        p.drawText(QRectF(_PAD_X, content_y, w * 0.50, content_h),
-                   avc | Qt.AlignmentFlag.AlignLeft, speed_str)
+        p.drawText(QRectF(_PAD_X, content_y, ref_w, content_h),
+                   avc | Qt.AlignmentFlag.AlignRight, speed_str)
 
-        # KM/H — placed 12 px after the speed digits' right edge, baseline-aligned
-        p.setFont(label_font(9))
-        fm_kph = p.fontMetrics()
-        kph_x  = _PAD_X + spd_adv + 12
+        # KM/H — always at the same fixed position, baseline-aligned with speed
+        p.setFont(label_font(6))
+        fm_kph  = p.fontMetrics()
+        kph_x   = _PAD_X + ref_w + 3
+        kph_w   = fm_kph.horizontalAdvance("KM/H") + 4
         p.setPen(QColor(T.DIM))
         p.drawText(QRectF(kph_x, spd_base - fm_kph.ascent(),
-                          w * 0.22, fm_kph.height()),
+                          kph_w, fm_kph.height()),
                    avc | Qt.AlignmentFlag.AlignLeft, "KM/H")
 
         # Gear — right-aligned in right 32 %

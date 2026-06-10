@@ -70,6 +70,7 @@ class T:
     PIT_BG, PIT_FG = "#3270C8", "#FFFFFF"
     OUT_BG, OUT_FG = "#BE8200", "#14140A"
     GAR_BG, GAR_FG = "#4A4A4A", "#C8C8C8"
+    LAP_BG, LAP_FG = "#FFD700", "#111111"   # pit lap badge: yellow / black
 
     # vehicle classes (mirror utils/class_colors.py defaults)
     CLASS = {
@@ -99,9 +100,10 @@ def panel_brush(_x: float, _y: float, _h: float, alpha: int) -> QBrush:
     return QBrush(QColor(*T.PANEL_TOP, alpha))
 
 
-def accent_hairline(w: float) -> QLinearGradient:
+def accent_hairline(w: float, opacity_pct: int = 100) -> QLinearGradient:
+    alpha = round(255 * opacity_pct / 100)
     g = QLinearGradient(9, 0, w * 0.8, 0)
-    g.setColorAt(0.0, QColor(T.ACCENT))
+    g.setColorAt(0.0, QColor(0xEC, 0xAA, 0x43, alpha))
     g.setColorAt(1.0, QColor(0xEC, 0xAA, 0x43, 0))
     return g
 
@@ -140,4 +142,4 @@ def draw_panel(p, w: float, h: float, opacity_pct: int, bg_alpha: int,
     p.setPen(border_pen(opacity_pct))
     p.drawRoundedRect(0, 0, w, h, T.RADIUS, T.RADIUS)
     if accent:
-        p.fillRect(QRectF(9, 0, w - 18, 2), accent_hairline(w))
+        p.fillRect(QRectF(9, 0, w - 18, 2), accent_hairline(w, opacity_pct))

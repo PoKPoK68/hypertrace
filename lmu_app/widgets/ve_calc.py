@@ -26,7 +26,7 @@ def _fmt_ref_ve(v: float) -> str:
 class VECalcWidget(BaseWidget):
     WIDGET_NAME = "VE Calculator"
     CONFIG_SCHEMA = [
-        {"type": "separator", "label": "Window"},
+        {"type": "separator", "label": "Appearance"},
         {"key": "opacity",      "label": "Opacity (%)",          "type": "int",
          "min": 0, "max": 100, "step": 5, "default": 85},
         {"key": "scale",        "label": "Size (%)",             "type": "int",
@@ -268,7 +268,7 @@ class VECalcWidget(BaseWidget):
 
         if self._has_table:
             # ── Column headers ──────────────────────────────────────────────
-            p.setFont(label_font(8))
+            p.setFont(label_font(6))
             p.setPen(QColor(T.DIM))
             for k, (cx, cw) in self._col_pos.items():
                 if k != "label":
@@ -291,28 +291,28 @@ class VECalcWidget(BaseWidget):
                 laps_on, refuel_pct, finish_pct = _calc(ve_pct, cur_pct, rem, sfty)
 
                 cx, cw = self._col_pos["label"]
-                p.setFont(label_font(10)); p.setPen(QColor(T.DIM))
+                p.setFont(label_font(7)); p.setPen(QColor(T.DIM))
                 p.drawText(cx, y, cw, _RH, Qt.AlignmentFlag.AlignVCenter, lbl)
 
                 if "usage" in self._col_pos:
                     cx, cw = self._col_pos["usage"]
-                    p.setFont(num_font(12)); p.setPen(QColor(T.TEXT))
+                    p.setFont(num_font(8)); p.setPen(QColor(T.TEXT))
                     p.drawText(cx, y, cw, _RH,
                                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
                                _fmt_ve(ve_pct) if ve_pct > 0.001 else "---")
 
                 if "laps" in self._col_pos:
                     cx, cw = self._col_pos["laps"]
-                    p.setFont(num_font(12)); p.setPen(QColor(T.TEXT))
+                    p.setFont(num_font(8)); p.setPen(QColor(T.TEXT))
                     p.drawText(cx, y, cw, _RH,
                                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
                                f"{laps_on:.1f}" if laps_on is not None else "---")
 
                 if "refuel" in self._col_pos:
                     cx, cw = self._col_pos["refuel"]
-                    p.setFont(num_font(12))
+                    p.setFont(num_font(8))
                     if refuel_pct is None:
-                        p.setPen(QColor(T.DIM)); ref_str = "---"
+                        p.setPen(QColor(T.TEXT)); ref_str = "---"
                     elif refuel_pct < 0.05:
                         p.setPen(QColor(T.GOOD)); ref_str = "OK"
                     else:
@@ -323,9 +323,9 @@ class VECalcWidget(BaseWidget):
 
                 if "finish" in self._col_pos:
                     cx, cw = self._col_pos["finish"]
-                    p.setFont(num_font(12))
+                    p.setFont(num_font(8))
                     if finish_pct is None:
-                        p.setPen(QColor(T.DIM)); fin_str = "---"
+                        p.setPen(QColor(T.TEXT)); fin_str = "---"
                     else:
                         p.setPen(QColor(T.TEXT)); fin_str = _fmt_ve(finish_pct)
                     p.drawText(cx, y, cw, _RH,
@@ -339,9 +339,9 @@ class VECalcWidget(BaseWidget):
             y += 5
             ratio = self._last_lap_ratio
             ratio_str = f"{math.ceil(ratio * 100) / 100:.2f}" if ratio > 0 else "---"
-            p.setFont(label_font(10)); p.setPen(QColor(T.DIM))
+            p.setFont(label_font(7)); p.setPen(QColor(T.DIM))
             p.drawText(_PAD, y, self._bw // 2, _RH, Qt.AlignmentFlag.AlignVCenter, "FUEL RATIO")
-            p.setFont(num_font(12)); p.setPen(QColor(T.TEXT))
+            p.setFont(num_font(8)); p.setPen(QColor(T.TEXT))
             p.drawText(_PAD, y, self._bw, _RH,
                        Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight, ratio_str)
 

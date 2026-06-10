@@ -84,7 +84,7 @@ class BaseWidget(QWidget):
         p.setPen(border_pen(self._opacity))
         p.drawRoundedRect(0, 0, w, h, T.RADIUS, T.RADIUS)
         if accent:
-            p.fillRect(QRectF(9, 0, w - 18, 2), accent_hairline(w))
+            p.fillRect(QRectF(9, 0, w - 18, 2), accent_hairline(w, self._opacity))
 
     # ------------------------------------------------------------------
     # Subclass hooks
@@ -127,7 +127,7 @@ class BaseWidget(QWidget):
     def _update(self) -> None:
         snapshot = self._reader.get()
 
-        if not snapshot.game_running:
+        if not snapshot.game_running or not snapshot.session_active:
             if self.isVisible():
                 self.hide()
             return

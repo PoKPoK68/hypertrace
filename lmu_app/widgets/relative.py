@@ -6,21 +6,27 @@ Badge overlays the name text (no column shrink).
 """
 from __future__ import annotations
 import math as _math
+from pathlib import Path
 
 from PySide6.QtCore import Qt, QRectF
-from PySide6.QtGui import QColor, QPainter
+from PySide6.QtGui import QColor, QIcon, QPainter
 from PySide6.QtWidgets import QSizePolicy
 
 from lmu_app.api.reader import DataReader, LMUSnapshot
 from lmu_app.utils.class_colors import class_color
-from lmu_app.utils.theme import T, num_font, text_font
+from lmu_app.utils.theme import T, label_font, num_font, text_font
 from lmu_app.widgets.base import BaseWidget
 
-_W_BASE  = 74    # fixed: 28px pos column + 40px gap area + 6px margin
+_ASSETS = Path(__file__).resolve().parent.parent / "assets"
+_TRACK_TEMP_SVG = str(_ASSETS / "track-temp.svg")
+_AIR_TEMP_SVG   = str(_ASSETS / "air-temp.svg")
+
+_W_BASE       = 74    # fixed: 28px pos column + 40px gap area + 6px margin
+SESSION_BAR_H = 22
 
 
 def _char_px(font_size: int) -> int:
-    return max(4, round(8 * font_size / 9))
+    return max(4, round(7 * font_size / 9))
 
 
 def _badge_px(font_size: int) -> int:
@@ -35,8 +41,9 @@ def _row_h(font_size: int) -> int:
     return font_size + 13
 
 
-def _widget_h(ahead: int, behind: int, font_size: int = 9) -> int:
-    return (ahead + 1 + behind) * _row_h(font_size) + 8
+def _widget_h(ahead: int, behind: int, font_size: int = 9,
+              show_session_bar: bool = False) -> int:
+    return (SESSION_BAR_H if show_session_bar else 0) + (ahead + 1 + behind) * _row_h(font_size) + 8
 
 
 def _fmt_name(raw: str, fmt: str) -> str:
@@ -47,6 +54,21 @@ def _fmt_name(raw: str, fmt: str) -> str:
     if fmt == "initial" and len(parts) >= 2:
         return f"{parts[0][0]}. {' '.join(parts[1:])}"
     return raw
+
+def _session_label(session_type: int) -> str:
+    if session_type >= 10: return "Race"
+    if 5 <= session_type <= 8: return "Qualifying"
+    return "Practice"
+
+def _fmt_session_time(elapsed: float, remaining: float) -> str:
+    def _f(t: float) -> str:
+        t = max(0, int(t))
+        h, r = divmod(t, 3600)
+        m, s = divmod(r, 60)
+        return f"{h}:{m:02d}:{s:02d}"
+    total   = round((elapsed + max(0.0, remaining)) / 60) * 60
+    elapsed = max(0, total - int(max(0.0, remaining)))
+    return f"{_f(elapsed)} / {_f(total)}"
 
 def _apply_case(name: str, case: str) -> str:
     if case == "title":
@@ -65,9 +87,11 @@ def _fmt_gap(g: float, decimals: int = 1) -> str:
 class RelativeWidget(BaseWidget):
     WIDGET_NAME = "Relative"
     CONFIG_SCHEMA = [
-        {"type": "separator", "label": "Window"},
+        {"type": "separator", "label": "Appearance"},
         {"key": "opacity",           "label": "Opacity (%)",            "type": "int",
          "min": 0, "max": 100, "step": 5, "default": 85},
+        {"key": "scale",             "label": "Size (%)",               "type": "int",
+         "min": 50, "max": 250, "step": 5, "default": 100},
         {"type": "separator", "label": "Rows"},
         {"key": "drivers_ahead",     "label": "Drivers ahead",         "type": "int",
          "min": 1, "max": 10, "step": 1, "default": 4},
@@ -89,7 +113,8 @@ class RelativeWidget(BaseWidget):
              {"value": "title", "label": "Name Lastname"},
          ], "default": "upper"},
         {"type": "separator", "label": "Display"},
-        {"key": "show_badges",       "label": "PIT / OUT badges",      "type": "bool", "default": True},
+        {"key": "show_session_bar",  "label": "Show header",       "type": "bool", "default": False},
+        {"key": "show_badges",       "label": "PIT / OUT badges",  "type": "bool", "default": True},
         {"key": "player_color",      "label": "Player row color",       "type": "color", "default": "#ECAA43"},
         {"key": "player_color_alpha","label": "Player row opacity (%)", "type": "int",
          "min": 0, "max": 100, "step": 5, "default": 20},
@@ -97,6 +122,13 @@ class RelativeWidget(BaseWidget):
          "min": 0, "max": 3,  "step": 1, "default": 1},
         {"key": "font_size",         "label": "Font size",              "type": "int",
          "min": 7, "max": 14, "step": 1, "default": 9},
+        {"type": "separator", "label": "Header"},
+        {"key": "header_info", "label": "Header info", "type": "choice",
+         "options": [
+             {"value": "session", "label": "Session + Time"},
+             {"value": "temp",    "label": "Temperatures"},
+             {"value": "none",    "label": "Nothing"},
+         ], "default": "session"},
     ]
 
     # All colors from theme.T — no hex literals in this class.
@@ -109,6 +141,8 @@ class RelativeWidget(BaseWidget):
                  max_name_chars:     int = 16,
                  name_format:        str = "full",
                  name_case:          str = "upper",
+                 show_session_bar:   bool = False,
+                 header_info:        str = "session",
                  font_size:          int = 9,
                  **kw):
         self._ahead              = drivers_ahead
@@ -116,17 +150,30 @@ class RelativeWidget(BaseWidget):
         self._interval_decimals  = interval_decimals
         self._show_badges        = show_badges
         self._max_name_chars = max_name_chars
-        self._name_format    = name_format
-        self._name_case      = name_case
-        self._font_size      = max(7, min(14, int(font_size)))
+        self._name_format         = name_format
+        self._name_case           = name_case
+        self._show_session_bar    = show_session_bar
+        self._header_info         = header_info
+        self._ses_type            = 0
+        self._current_et          = 0.0
+        self._ses_remaining       = 0.0
+        self._track_temp          = 0.0
+        self._air_temp            = 0.0
+        self._scale               = 1.0
+        self._font_size           = max(7, min(14, int(font_size)))
         self._rows:  list    = []
-        self._outlap_tracking: dict[int, int] = {}
-        self._prev_in_pits:   dict[int, bool] = {}
+        self._outlap_tracking:  dict[int, int]  = {}
+        self._pit_lap_tracking: dict[int, int]  = {}
+        self._prev_in_pits:     dict[int, bool] = {}
         self._class_colors:   dict[str, str]  = {}
         self._player_color = QColor(0xEC, 0xAA, 0x43, 51)
+        self._temp_pm_trk = None
+        self._temp_pm_air = None
+        self._temp_pm_sz  = 0
         self._opacity = 85
         super().__init__(reader, update_hz=10, **kw)
-        self.setFixedSize(_widget_w(max_name_chars, self._font_size), _widget_h(drivers_ahead, drivers_behind, self._font_size))
+        self.setFixedSize(int(_widget_w(max_name_chars, self._font_size) * self._scale),
+                          int(_widget_h(drivers_ahead, drivers_behind, self._font_size, show_session_bar) * self._scale))
 
     def setup_ui(self):
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
@@ -141,25 +188,33 @@ class RelativeWidget(BaseWidget):
         self._interval_decimals = int(params.get("interval_decimals", 1))
         self._show_badges       = bool(params.get("show_badges", True))
         self._max_name_chars = int(params.get("max_name_chars", 16))
-        self._name_format    = str(params.get("name_format", "full"))
-        self._name_case      = str(params.get("name_case", "upper"))
-        self._font_size      = max(7, min(14, int(params.get("font_size", 9))))
+        self._name_format         = str(params.get("name_format", "full"))
+        self._name_case           = str(params.get("name_case", "upper"))
+        self._show_session_bar    = bool(params.get("show_session_bar",  False))
+        self._header_info         = str(params.get("header_info", "session"))
+        self._scale               = int(params.get("scale", 100)) / 100.0
+        self._font_size           = max(7, min(14, int(params.get("font_size", 9))))
         self._opacity        = max(0, min(100, int(params.get("opacity", 85))))
         _c = QColor(str(params.get("player_color", "#ffc800")))
         if not _c.isValid(): _c = QColor(255, 200, 0)
         _c.setAlpha(round(255 * max(0, min(100, int(params.get("player_color_alpha", 20)))) / 100))
         self._player_color = _c
-        self.setFixedSize(_widget_w(self._max_name_chars, self._font_size),
-                          _widget_h(self._ahead, self._behind, self._font_size))
+        self.setFixedSize(int(_widget_w(self._max_name_chars, self._font_size) * self._scale),
+                          int(_widget_h(self._ahead, self._behind, self._font_size, self._show_session_bar) * self._scale))
         self.update()
 
     def on_data(self, snap: LMUSnapshot):
+        self._ses_type      = snap.session.session_type
+        self._current_et    = snap.session.current_et
+        self._ses_remaining = snap.session.session_time_remaining
+        self._track_temp    = snap.session.track_temp
+        self._air_temp      = snap.session.ambient_temp
         vehicles = snap.session.vehicles
         player   = next((v for v in vehicles if v.is_player), None)
         if not player:
             return
 
-        # Outlap tracking
+        # Outlap / pit-lap tracking
         new_prev: dict[int, bool] = {}
         for v in vehicles:
             slot     = v.slot_id
@@ -167,6 +222,9 @@ class RelativeWidget(BaseWidget):
             new_prev[slot] = v.in_pits
             if v.in_garage:
                 self._outlap_tracking.pop(slot, None)
+                self._pit_lap_tracking.pop(slot, None)
+            elif not was_pits and v.in_pits:
+                self._pit_lap_tracking[slot] = v.total_laps
             elif was_pits and not v.in_pits:
                 self._outlap_tracking[slot] = v.total_laps
             elif slot in self._outlap_tracking and v.total_laps > self._outlap_tracking[slot]:
@@ -207,6 +265,7 @@ class RelativeWidget(BaseWidget):
             slot  = v.slot_id
             badge = ("PIT" if v.in_pits
                      else "OUT" if slot in self._outlap_tracking
+                     else f"L{self._pit_lap_tracking[slot]}" if slot in self._pit_lap_tracking
                      else "")
 
             entry = {
@@ -228,6 +287,7 @@ class RelativeWidget(BaseWidget):
         p_slot  = player.slot_id
         p_badge = ("PIT" if player.in_pits
                    else "OUT" if p_slot in self._outlap_tracking
+                   else f"L{self._pit_lap_tracking[p_slot]}" if p_slot in self._pit_lap_tracking
                    else "")
 
         player_entry = {
@@ -250,10 +310,12 @@ class RelativeWidget(BaseWidget):
     def paintEvent(self, _):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        W   = self.width()
-        H   = self.height()
-        ncw = self._max_name_chars * _char_px(self._font_size)
-        bdg = _badge_px(self._font_size)
+        p.scale(self._scale, self._scale)
+        W    = _widget_w(self._max_name_chars, self._font_size)
+        H    = _widget_h(self._ahead, self._behind, self._font_size, self._show_session_bar)
+        ncw  = self._max_name_chars * _char_px(self._font_size)
+        bdg  = _badge_px(self._font_size)
+        _sbh = SESSION_BAR_H if self._show_session_bar else 0
 
         self._draw_panel(p, W, H)
 
@@ -261,13 +323,55 @@ class RelativeWidget(BaseWidget):
         fss = max(6, fs - 2)
         rh  = _row_h(fs)
 
-        badge_colors = {
+        # ── Session bar ───────────────────────────────────────────────────
+        if self._show_session_bar:
+            hi = self._header_info
+            if hi == "session":
+                lbl = _session_label(self._ses_type)
+                f = label_font(max(6, fss))
+                p.setFont(f)
+                fm   = p.fontMetrics()
+                lbl_w = fm.horizontalAdvance(lbl)
+                baseline = 1 + (_sbh + fm.ascent() - fm.descent()) // 2
+                p.setPen(QColor(T.ACCENT))
+                p.drawText(6, baseline, lbl)
+                p.setPen(QColor(T.TEXT))
+                p.drawText(6 + lbl_w + 6, baseline,
+                           _fmt_session_time(self._current_et, self._ses_remaining))
+            elif hi == "temp":
+                p.setFont(num_font(fss))
+                fm = p.fontMetrics()
+                trk_str = f"{self._track_temp:.0f}°"
+                air_str = f"{self._air_temp:.0f}°"
+                icon_sz = max(6, fss + 1)
+                if icon_sz != self._temp_pm_sz:
+                    self._temp_pm_trk = QIcon(_TRACK_TEMP_SVG).pixmap(icon_sz, icon_sz)
+                    self._temp_pm_air = QIcon(_AIR_TEMP_SVG).pixmap(icon_sz, icon_sz)
+                    self._temp_pm_sz  = icon_sz
+                gap_px = 3
+                sep_px = 8
+                trk_w = fm.horizontalAdvance(trk_str)
+                air_w = fm.horizontalAdvance(air_str)
+                x0 = W - 6 - (icon_sz + gap_px + trk_w + sep_px + icon_sz + gap_px + air_w)
+                icon_y = 1 + _sbh // 2 - icon_sz // 2
+                p.drawPixmap(x0, icon_y, self._temp_pm_trk)
+                p.setPen(QColor(T.DIM))
+                p.drawText(x0 + icon_sz + gap_px, 1, trk_w + 2, _sbh,
+                           Qt.AlignmentFlag.AlignVCenter, trk_str)
+                ax = x0 + icon_sz + gap_px + trk_w + sep_px
+                p.drawPixmap(ax, icon_y, self._temp_pm_air)
+                p.setPen(QColor(T.DIM))
+                p.drawText(ax + icon_sz + gap_px, 1, air_w + 2, _sbh,
+                           Qt.AlignmentFlag.AlignVCenter, air_str)
+            p.fillRect(QRectF(2, _sbh, W - 4, 1), T.FAINT)
+
+        _badge_map = {
             "PIT": (QColor(T.PIT_BG), QColor(T.PIT_FG)),
             "OUT": (QColor(T.OUT_BG), QColor(T.OUT_FG)),
         }
 
         for i, row in enumerate(self._rows):
-            y = 4 + i * rh
+            y = _sbh + 4 + i * rh
             if not row["name_raw"] and not row["is_player"]:
                 continue
 
@@ -300,8 +404,11 @@ class RelativeWidget(BaseWidget):
             p.drawText(28, y, ncw, rh, Qt.AlignmentFlag.AlignVCenter, name)
 
             # Badge overlaid at right edge of name zone
-            if badge and badge in badge_colors:
-                bg_c, fg_c = badge_colors[badge]
+            if badge:
+                if badge in _badge_map:
+                    bg_c, fg_c = _badge_map[badge]
+                else:
+                    bg_c, fg_c = QColor(T.LAP_BG), QColor(T.LAP_FG)
                 bx2, by2 = 28 + ncw - bdg, y + 3
                 p.setBrush(bg_c); p.setPen(Qt.PenStyle.NoPen)
                 p.drawRoundedRect(bx2, by2, bdg, rh - 6, 2, 2)

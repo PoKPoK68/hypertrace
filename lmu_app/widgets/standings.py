@@ -7,9 +7,10 @@ Only active classes (with non-garage drivers) appear.
 """
 from __future__ import annotations
 from collections import defaultdict
+from pathlib import Path
 
 from PySide6.QtCore import Qt, QRectF
-from PySide6.QtGui import QColor, QPainter
+from PySide6.QtGui import QColor, QIcon, QPainter
 from PySide6.QtWidgets import QSizePolicy
 
 from lmu_app.api.reader import DataReader, LMUSnapshot
@@ -17,12 +18,18 @@ from lmu_app.utils.class_colors import class_abbrev, class_color
 from lmu_app.utils.theme import T, label_font, num_font, text_font
 from lmu_app.widgets.base import BaseWidget
 
+_ASSETS = Path(__file__).resolve().parent.parent / "assets"
+_TRACK_TEMP_SVG = str(_ASSETS / "track-temp.svg")
+_AIR_TEMP_SVG   = str(_ASSETS / "air-temp.svg")
+
 ROW_H = 20
 SEP_H = 4
 CLS_H = 16
+SESSION_BAR_H = 22
 
-_CHAR_PX_BASE  = 8
+_CHAR_PX_BASE  = 7
 _BADGE_PX_BASE = 22
+_CP            = 3   # column inner padding (applied left AND right — gap between cols = 2*_CP)
 
 def _char_px(font_size: int) -> int:
     return max(4, round(_CHAR_PX_BASE * font_size / 9))
@@ -52,11 +59,11 @@ def _class_rank(cls_name: str) -> int:
 COLUMN_DEFS = {
     "pos":      ("",      16, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter),
     "name":     ("",      -1, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
-    "gap":      ("GAP",   52, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight),
-    "interval": ("INT",   52, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight),
-    "best":     ("BEST",  62, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight),
-    "last":     ("LAST",  62, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight),
-    "fuel_ve":  ("VE/F",  44, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight),
+    "gap":      ("GAP",   52, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
+    "interval": ("INT",   52, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
+    "best":     ("BEST",  62, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
+    "last":     ("LAST",  62, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
+    "fuel_ve":  ("VE/F",  44, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
 }
 DEFAULT_COLUMNS = ["pos", "name", "gap", "interval", "best", "last"]
 
@@ -83,6 +90,21 @@ def _fmt_name(raw: str, fmt: str) -> str:
         return f"{parts[0][0]}. {' '.join(parts[1:])}"
     return raw
 
+def _session_label(session_type: int) -> str:
+    if session_type >= 10: return "Race"
+    if 5 <= session_type <= 8: return "Qualifying"
+    return "Practice"
+
+def _fmt_session_time(elapsed: float, remaining: float) -> str:
+    def _f(t: float) -> str:
+        t = max(0, int(t))
+        h, r = divmod(t, 3600)
+        m, s = divmod(r, 60)
+        return f"{h}:{m:02d}:{s:02d}"
+    total   = round((elapsed + max(0.0, remaining)) / 60) * 60
+    elapsed = max(0, total - int(max(0.0, remaining)))
+    return f"{_f(elapsed)} / {_f(total)}"
+
 def _apply_case(name: str, case: str) -> str:
     if case == "title":
         return name.title()
@@ -93,29 +115,43 @@ def _apply_case(name: str, case: str) -> str:
         return name.upper()
     return name.upper()
 
-def _col_w(col: str, ncw: int, font_size: int = 9) -> int:
+def _col_w(col: str, ncw: int, font_size: int = 9, dw: dict | None = None) -> int:
     if col == "name":
         return ncw
+    if dw and col in dw:
+        return dw[col]
     base = COLUMN_DEFS[col][1] if col in COLUMN_DEFS else 0
     if base <= 0:
         return 0
     return max(8, round(base * font_size / 9))
 
-def _total_w(columns: list, ncw: int, font_size: int = 9) -> int:
-    return sum(_col_w(c, ncw, font_size) for c in columns if c in COLUMN_DEFS) + 4
+def _total_w(columns: list, ncw: int, font_size: int = 9, dw: dict | None = None) -> int:
+    return sum(_col_w(c, ncw, font_size, dw) for c in columns if c in COLUMN_DEFS) + 4
 
 def _row_h(font_size: int) -> int:
     return font_size + 11
 
 
-def _compute_h(show_header: bool, entries: list, row_h: int = ROW_H) -> int:
-    """Compute widget height from entry list (is_sep / is_class_header / regular rows)."""
-    h = (22 if show_header else 0) + 8  # 4px top + 4px bottom padding
+def _true_laps_behind(leader, v) -> int:
+    """Correct laps-down count using time_into_lap (same logic as relative widget).
+    raw==1 only counts as +1L if the leader is also further into the current lap —
+    avoids false positive when the leader just crossed the line but v is still ahead on track."""
+    raw = leader.total_laps - v.total_laps
+    if raw <= 0:
+        return 0
+    if raw >= 2:
+        return raw
+    return 1 if leader.time_into_lap >= v.time_into_lap else 0
+
+
+def _compute_h(entries: list, row_h: int = ROW_H, show_class_header: bool = True) -> int:
+    """Compute widget height. Header row is always present and merged with column labels."""
+    h = SESSION_BAR_H + 8
     for e in entries:
         if e.get("is_sep"):
             h += SEP_H
         elif e.get("is_class_header"):
-            h += CLS_H
+            h += CLS_H if show_class_header else 0
         else:
             h += row_h
     return h
@@ -124,18 +160,27 @@ def _compute_h(show_header: bool, entries: list, row_h: int = ROW_H) -> int:
 class StandingsWidget(BaseWidget):
     WIDGET_NAME = "Standings"
     CONFIG_SCHEMA = [
-        {"type": "separator", "label": "Window"},
+        {"type": "separator", "label": "Appearance"},
         {"key": "opacity", "label": "Opacity (%)", "type": "int",
          "min": 0, "max": 100, "step": 5, "default": 85},
+        {"key": "scale",   "label": "Size (%)",    "type": "int",
+         "min": 50, "max": 250, "step": 5, "default": 100},
+        {"type": "separator", "label": "Header"},
+        {"key": "header_info", "label": "Header info", "type": "choice",
+         "options": [
+             {"value": "session", "label": "Session + Time"},
+             {"value": "temp",    "label": "Temperatures"},
+             {"value": "none",    "label": "Nothing"},
+         ], "default": "session"},
+        {"key": "show_class_badge", "label": "Car class badge", "type": "bool", "default": True},
         {"type": "separator", "label": "Rows"},
+        {"key": "show_other_classes",  "label": "Multiclass",        "type": "bool", "default": False},
+        {"key": "other_classes_top_n", "label": "Leaders per class", "type": "int",
+         "min": 1, "max": 6, "step": 1, "default": 3, "show_if": "show_other_classes"},
         {"key": "top_n",    "label": "Leaders shown", "type": "int",
          "min": 1, "max": 6, "step": 1, "default": 3},
         {"key": "around_n", "label": "Around player", "type": "int",
          "min": 0, "max": 6, "step": 1, "default": 2},
-        {"type": "separator", "label": "Other classes"},
-        {"key": "show_other_classes",  "label": "Show other classes",      "type": "bool", "default": False},
-        {"key": "other_classes_top_n", "label": "Leaders per other class", "type": "int",
-         "min": 1, "max": 6, "step": 1, "default": 3},
         {"type": "separator", "label": "Names"},
         {"key": "max_name_chars", "label": "Name max chars", "type": "int",
          "min": 4, "max": 30, "step": 1, "default": 16},
@@ -151,30 +196,32 @@ class StandingsWidget(BaseWidget):
              {"value": "mixed", "label": "Name LASTNAME"},
              {"value": "title", "label": "Name Lastname"},
          ], "default": "upper"},
-        {"type": "separator", "label": "Display"},
-        {"key": "show_header",     "label": "Column headers",          "type": "bool", "default": False},
-        {"key": "show_gar_badge",  "label": "GAR badge (garage)",      "type": "bool", "default": True},
-        {"key": "show_out_badge",  "label": "OUT badge (outlap)",      "type": "bool", "default": True},
-        {"key": "show_best_col",   "label": "Show Best lap column",    "type": "bool", "default": True},
-        {"key": "show_last_col",   "label": "Show Last lap column",    "type": "bool", "default": True},
-        {"key": "show_fuel_ve_col","label": "Show VE/Fuel column",     "type": "bool", "default": False},
-        {"key": "player_color",      "label": "Player row color",       "type": "color", "default": "#ECAA43"},
-        {"key": "player_color_alpha","label": "Player row opacity (%)", "type": "int",
-         "min": 0, "max": 100, "step": 5, "default": 20},
-        {"key": "font_size",       "label": "Font size",               "type": "int",
+        {"key": "font_size", "label": "Font size", "type": "int",
          "min": 7, "max": 14, "step": 1, "default": 9},
-        {"type": "separator", "label": "Gaps"},
-        {"key": "show_gap_col",      "label": "Show Gap column",           "type": "bool", "default": True},
-        {"key": "show_interval_col", "label": "Show Interval column",      "type": "bool", "default": True},
-        {"key": "gap_decimals",      "label": "Gap decimals (0-3)",        "type": "int",
-         "min": 0, "max": 3, "step": 1, "default": 1},
-        {"key": "interval_decimals", "label": "Interval decimals (0-3)",   "type": "int",
-         "min": 0, "max": 3, "step": 1, "default": 1},
-        {"type": "separator", "label": "Laps"},
-        {"key": "best_decimals", "label": "Best lap decimals (0-3)", "type": "int",
-         "min": 0, "max": 3, "step": 1, "default": 3},
-        {"key": "last_decimals", "label": "Last lap decimals (0-3)", "type": "int",
-         "min": 0, "max": 3, "step": 1, "default": 3},
+        {"type": "separator", "label": "Main row"},
+        {"key": "show_player_bg",    "label": "Colored background",  "type": "bool", "default": True},
+        {"key": "player_color",      "label": "Color",               "type": "color", "default": "#ECAA43",
+         "show_if": "show_player_bg"},
+        {"key": "player_color_alpha","label": "Opacity (%)",         "type": "int",
+         "min": 0, "max": 100, "step": 5, "default": 20, "show_if": "show_player_bg"},
+        {"type": "separator", "label": "Columns"},
+        {"key": "show_best_col",     "label": "Best lap",  "type": "bool", "default": True},
+        {"key": "best_decimals",     "label": "Decimals",  "type": "int",
+         "min": 0, "max": 3, "step": 1, "default": 3, "show_if": "show_best_col"},
+        {"key": "show_last_col",     "label": "Last lap",  "type": "bool", "default": True},
+        {"key": "last_decimals",     "label": "Decimals",  "type": "int",
+         "min": 0, "max": 3, "step": 1, "default": 3, "show_if": "show_last_col"},
+        {"key": "show_gap_col",      "label": "GAP",       "type": "bool", "default": True},
+        {"key": "gap_decimals",      "label": "Decimals",  "type": "int",
+         "min": 0, "max": 3, "step": 1, "default": 1, "show_if": "show_gap_col"},
+        {"key": "show_interval_col", "label": "INT",       "type": "bool", "default": True},
+        {"key": "interval_decimals", "label": "Decimals",  "type": "int",
+         "min": 0, "max": 3, "step": 1, "default": 1, "show_if": "show_interval_col"},
+        {"key": "show_fuel_ve_col",  "label": "VE / Fuel", "type": "bool", "default": False},
+        {"type": "separator", "label": "Pit info"},
+        {"key": "show_lap_badge",  "label": "Pitted lap",   "type": "bool", "default": True},
+        {"key": "show_out_badge",  "label": "Outlap",        "type": "bool", "default": True},
+        {"key": "show_gar_badge",  "label": "Pit / Garage",  "type": "bool", "default": True},
         {"type": "separator", "label": "Column order", "side_panel": True},
         {"key": "columns", "label": "", "type": "ordered_multiselect", "side_panel": True,
          "options": [
@@ -199,9 +246,10 @@ class StandingsWidget(BaseWidget):
     def __init__(self, reader: DataReader,
                  columns: list[str] | None = None,
                  top_n: int = 3, around_n: int = 2,
-                 show_header: bool = False, max_name_chars: int = 16,
+                 max_name_chars: int = 16,
                  gap_decimals: int = 1, interval_decimals: int = 1,
                  name_format: str = "full", name_case: str = "upper",
+                 header_info: str = "session",
                  show_gar_badge: bool = True, show_out_badge: bool = True,
                  show_other_classes: bool = False, other_classes_top_n: int = 3,
                  show_gap_col: bool = True, show_interval_col: bool = True,
@@ -219,34 +267,65 @@ class StandingsWidget(BaseWidget):
         self.columns              = [c for c in _col_order if c in COLUMN_DEFS and _show_map.get(c, True)] or ["pos", "name"]
         self._top_n               = top_n
         self._around_n            = around_n
-        self._show_header         = show_header
         self._max_name_chars      = max_name_chars
         self._gap_decimals        = gap_decimals
         self._interval_decimals   = interval_decimals
         self._name_format         = name_format
         self._name_case           = name_case
+        self._header_info         = header_info
+        self._ses_type            = 0
+        self._current_et          = 0.0
+        self._ses_remaining       = 0.0
+        self._track_temp          = 0.0
+        self._air_temp            = 0.0
         self._show_gar_badge      = show_gar_badge
         self._show_out_badge      = show_out_badge
+        self._show_lap_badge      = True
+        self._show_class_badge    = True
+        self._show_player_bg      = True
         self._show_other_classes  = show_other_classes
         self._other_classes_top_n = other_classes_top_n
         self._font_size           = max(7, min(14, int(font_size)))
         self._rh                  = _row_h(self._font_size)
         self._best_decimals       = max(0, min(3, int(best_decimals)))
         self._last_decimals       = max(0, min(3, int(last_decimals)))
+        self._scale               = 1.0
         self._opacity             = 85
         self._player_color        = QColor(0xEC, 0xAA, 0x43, 51)
         self._entries:  list[dict]    = []
         self._best_overall            = 9999.0
         self._player_fuel             = 0.0
         self._player_ve               = 0.0
-        self._outlap_tracking: dict[int, int] = {}
-        self._prev_in_pits:   dict[int, bool] = {}
-        self._class_colors:   dict[str, str]  = {}
+        self._outlap_tracking:    dict[int, int]  = {}
+        self._pit_lap_tracking:   dict[int, int]  = {}
+        self._prev_in_pits:       dict[int, bool] = {}
+        self._class_colors:       dict[str, str]  = {}
+        self._temp_pm_trk = None
+        self._temp_pm_air = None
+        self._temp_pm_sz  = 0
+        self._dw: dict[str, int] = {}
         super().__init__(reader, update_hz=5, **kw)
+        self._recompute_sizes()
         ncw = self._max_name_chars * _char_px(self._font_size)
         n_init = top_n + 1 + 2 * around_n
-        self.setFixedSize(_total_w(self.columns, ncw, self._font_size),
-                          _compute_h(show_header, [{}] * n_init, self._rh))
+        self.setFixedSize(int(_total_w(self.columns, ncw, self._font_size, self._dw) * self._scale),
+                          int(_compute_h([{}] * n_init, self._rh) * self._scale))
+
+    def _recompute_sizes(self) -> None:
+        from PySide6.QtGui import QFontMetrics
+        fsd = max(7, self._font_size - 1)
+        fm  = QFontMetrics(num_font(fsd))
+        def _gap_ref(d: int) -> str:
+            return "+999" + (f".{'9'*d}" if d > 0 else "")
+        def _lap_ref(d: int) -> str:
+            return "9:99" + (f".{'9'*d}" if d > 0 else "")
+        self._dw = {
+            "gap":      fm.horizontalAdvance(_gap_ref(self._gap_decimals))      + 2 * _CP,
+            "interval": fm.horizontalAdvance(_gap_ref(self._interval_decimals)) + 2 * _CP,
+            "best":     fm.horizontalAdvance(_lap_ref(self._best_decimals))     + 2 * _CP,
+            "last":     fm.horizontalAdvance(_lap_ref(self._last_decimals))     + 2 * _CP,
+            "fuel_ve":  fm.horizontalAdvance("100%")                            + 2 * _CP,
+        }
 
     def setup_ui(self):
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
@@ -263,15 +342,19 @@ class StandingsWidget(BaseWidget):
         self._interval_decimals   = int(params.get("interval_decimals", self._gap_decimals))
         self._name_format         = str(params.get("name_format", "full"))
         self._name_case           = str(params.get("name_case", "upper"))
-        self._show_header         = bool(params.get("show_header", False))
-        self._show_gar_badge      = bool(params.get("show_gar_badge", True))
-        self._show_out_badge      = bool(params.get("show_out_badge", True))
+        self._header_info         = str(params.get("header_info", "session"))
+        self._show_gar_badge      = bool(params.get("show_gar_badge",   True))
+        self._show_out_badge      = bool(params.get("show_out_badge",   True))
+        self._show_lap_badge      = bool(params.get("show_lap_badge",   True))
+        self._show_class_badge    = bool(params.get("show_class_badge", True))
+        self._show_player_bg      = bool(params.get("show_player_bg",   True))
         self._show_other_classes  = bool(params.get("show_other_classes", False))
         self._other_classes_top_n = int(params.get("other_classes_top_n", 3))
         self._font_size           = max(7, min(14, int(params.get("font_size", 9))))
         self._rh                  = _row_h(self._font_size)
         self._best_decimals       = max(0, min(3, int(params.get("best_decimals", 3))))
         self._last_decimals       = max(0, min(3, int(params.get("last_decimals", 3))))
+        self._scale               = int(params.get("scale", 100)) / 100.0
         self._opacity             = max(0, min(100, int(params.get("opacity", 85))))
         _c = QColor(str(params.get("player_color", "#ffc800")))
         if not _c.isValid(): _c = QColor(255, 200, 0)
@@ -293,10 +376,12 @@ class StandingsWidget(BaseWidget):
             "fuel_ve":  bool(params.get("show_fuel_ve_col",  False)),
         }
         self.columns = [c for c in col_order if show_map.get(c, True)] or ["pos", "name"]
+        self._recompute_sizes()
         ncw   = self._max_name_chars * _char_px(self._font_size)
         ref   = self._entries if self._entries else [{}] * (self._top_n + 1 + 2 * self._around_n)
-        new_h = _compute_h(self._show_header, ref, self._rh)
-        self.setFixedSize(_total_w(self.columns, ncw, self._font_size), new_h)
+        new_h = _compute_h(ref, self._rh, self._show_class_badge)
+        self.setFixedSize(int(_total_w(self.columns, ncw, self._font_size, self._dw) * self._scale),
+                          int(new_h * self._scale))
         self.update()
 
     # ------------------------------------------------------------------
@@ -304,6 +389,11 @@ class StandingsWidget(BaseWidget):
     def on_data(self, snap: LMUSnapshot):
         s       = snap.session
         is_race = s.session_type >= 10
+        self._ses_type      = s.session_type
+        self._current_et    = s.current_et
+        self._ses_remaining = s.session_time_remaining
+        self._track_temp    = s.track_temp
+        self._air_temp      = s.ambient_temp
 
         self._player_fuel = snap.vehicle.fuel
         self._player_ve   = snap.vehicle.virtual_energy
@@ -324,7 +414,7 @@ class StandingsWidget(BaseWidget):
         valid_best = [v.best_lap for v in player_cls_vehicles if v.best_lap > 0]
         self._best_overall = min(valid_best) if valid_best else 9999.0
 
-        # Outlap tracking (all vehicles)
+        # Outlap / pit-lap tracking (all vehicles)
         new_prev: dict[int, bool] = {}
         for v in s.vehicles:
             slot     = v.slot_id
@@ -332,6 +422,9 @@ class StandingsWidget(BaseWidget):
             new_prev[slot] = v.in_pits
             if v.in_garage:
                 self._outlap_tracking.pop(slot, None)
+                self._pit_lap_tracking.pop(slot, None)
+            elif not was_pits and v.in_pits:
+                self._pit_lap_tracking[slot] = v.total_laps
             elif was_pits and not v.in_pits:
                 self._outlap_tracking[slot] = v.total_laps
             elif slot in self._outlap_tracking and v.total_laps > self._outlap_tracking[slot]:
@@ -429,10 +522,11 @@ class StandingsWidget(BaseWidget):
         self._entries = entries
 
         ncw   = self._max_name_chars * _char_px(self._font_size)
-        new_w = _total_w(self.columns, ncw, self._font_size)
-        new_h = _compute_h(self._show_header, entries, self._rh)
-        if self.width() != new_w or self.height() != new_h:
-            self.setFixedSize(new_w, new_h)
+        new_w = _total_w(self.columns, ncw, self._font_size, self._dw)
+        new_h = _compute_h(entries, self._rh, self._show_class_badge)
+        sw, sh = int(new_w * self._scale), int(new_h * self._scale)
+        if self.width() != sw or self.height() != sh:
+            self.setFixedSize(sw, sh)
 
         self.update()
 
@@ -450,22 +544,31 @@ class StandingsWidget(BaseWidget):
         badge = ("GAR" if v.in_garage
                  else "PIT" if v.in_pits
                  else "OUT" if slot in self._outlap_tracking
+                 else f"L{self._pit_lap_tracking[slot]}" if slot in self._pit_lap_tracking
                  else "")
 
+        laps_behind    = _true_laps_behind(cls_leader, v)      if is_race else 0
+        prev_laps_down = _true_laps_behind(cls_leader, prev_v) if (is_race and prev_v) else 0
+        interval_laps  = laps_behind - prev_laps_down
+
         return {
-            "pos":            class_rank + 1,
-            "name_raw":       v.driver_name or v.vehicle_name or f"Car {v.slot_id}",
-            "best":           v.best_lap,
-            "last":           v.last_lap,
-            "gap":            gap,
-            "interval":       interval,
-            "is_player":      v.is_player,
-            "is_best":        v.best_lap > 0 and abs(v.best_lap - self._best_overall) < 0.001,
-            "is_race":        is_race,
-            "is_outlap":      slot in self._outlap_tracking,
-            "badge":          badge,
-            "virtual_energy": v.virtual_energy,
-            "fuel":           v.fuel,
+            "pos":                   class_rank + 1,
+            "name_raw":              v.driver_name or v.vehicle_name or f"Car {v.slot_id}",
+            "best":                  v.best_lap,
+            "last":                  v.last_lap,
+            "gap":                   gap,
+            "interval":              interval,
+            "laps_behind":           laps_behind,
+            "interval_laps":         interval_laps,
+            "is_player":             v.is_player,
+            "is_best":               v.best_lap > 0 and abs(v.best_lap - self._best_overall) < 0.001,
+            "is_last_session_best":  v.last_lap > 0 and abs(v.last_lap - self._best_overall) < 0.001,
+            "is_last_personal_best": v.last_lap > 0 and v.best_lap > 0 and abs(v.last_lap - v.best_lap) < 0.01,
+            "is_race":               is_race,
+            "is_outlap":             slot in self._outlap_tracking,
+            "badge":                 badge,
+            "virtual_energy":        v.virtual_energy,
+            "fuel":                  v.fuel,
         }
 
     # ------------------------------------------------------------------
@@ -473,34 +576,85 @@ class StandingsWidget(BaseWidget):
     def paintEvent(self, _):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        ncw = self._max_name_chars * _char_px(self._font_size)
-        W   = _total_w(self.columns, ncw, self._font_size)
-        H   = _compute_h(self._show_header, self._entries, self._rh)
+        p.scale(self._scale, self._scale)
+        ncw  = self._max_name_chars * _char_px(self._font_size)
+        W    = _total_w(self.columns, ncw, self._font_size, self._dw)
+        H    = _compute_h(self._entries, self._rh, self._show_class_badge)
 
-        self._draw_panel(p, W, H)
+        self._draw_panel(p, W, H, accent=False)
 
         fs  = self._font_size
         fsd = max(7, fs - 1)
         fss = max(6, fs - 2)
 
-        # ── Column headers ────────────────────────────────────────────────
-        if self._show_header:
-            p.setBrush(QColor(28, 30, 34, 200))
-            p.setPen(Qt.PenStyle.NoPen)
-            p.drawRoundedRect(1, 1, W - 2, 22, T.RADIUS, T.RADIUS)
-            x = 2
-            for col in self.columns:
-                if col not in COLUMN_DEFS:
-                    continue
-                hdr_label, _, align = COLUMN_DEFS[col]
-                cw = _col_w(col, ncw, fs)
-                if hdr_label:
-                    p.setFont(label_font(max(6, fss)))
-                    p.setPen(QColor(T.DIM))
-                    p.drawText(x, 0, cw, 22, align, hdr_label)
-                x += cw
+        # ── Merged header row (session info + column labels) ──────────────
+        pos_w  = _col_w("pos",  ncw, fs, self._dw) if "pos"  in self.columns else 0
+        name_w = _col_w("name", ncw, fs, self._dw) if "name" in self.columns else 0
+        left_w = pos_w + name_w   # area with empty labels — session info goes here
 
-        y = (22 if self._show_header else 0) + 4
+        p.setBrush(QColor(28, 30, 34, 200))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawRoundedRect(1, 1, W - 2, SESSION_BAR_H, T.RADIUS, T.RADIUS)
+
+        # hairline drawn after session bar so it paints on top (not hidden by bar bg)
+        from lmu_app.utils.theme import accent_hairline as _ahl
+        p.fillRect(QRectF(9, 0, W - 18, 2), _ahl(W, self._opacity))
+
+        if left_w > 0:
+            hi = self._header_info
+            if hi == "session":
+                lbl = _session_label(self._ses_type)[0]
+                f = label_font(max(6, fss))
+                p.setFont(f)
+                fm   = p.fontMetrics()
+                lbl_w = fm.horizontalAdvance(lbl)
+                baseline = 1 + (SESSION_BAR_H + fm.ascent() - fm.descent()) // 2
+                p.setPen(QColor(T.ACCENT))
+                p.drawText(6, baseline, lbl)
+                p.setPen(QColor(T.TEXT))
+                p.drawText(6 + lbl_w + 6, baseline,
+                           _fmt_session_time(self._current_et, self._ses_remaining))
+            elif hi == "temp":
+                p.setFont(num_font(fss))
+                fm = p.fontMetrics()
+                trk_str = f"{self._track_temp:.0f}°"
+                air_str = f"{self._air_temp:.0f}°"
+                icon_sz = max(6, fss + 1)
+                if icon_sz != self._temp_pm_sz:
+                    self._temp_pm_trk = QIcon(_TRACK_TEMP_SVG).pixmap(icon_sz, icon_sz)
+                    self._temp_pm_air = QIcon(_AIR_TEMP_SVG).pixmap(icon_sz, icon_sz)
+                    self._temp_pm_sz  = icon_sz
+                gap_px = 3; sep_px = 8
+                trk_w = fm.horizontalAdvance(trk_str)
+                air_w = fm.horizontalAdvance(air_str)
+                temp_w = icon_sz + gap_px + trk_w + sep_px + icon_sz + gap_px + air_w
+                x0     = 2 + left_w - 4 - temp_w
+                icon_y = 1 + SESSION_BAR_H // 2 - icon_sz // 2
+                p.drawPixmap(x0, icon_y, self._temp_pm_trk)
+                p.setPen(QColor(T.DIM))
+                p.drawText(x0 + icon_sz + gap_px, 1, trk_w + 2, SESSION_BAR_H,
+                           Qt.AlignmentFlag.AlignVCenter, trk_str)
+                ax = x0 + icon_sz + gap_px + trk_w + sep_px
+                p.drawPixmap(ax, icon_y, self._temp_pm_air)
+                p.setPen(QColor(T.DIM))
+                p.drawText(ax + icon_sz + gap_px, 1, air_w + 2, SESSION_BAR_H,
+                           Qt.AlignmentFlag.AlignVCenter, air_str)
+
+        x_col = 2
+        for col in self.columns:
+            if col not in COLUMN_DEFS:
+                continue
+            hdr_label, _, align = COLUMN_DEFS[col]
+            cw = _col_w(col, ncw, fs, self._dw)
+            if hdr_label:
+                p.setFont(label_font(max(6, fss)))
+                p.setPen(QColor(T.DIM))
+                p.drawText(x_col + _CP, 1, cw - 2*_CP, SESSION_BAR_H, align, hdr_label)
+            x_col += cw
+
+        p.fillRect(QRectF(2, SESSION_BAR_H, W - 4, 1), T.FAINT)
+
+        y = SESSION_BAR_H + 4
 
         for e in self._entries:
 
@@ -512,6 +666,8 @@ class StandingsWidget(BaseWidget):
 
             # ── Class header ──────────────────────────────────────────────
             if e.get("is_class_header"):
+                if not self._show_class_badge:
+                    continue
                 abbrev  = e.get("abbrev", "???")[:3]
                 cls_col = e.get("cls_color")
                 bdg_w   = len(abbrev) * _char_px(fs) + 8
@@ -528,7 +684,7 @@ class StandingsWidget(BaseWidget):
 
             # ── Driver row ────────────────────────────────────────────────
             rh = self._rh
-            if e["is_player"]:
+            if e["is_player"] and self._show_player_bg:
                 p.setBrush(self._player_color)
                 p.setPen(Qt.PenStyle.NoPen)
                 p.drawRoundedRect(1, y, W - 2, rh, 3, 3)
@@ -538,7 +694,7 @@ class StandingsWidget(BaseWidget):
                 if col not in COLUMN_DEFS:
                     continue
                 _, _, align = COLUMN_DEFS[col]
-                cw = _col_w(col, ncw, fs)
+                cw = _col_w(col, ncw, fs, self._dw)
 
                 if col == "pos":
                     pos = e["pos"]
@@ -546,15 +702,17 @@ class StandingsWidget(BaseWidget):
                            else QColor(T.P3) if pos == 3 else QColor(T.DIM))
                     p.setFont(num_font(fs))
                     p.setPen(pc)
-                    p.drawText(x, y, cw, rh, align, str(pos))
+                    p.drawText(x + _CP, y, cw - 2*_CP, rh, align, str(pos))
 
                 elif col == "name":
                     raw_badge = e["badge"]
-                    if raw_badge == "GAR" and not self._show_gar_badge:
+                    if raw_badge in ("GAR", "PIT") and not self._show_gar_badge:
                         raw_badge = ""
                     elif raw_badge == "OUT" and not self._show_out_badge:
                         raw_badge = ""
-                    badge_colors = {
+                    elif raw_badge.startswith("L") and not self._show_lap_badge:
+                        raw_badge = ""
+                    _badge_map = {
                         "GAR": (QColor(T.GAR_BG), QColor(T.GAR_FG)),
                         "PIT": (QColor(T.PIT_BG), QColor(T.PIT_FG)),
                         "OUT": (QColor(T.OUT_BG), QColor(T.OUT_FG)),
@@ -563,8 +721,11 @@ class StandingsWidget(BaseWidget):
                     p.setFont(text_font(fs))
                     p.setPen(QColor(T.TEXT))
                     p.drawText(x + 2, y, cw, rh, align, name_text)
-                    if raw_badge and raw_badge in badge_colors:
-                        bg_c, fg_c = badge_colors[raw_badge]
+                    if raw_badge:
+                        if raw_badge in _badge_map:
+                            bg_c, fg_c = _badge_map[raw_badge]
+                        else:
+                            bg_c, fg_c = QColor(T.LAP_BG), QColor(T.LAP_FG)
                         bdg = _badge_px(fs)
                         bx2, by2 = x + cw - bdg, y + 3
                         p.setBrush(bg_c); p.setPen(Qt.PenStyle.NoPen)
@@ -574,32 +735,44 @@ class StandingsWidget(BaseWidget):
 
                 elif col == "best":
                     bc = (QColor(T.PURPLE) if e["is_best"]
-                          else QColor(T.GOOD) if e["is_player"]
                           else QColor(T.DIM) if e["best"] <= 0
                           else QColor(T.TEXT))
                     p.setFont(num_font(fsd)); p.setPen(bc)
-                    p.drawText(x, y, cw, rh, align, _fmt_lap(e["best"], self._best_decimals))
+                    p.drawText(x + _CP, y, cw - 2*_CP, rh, align, _fmt_lap(e["best"], self._best_decimals))
 
                 elif col == "last":
-                    lc = QColor(T.DIM) if e["last"] <= 0 else QColor(T.TEXT)
+                    lc = (QColor(T.PURPLE) if e["is_last_session_best"]
+                          else QColor(T.GOOD) if e["is_last_personal_best"]
+                          else QColor(T.DIM) if e["last"] <= 0
+                          else QColor(T.TEXT))
                     p.setFont(num_font(fsd)); p.setPen(lc)
-                    p.drawText(x, y, cw, rh, align, _fmt_lap(e["last"], self._last_decimals))
+                    p.drawText(x + _CP, y, cw - 2*_CP, rh, align, _fmt_lap(e["last"], self._last_decimals))
 
                 elif col == "gap":
-                    txt = ("" if e["pos"] == 1
-                           else "-" if e["is_outlap"] and not e["is_race"]
-                           else _fmt_gap(e["gap"], e["is_race"], self._gap_decimals))
+                    if e["pos"] == 1:
+                        txt = ""
+                    elif e["laps_behind"] > 0:
+                        txt = f"+{e['laps_behind']}L"
+                    elif e["is_outlap"] and not e["is_race"]:
+                        txt = "-"
+                    else:
+                        txt = _fmt_gap(e["gap"], e["is_race"], self._gap_decimals)
                     p.setFont(num_font(fsd))
                     p.setPen(QColor(T.DIM) if not txt else QColor(T.TEXT))
-                    p.drawText(x, y, cw, rh, align, txt)
+                    p.drawText(x + _CP, y, cw - 2*_CP, rh, align, txt)
 
                 elif col == "interval":
-                    txt = ("" if e["pos"] == 1
-                           else "-" if e["is_outlap"] and not e["is_race"]
-                           else _fmt_gap(e["interval"], e["is_race"], self._interval_decimals))
+                    if e["pos"] == 1:
+                        txt = ""
+                    elif e["interval_laps"] > 0:
+                        txt = f"+{e['interval_laps']}L"
+                    elif e["is_outlap"] and not e["is_race"]:
+                        txt = "-"
+                    else:
+                        txt = _fmt_gap(e["interval"], e["is_race"], self._interval_decimals)
                     p.setFont(num_font(fsd))
                     p.setPen(QColor(T.DIM) if not txt else QColor(T.TEXT))
-                    p.drawText(x, y, cw, rh, align, txt)
+                    p.drawText(x + _CP, y, cw - 2*_CP, rh, align, txt)
 
                 elif col == "fuel_ve":
                     ve   = e["virtual_energy"]
@@ -611,7 +784,7 @@ class StandingsWidget(BaseWidget):
                     else:
                         txt, vc = "---", QColor(T.DIM)
                     p.setFont(num_font(fsd)); p.setPen(vc)
-                    p.drawText(x, y, cw, rh, align, txt)
+                    p.drawText(x + _CP, y, cw - 2*_CP, rh, align, txt)
 
                 x += cw
             y += rh

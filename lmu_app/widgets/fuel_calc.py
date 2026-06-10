@@ -10,15 +10,15 @@ from lmu_app.utils.theme import T, label_font, num_font, draw_panel
 from lmu_app.widgets.base import BaseWidget
 
 # ── Layout constants (shared with ve_calc via import) ─────────────────────
-_PAD      = 7
-_BH       = 22    # bar height
-_LVL_H    = 14    # text-only level row height (bar hidden, level shown)
-_HDR      = 13    # column header row height
-_RH       = 19    # data row height
-_CG       = 4     # gap between columns
-_LABEL_W  = 46    # label column width ("AVG 5" at label_font(10) + 114% tracking needs ~40 px)
-_MIN_COL_W = 50   # minimum data column width (wide enough for "FINISH"/"REFUEL" + 114% tracking)
-_MIN_W    = 150   # minimum widget width
+_PAD      = 5
+_BH       = 15    # bar height
+_LVL_H    = 10    # text-only level row height (bar hidden, level shown)
+_HDR      = 9     # column header row height
+_RH       = 13    # data row height
+_CG       = 3     # gap between columns
+_LABEL_W  = 32    # label column width
+_MIN_COL_W = 35   # minimum data column width
+_MIN_W    = 105   # minimum widget width
 
 def _widget_w(n_data_cols: int) -> int:
     if n_data_cols == 0:
@@ -40,23 +40,23 @@ def _draw_bar(p: QPainter, x: int, y: int, w: int, h: int,
     fw = int(w * max(0., min(1., ratio)))
     if fw > 2:
         p.setBrush(col_hi); p.drawRoundedRect(x, y, fw, h, 5, 5)
-    p.setFont(label_font(9))
+    p.setFont(label_font(6))
     p.setPen(QColor(255, 255, 255, 200))
-    p.drawText(x + 5, y, w // 2, h, Qt.AlignmentFlag.AlignVCenter, label)
+    p.drawText(x + 4, y, w // 2, h, Qt.AlignmentFlag.AlignVCenter, label)
     if show_val:
-        p.setFont(num_font(13))
+        p.setFont(num_font(9))
         p.setPen(QColor(T.TEXT))
-        p.drawText(x, y, w - 5, h,
+        p.drawText(x, y, w - 4, h,
                    Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight, val_str)
 
 
 def _draw_level(p: QPainter, x: int, y: int, w: int, h: int,
                 label: str, val_str: str, val_col: QColor) -> None:
     """Compact text-only row: label (dim) on left, value (colored) on right."""
-    p.setFont(label_font(9))
+    p.setFont(label_font(6))
     p.setPen(QColor(T.DIM))
     p.drawText(x, y, w // 2, h, Qt.AlignmentFlag.AlignVCenter, label)
-    p.setFont(num_font(13))
+    p.setFont(num_font(9))
     p.setPen(val_col)
     p.drawText(x, y, w, h,
                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight, val_str)
@@ -138,7 +138,7 @@ def _class_has_ve(vehicle_class: str) -> bool:
 class FuelCalcWidget(BaseWidget):
     WIDGET_NAME = "Fuel Calculator"
     CONFIG_SCHEMA = [
-        {"type": "separator", "label": "Window"},
+        {"type": "separator", "label": "Appearance"},
         {"key": "opacity",      "label": "Opacity (%)",          "type": "int",
          "min": 0, "max": 100, "step": 5, "default": 85},
         {"key": "scale",        "label": "Size (%)",             "type": "int",
@@ -325,7 +325,7 @@ class FuelCalcWidget(BaseWidget):
             y += 6
 
         # ── Column headers ─────────────────────────────────────────────────
-        p.setFont(label_font(8))
+        p.setFont(label_font(6))
         p.setPen(QColor(T.DIM))
         for k, (cx, cw) in self._col_pos.items():
             if k != "label":
@@ -345,27 +345,27 @@ class FuelCalcWidget(BaseWidget):
             laps_on, refuel, finish = _calc(rate, self._current_fuel, rem, sfty)
 
             cx, cw = self._col_pos["label"]
-            p.setFont(label_font(10))
+            p.setFont(label_font(7))
             p.setPen(QColor(T.DIM))
             p.drawText(cx, y, cw, _RH, Qt.AlignmentFlag.AlignVCenter, lbl)
 
             if "usage" in self._col_pos:
                 cx, cw = self._col_pos["usage"]
-                p.setFont(num_font(12)); p.setPen(QColor(T.TEXT))
+                p.setFont(num_font(8)); p.setPen(QColor(T.TEXT))
                 p.drawText(cx, y, cw, _RH,
                            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
                            _fmt_fuel(rate) if rate > 0 else "---")
 
             if "laps" in self._col_pos:
                 cx, cw = self._col_pos["laps"]
-                p.setFont(num_font(12)); p.setPen(QColor(T.TEXT))
+                p.setFont(num_font(8)); p.setPen(QColor(T.TEXT))
                 p.drawText(cx, y, cw, _RH,
                            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
                            f"{laps_on:.1f}" if laps_on is not None else "---")
 
             if "refuel" in self._col_pos:
                 cx, cw = self._col_pos["refuel"]
-                p.setFont(num_font(12))
+                p.setFont(num_font(8))
                 if refuel is None:
                     p.setPen(QColor(T.TEXT)); ref_str = "---"
                 elif refuel < 0.005:
@@ -377,7 +377,7 @@ class FuelCalcWidget(BaseWidget):
 
             if "finish" in self._col_pos:
                 cx, cw = self._col_pos["finish"]
-                p.setFont(num_font(12))
+                p.setFont(num_font(8))
                 if finish is None:
                     p.setPen(QColor(T.TEXT)); fin_str = "---"
                 else:

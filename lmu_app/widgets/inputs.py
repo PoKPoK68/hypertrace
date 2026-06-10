@@ -60,18 +60,18 @@ def _load_wheel_pixmap(path_str: str) -> QPixmap | None:
 class InputsWidget(BaseWidget):
     WIDGET_NAME = "Inputs"
     CONFIG_SCHEMA = [
-        {"type": "separator", "label": "Window"},
+        {"type": "separator", "label": "Appearance"},
         {"key": "opacity",     "label": "Opacity (%)", "type": "int",
          "min": 0,  "max": 100, "step": 5, "default": 85},
         {"key": "scale",       "label": "Size (%)",    "type": "int",
-         "min": 50, "max": 250, "step": 5, "default": 65},
+         "min": 50, "max": 250, "step": 5, "default": 100},
         {"key": "wheel_image", "label": "Wheel image", "type": "filepath",
          "default": ""},
     ]
 
     def __init__(self, reader: DataReader, **kw):
         self._t = self._b = self._c = self._s = 0.0
-        self._scale = 0.65
+        self._scale = 1.0
         self._wheel_image_path = ""
         self._wheel_pixmap: QPixmap | None = None
         super().__init__(reader, update_hz=60, **kw)
@@ -86,7 +86,7 @@ class InputsWidget(BaseWidget):
         if new_path != self._wheel_image_path:
             self._wheel_image_path = new_path
             self._wheel_pixmap = _load_wheel_pixmap(self._wheel_image_path)
-        self._scale   = int(params.get("scale", 65)) / 100.0
+        self._scale   = int(params.get("scale", 100)) / 100.0
         self._opacity = max(0, min(100, int(params.get("opacity", 85))))
         self.setFixedSize(int(BASE_W * self._scale), int(BASE_H * self._scale))
         self.update()

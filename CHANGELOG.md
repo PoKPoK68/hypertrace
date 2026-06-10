@@ -4,6 +4,28 @@ All notable changes to LMU App are documented here.
 
 ---
 
+## [0.4.2] — Visual fixes
+
+### All overlays
+- **Opacity now affects the accent hairline** — the yellow gradient at the top of each overlay fades with the opacity setting
+- **Settings `show_if`** — dependent rows are now hidden entirely instead of grayed out
+
+---
+
+## [0.4.1] — Standings & Relative polish
+
+### Standings
+- **Lapped cars** — gap column shows `+1L`, `+2L`, etc. instead of a gap in seconds; uses `time_into_lap` to avoid false positives when the leader just crossed the finish line
+- **Pit lap badge** — `L{n}` badge now has a yellow background and black text, fully opaque
+- **Dynamic column widths** — GAP/INT columns sized for `+999.X`, BEST/LAST for `9:99.XXX`, computed from actual font metrics at the configured decimal precision
+- **Uniform column spacing** — constant `_CP = 3 px` padding on each side of every column for consistent visual gaps
+- **Header info** — single dropdown replaces three separate booleans; shows session letter + elapsed/total time side by side (e.g. `R  1:00:12 / 4:00:00`)
+
+### Relative
+- **Header info** — same dropdown as Standings; shows full session name + time (e.g. `RACE  1:00:12 / 4:00:00`)
+
+---
+
 ## [0.4.0] — UI polish
 
 ### Main window

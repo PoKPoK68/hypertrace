@@ -166,6 +166,7 @@ class WidgetConfigDialog(QDialog):
         self._widget  = widget
         self._schema  = widget.CONFIG_SCHEMA
         self._controls: dict[str, QWidget] = {}
+        self._labels:   dict[str, QWidget] = {}
 
         self.setWindowTitle(f"Configure — {widget.WIDGET_NAME}")
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
@@ -283,6 +284,7 @@ class WidgetConfigDialog(QDialog):
             root.addWidget(scroll)
 
         self._link_show_keys()
+        self._setup_show_if()
 
         close_btn = QPushButton("Close")
         close_btn.setStyleSheet(
@@ -328,11 +330,14 @@ class WidgetConfigDialog(QDialog):
             return current_form
 
         label = entry.get("label", "")
+        key   = entry.get("key", "")
         if label:
             lbl_w = QLabel(label)
             lbl_w.setStyleSheet(f"color: {T.DIM}; font-size: 11px;")
             lbl_w.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
             current_form.addRow(lbl_w, ctrl)
+            if key:
+                self._labels[key] = lbl_w
         else:
             current_form.addRow(ctrl)
 
@@ -393,10 +398,25 @@ class WidgetConfigDialog(QDialog):
             ctrl.changed.connect(self._apply_live)
 
         elif kind == "color":
-            ctrl = _ColorButton(
+            color_btn = _ColorButton(
                 current if (current and QColor(current).isValid()) else default
             )
-            ctrl.color_changed.connect(self._apply_live)
+            color_btn.color_changed.connect(self._apply_live)
+            if default:
+                container = QWidget()
+                hl = QHBoxLayout(container)
+                hl.setContentsMargins(0, 0, 0, 0)
+                hl.setSpacing(4)
+                hl.addWidget(color_btn, 1)
+                reset_btn = QPushButton("Default")
+                reset_btn.setFixedHeight(26)
+                _def = default
+                reset_btn.clicked.connect(lambda _, b=color_btn, d=_def: (b.set_color(d), self._apply_live()))
+                hl.addWidget(reset_btn)
+                container.color_str = color_btn.color_str
+                ctrl = container
+            else:
+                ctrl = color_btn
 
         elif kind == "filepath":
             ctrl = _FilePathWidget(current or "")
@@ -426,6 +446,26 @@ class WidgetConfigDialog(QDialog):
                 ctrl.set_visibility_controls(value_to_ctrl)
 
     # ------------------------------------------------------------------
+
+    def _setup_show_if(self) -> None:
+        for entry in self._schema:
+            show_if_key = entry.get("show_if")
+            if not show_if_key:
+                continue
+            key = entry.get("key", "")
+            ctrl   = self._controls.get(key)
+            lbl    = self._labels.get(key)
+            parent = self._controls.get(show_if_key)
+            if not isinstance(parent, QCheckBox) or ctrl is None:
+                continue
+
+            def _update(checked, c=ctrl, l=lbl):
+                c.setVisible(checked)
+                if l:
+                    l.setVisible(checked)
+
+            parent.toggled.connect(_update)
+            _update(parent.isChecked())
 
     def _apply_live(self) -> None:
         params = self._collect()
@@ -463,9 +503,15 @@ class WidgetConfigDialog(QDialog):
 
 class _NoScrollSpin(QSpinBox):
     def wheelEvent(self, e): e.ignore()
+    def focusInEvent(self, e):
+        super().focusInEvent(e)
+        self.lineEdit().setFocus(Qt.FocusReason.OtherFocusReason)
 
 class _NoScrollDoubleSpin(QDoubleSpinBox):
     def wheelEvent(self, e): e.ignore()
+    def focusInEvent(self, e):
+        super().focusInEvent(e)
+        self.lineEdit().setFocus(Qt.FocusReason.OtherFocusReason)
 
 class _NoScrollCombo(QComboBox):
     def wheelEvent(self, e): e.ignore()
