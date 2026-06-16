@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QScrollArea,
+    QSpinBox,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -28,6 +29,7 @@ from lmu_app.utils.theme import T, label_font, panel_brush, border_pen
 
 if TYPE_CHECKING:
     from lmu_app.config import AppConfig
+    from lmu_app.stream.server import StreamManager
     from lmu_app.widgets.base import BaseWidget
 
 
@@ -189,7 +191,8 @@ class _LockToggle(QWidget):
 _check_svg   = (Path(__file__).parent.parent / "assets" / "check.svg").as_posix()
 _edit_svg    = (Path(__file__).parent.parent / "assets" / "edit.svg").as_posix()
 _trash_svg   = (Path(__file__).parent.parent / "assets" / "trash.svg").as_posix()
-_chevron_svg = (Path(__file__).parent.parent / "assets" / "chevron-down.svg").as_posix()
+_chevron_svg    = (Path(__file__).parent.parent / "assets" / "chevron-down.svg").as_posix()
+_chevron_up_svg = (Path(__file__).parent.parent / "assets" / "chevron-up.svg").as_posix()
 
 _WINDOW_SS = f"""
 QWidget {{
@@ -239,6 +242,25 @@ QComboBox QAbstractItemView {{
     selection-background-color: rgba(236,170,67,0.2);
     color: {T.TEXT}; outline: none; padding: 2px;
 }}
+QSpinBox {{
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 4px;
+    padding: 2px 4px;
+    color: {T.TEXT};
+    min-height: 22px;
+}}
+QSpinBox:hover {{ border-color: rgba(255,255,255,0.25); }}
+QSpinBox::up-button, QSpinBox::down-button {{
+    width: 16px;
+    border: none;
+    background: rgba(255,255,255,0.06);
+}}
+QSpinBox::up-button:hover, QSpinBox::down-button:hover {{
+    background: rgba(255,255,255,0.14);
+}}
+QSpinBox::up-arrow   {{ image: url({_chevron_up_svg});   width: 8px; height: 5px; }}
+QSpinBox::down-arrow {{ image: url({_chevron_svg}); width: 8px; height: 5px; }}
 """
 
 
@@ -270,6 +292,23 @@ def _session_category(session_type: int) -> str:
     return "practice"
 
 
+class _StreamConfigProxy:
+    """Thin proxy so WidgetConfigDialog can read/write stream widget params."""
+
+    def __init__(self, config, key: str) -> None:
+        self._cfg = config
+        self._key = key
+
+    def widget_params(self, key: str) -> dict:
+        return self._cfg.stream_widget_params(key)
+
+    def set_widget_params(self, key: str, params: dict) -> None:
+        self._cfg.set_stream_widget_params(key, params)
+
+    def save(self) -> None:
+        self._cfg.save()
+
+
 class MainWindow(QWidget):
     """Tabbed control panel — Direction A Broadcast."""
 
@@ -278,11 +317,15 @@ class MainWindow(QWidget):
         config: AppConfig,
         widget_entries: list[tuple[str, BaseWidget]],
         reader=None,
+        stream_manager: StreamManager | None = None,
+        stream_entries: list[tuple[str, object]] | None = None,
     ) -> None:
         super().__init__()
-        self._config        = config
-        self._entries       = widget_entries
-        self._get_snapshot  = reader.get if reader is not None else None
+        self._config          = config
+        self._entries         = widget_entries
+        self._stream_manager  = stream_manager
+        self._stream_entries  = stream_entries or []
+        self._get_snapshot    = reader.get if reader is not None else None
         self._last_session_cat: str | None = None
 
         self.setWindowTitle("LMU App")
@@ -299,6 +342,12 @@ class MainWindow(QWidget):
         self._save_btn: QPushButton | None = None
         self._new_preset_edit: QLineEdit | None = None
         self._save_mode: bool = False
+        self._stream_main_toggle: _OnOffBtn | None = None
+        self._stream_toggles: dict[str, _OnOffBtn] = {}
+        self._params_clipboard: dict | None = None   # (params dict, copied from key)
+        self._stream_url_lbl: QLabel | None = None
+        self._stream_rows_w: QWidget | None = None
+        self._stream_port_spin: QSpinBox | None = None
 
         self._setup_ui()
         self._apply_lock_state()
@@ -339,6 +388,7 @@ class MainWindow(QWidget):
 
         tabs = QTabWidget()
         tabs.addTab(self._make_overlays_tab(), "Overlays")
+        tabs.addTab(self._make_stream_tab(), "Stream")
         tabs.addTab(self._make_presets_tab(), "Presets")
         tabs.addTab(self._make_class_colors_tab(), "Class Colors")
         root.addWidget(tabs)
@@ -429,6 +479,18 @@ QCheckBox::indicator:checked {{
         hl.addWidget(btn)
 
         return row
+
+    def _paste_params(self, key: str, widget) -> None:
+        if not self._params_clipboard:
+            return
+        self._config.set_stream_widget_params(key, dict(self._params_clipboard))
+        self._config.save()
+        widget.apply_params(self._params_clipboard)
+        # find the stream widget instance in stream_manager and update it
+        if self._stream_manager:
+            sw = self._stream_manager._widgets.get(key)
+            if sw is not None:
+                sw.apply_params(self._params_clipboard)
 
     # ------------------------------------------------------------------ Tab 2 — Presets
 
@@ -833,7 +895,162 @@ QCheckBox::indicator:checked {{
         if preset:
             self._apply_preset_data(preset)
 
-    # ------------------------------------------------------------------ Tab 3
+    # ------------------------------------------------------------------ Tab 2 — Stream
+
+    def _make_stream_tab(self) -> QWidget:
+        w = QWidget()
+        vl = QVBoxLayout(w)
+        vl.setSpacing(6)
+        vl.setContentsMargins(6, 8, 6, 8)
+
+        # ── top row: Stream ON/OFF + port ──────────────────────────────
+        ctrl = QWidget()
+        hl = QHBoxLayout(ctrl)
+        hl.setContentsMargins(0, 0, 0, 0)
+        hl.setSpacing(8)
+
+        lbl = QLabel("Stream")
+        lbl.setStyleSheet(f"color: {T.TEXT}; font-size: 12px; font-weight: bold;")
+        hl.addWidget(lbl)
+
+        stream_toggle = _OnOffBtn(self._config.stream_active)
+        stream_toggle.toggled.connect(self._on_stream_toggle)
+        self._stream_main_toggle = stream_toggle
+        hl.addWidget(stream_toggle)
+
+        hl.addStretch()
+
+        port_lbl = QLabel("Port:")
+        port_lbl.setStyleSheet(f"color: {T.DIM}; font-size: 11px;")
+        hl.addWidget(port_lbl)
+
+        spin = QSpinBox()
+        spin.setRange(1024, 65535)
+        spin.setValue(self._config.stream_port)
+        spin.setFixedWidth(68)
+        spin.valueChanged.connect(self._on_stream_port_changed)
+        self._stream_port_spin = spin
+        hl.addWidget(spin)
+        vl.addWidget(ctrl)
+
+        # ── server URL hint ───────────────────────────────────────────
+        url_lbl = QLabel()
+        url_lbl.setStyleSheet(f"color: {T.ACCENT}; font-size: 10px;")
+        url_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self._stream_url_lbl = url_lbl
+        vl.addWidget(url_lbl)
+
+        vl.addWidget(_sep())
+
+        # ── per-overlay rows ──────────────────────────────────────────
+        rows_w = QWidget()
+        rows_vl = QVBoxLayout(rows_w)
+        rows_vl.setSpacing(4)
+        rows_vl.setContentsMargins(0, 0, 0, 0)
+        self._stream_rows_w = rows_w
+
+        for key, widget in self._stream_entries:
+            rows_vl.addWidget(self._make_stream_row(key, widget))
+
+        vl.addWidget(rows_w)
+        vl.addStretch()
+
+        self._refresh_stream_ui()
+        return w
+
+    def _make_stream_row(self, key: str, widget) -> QWidget:
+        row = QWidget()
+        hl  = QHBoxLayout(row)
+        hl.setContentsMargins(0, 2, 0, 2)
+        hl.setSpacing(4)
+
+        lbl = QLabel(widget.WIDGET_NAME)
+        lbl.setStyleSheet(f"color: {T.TEXT}; font-size: 12px;")
+        hl.addWidget(lbl, 1)
+
+        if widget.CONFIG_SCHEMA:
+            cog = _CogBtn()
+            cog.setToolTip(f"Stream settings for {widget.WIDGET_NAME}")
+            cog.clicked.connect(lambda _, k=key, ww=widget: self._open_stream_config(k, ww))
+            hl.addWidget(cog)
+
+        copy_btn = QPushButton("URL")
+        copy_btn.setFixedSize(36, 22)
+        copy_btn.setStyleSheet(_SS_BTN)
+        copy_btn.setToolTip("Copy OBS browser source URL")
+        copy_btn.clicked.connect(lambda _, k=key: self._copy_stream_url(k))
+        hl.addWidget(copy_btn)
+
+        tog = _OnOffBtn(self._config.stream_widget_enabled(key))
+        tog.toggled.connect(lambda checked, k=key: self._on_stream_widget_toggle(k, checked))
+        self._stream_toggles[key] = tog
+        hl.addWidget(tog)
+
+        return row
+
+    def _refresh_stream_ui(self) -> None:
+        active = self._config.stream_active
+        port   = self._config.stream_port
+        if self._stream_url_lbl:
+            self._stream_url_lbl.setText(
+                f"http://localhost:{port}" if active else ""
+            )
+            self._stream_url_lbl.setVisible(active)
+        if self._stream_port_spin:
+            self._stream_port_spin.setEnabled(not active)
+        if self._stream_rows_w:
+            self._stream_rows_w.setEnabled(active)
+
+    def _on_stream_toggle(self, checked: bool) -> None:
+        if checked:
+            if self._stream_manager is None:
+                self._stream_main_toggle.setChecked(False)
+                return
+            ok = self._stream_manager.start(self._config.stream_port)
+            if not ok:
+                self._stream_main_toggle.blockSignals(True)
+                self._stream_main_toggle.setChecked(False)
+                self._stream_main_toggle.blockSignals(False)
+                if self._stream_url_lbl:
+                    self._stream_url_lbl.setText("Port already in use — choose another port")
+                    self._stream_url_lbl.setVisible(True)
+                return
+        else:
+            if self._stream_manager:
+                self._stream_manager.stop()
+        self._config.stream_active = checked
+        self._config.save()
+        self._refresh_stream_ui()
+
+    def _on_stream_port_changed(self, value: int) -> None:
+        self._config.stream_port = value
+        self._config.save()
+
+    def _on_stream_widget_toggle(self, key: str, checked: bool) -> None:
+        self._config.set_stream_widget_enabled(key, checked)
+        self._config.save()
+        if self._stream_manager:
+            self._stream_manager.set_widget_enabled(key, checked)
+
+    def _copy_stream_url(self, key: str) -> None:
+        url = f"http://localhost:{self._config.stream_port}/{key}"
+        QApplication.clipboard().setText(url)
+        # Brief visual feedback on the button
+        btn = self.sender()
+        if isinstance(btn, QPushButton):
+            btn.setText("✓")
+            QTimer.singleShot(1200, lambda b=btn: b.setText("URL"))
+
+    def _open_stream_config(self, key: str, widget) -> None:
+        from lmu_app.ui.widget_config_dialog import WidgetConfigDialog
+        proxy = _StreamConfigProxy(self._config, key)
+        WidgetConfigDialog(
+            proxy, key, widget, parent=self,
+            on_copy=lambda p: setattr(self, "_params_clipboard", p),
+            on_paste=lambda: self._paste_params(key, widget),
+        ).exec()
+
+    # ------------------------------------------------------------------ Tab 3 — Class colors
 
     def _make_class_colors_tab(self) -> QWidget:
         w = QWidget()
@@ -890,7 +1107,18 @@ QCheckBox::indicator:checked {{
 
     def _open_config(self, key: str, widget: BaseWidget) -> None:
         from lmu_app.ui.widget_config_dialog import WidgetConfigDialog
-        WidgetConfigDialog(self._config, key, widget, parent=self).exec()
+        WidgetConfigDialog(
+            self._config, key, widget, parent=self,
+            on_copy=lambda p: setattr(self, "_params_clipboard", p),
+            on_paste=lambda: self._paste_params_to_normal(key, widget),
+        ).exec()
+
+    def _paste_params_to_normal(self, key: str, widget) -> None:
+        if not self._params_clipboard:
+            return
+        self._config.set_widget_params(key, dict(self._params_clipboard))
+        self._config.save()
+        widget.apply_params(self._params_clipboard)
 
     @staticmethod
     def _lock_text(locked: bool) -> str:

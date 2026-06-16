@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Qt, QSize, Signal
+from PySide6.QtCore import Qt, QSize, QTimer, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -33,6 +33,8 @@ if TYPE_CHECKING:
 _check_svg      = (Path(__file__).parent.parent / "assets" / "check.svg").as_posix()
 _chevron_svg    = (Path(__file__).parent.parent / "assets" / "chevron-down.svg").as_posix()
 _chevron_up_svg = (Path(__file__).parent.parent / "assets" / "chevron-up.svg").as_posix()
+_copy_svg       = (Path(__file__).parent.parent / "assets" / "copy.svg").as_posix()
+_paste_svg      = (Path(__file__).parent.parent / "assets" / "paste.svg").as_posix()
 
 _STYLE = f"""
 QDialog {{
@@ -159,12 +161,16 @@ class WidgetConfigDialog(QDialog):
         key: str,
         widget: BaseWidget,
         parent: QWidget | None = None,
+        on_copy=None,
+        on_paste=None,
     ) -> None:
         super().__init__(parent)
-        self._config  = config
-        self._key     = key
-        self._widget  = widget
-        self._schema  = widget.CONFIG_SCHEMA
+        self._config   = config
+        self._key      = key
+        self._widget   = widget
+        self._schema   = widget.CONFIG_SCHEMA
+        self._on_copy  = on_copy
+        self._on_paste = on_paste
         self._controls: dict[str, QWidget] = {}
         self._labels:   dict[str, QWidget] = {}
 
@@ -286,6 +292,34 @@ class WidgetConfigDialog(QDialog):
         self._link_show_keys()
         self._setup_show_if()
 
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(6)
+
+        _icon_btn_ss = (
+            f"QPushButton {{ color: {T.DIM}; background: rgba(255,255,255,0.06); "
+            f"border: 1px solid rgba(255,255,255,0.12); border-radius: 4px; "
+            f"padding: 4px 8px; font-size: 11px; }}"
+            f"QPushButton:hover {{ background: rgba(255,255,255,0.12); color: {T.TEXT}; }}"
+        )
+
+        if self._on_copy:
+            copy_btn = QPushButton(" Copy Settings")
+            copy_btn.setIcon(QIcon(_copy_svg))
+            copy_btn.setIconSize(QSize(14, 14))
+            copy_btn.setStyleSheet(_icon_btn_ss)
+            copy_btn.clicked.connect(self._do_copy)
+            btn_row.addWidget(copy_btn)
+
+        if self._on_paste:
+            paste_btn = QPushButton(" Paste Settings")
+            paste_btn.setIcon(QIcon(_paste_svg))
+            paste_btn.setIconSize(QSize(14, 14))
+            paste_btn.setStyleSheet(_icon_btn_ss)
+            paste_btn.clicked.connect(self._do_paste)
+            btn_row.addWidget(paste_btn)
+
+        btn_row.addStretch()
+
         close_btn = QPushButton("Close")
         close_btn.setStyleSheet(
             f"QPushButton {{ color: {T.ACCENT_INK}; background: {T.ACCENT}; "
@@ -294,7 +328,67 @@ class WidgetConfigDialog(QDialog):
             f"QPushButton:hover {{ background: #F0B54A; }}"
         )
         close_btn.clicked.connect(self.accept)
-        root.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignRight)
+        btn_row.addWidget(close_btn)
+        root.addLayout(btn_row)
+
+    def _do_copy(self) -> None:
+        if not self._on_copy:
+            return
+        self._on_copy(dict(self._config.widget_params(self._key)))
+        btn = self.sender()
+        if isinstance(btn, QPushButton):
+            orig_text = btn.text()
+            orig_icon = btn.icon()
+            btn.setText("✓ Copied!")
+            btn.setIcon(QIcon())
+            btn.setEnabled(False)
+            QTimer.singleShot(1500, lambda b=btn, t=orig_text, i=orig_icon: (
+                b.setText(t), b.setIcon(i), b.setEnabled(True)
+            ))
+
+    def _do_paste(self) -> None:
+        if not self._on_paste:
+            return
+        self._on_paste()
+        self._load_controls(self._config.widget_params(self._key))
+        btn = self.sender()
+        if isinstance(btn, QPushButton):
+            orig_text = btn.text()
+            orig_icon = btn.icon()
+            btn.setText("✓ Applied!")
+            btn.setIcon(QIcon())
+            btn.setEnabled(False)
+            QTimer.singleShot(1500, lambda b=btn, t=orig_text, i=orig_icon: (
+                b.setText(t), b.setIcon(i), b.setEnabled(True)
+            ))
+
+    def _load_controls(self, params: dict) -> None:
+        for entry in self._schema:
+            key  = entry.get("key")
+            kind = entry.get("type")
+            if not key or key not in params:
+                continue
+            ctrl = self._controls.get(key)
+            if ctrl is None:
+                continue
+            v = params[key]
+            ctrl.blockSignals(True)
+            try:
+                if kind == "bool":
+                    ctrl.setChecked(bool(v))
+                elif kind in ("int", "float"):
+                    ctrl.setValue(v)
+                elif kind == "choice":
+                    idx = ctrl.findData(v)
+                    if idx >= 0:
+                        ctrl.setCurrentIndex(idx)
+                elif kind == "color":
+                    ctrl.set_color(str(v))
+            except Exception:
+                pass
+            finally:
+                ctrl.blockSignals(False)
+        self._apply_live()
 
     # ------------------------------------------------------------------
 

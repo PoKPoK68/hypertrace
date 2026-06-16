@@ -14,6 +14,7 @@ from lmu_app.widgets.tyres import TyresWidget
 from lmu_app.widgets.fuel_calc import FuelCalcWidget
 from lmu_app.widgets.ve_calc import VECalcWidget
 from lmu_app.widgets.weather import WeatherWidget
+from lmu_app.stream.server import StreamManager
 from lmu_app.ui.main_window import MainWindow
 
 
@@ -94,7 +95,7 @@ def main() -> int:
     app.setStyle("Fusion")        # consistent rendering
     app.setPalette(_dark_palette())  # makes arrows/indicators visible on dark bg
     app.setApplicationName("LMU App")
-    app.setApplicationVersion("0.4.2")
+    app.setApplicationVersion("0.5.0")
     app.setQuitOnLastWindowClosed(False)
 
     config = AppConfig()
@@ -141,10 +142,39 @@ def main() -> int:
         if config.widget_enabled(key):
             widget.start()
 
-    main_win = MainWindow(config, widget_entries, reader=reader)
+    # ── Stream mode ────────────────────────────────────────────────────
+    stream_manager = StreamManager(reader)
+
+    _stream_classes = [
+        ("speed",     SpeedWidget),
+        ("inputs",    InputsWidget),
+        ("standings", StandingsWidget),
+        ("relative",  RelativeWidget),
+        ("tyres",     TyresWidget),
+        ("fuel_calc", FuelCalcWidget),
+        ("ve_calc",   VECalcWidget),
+        ("weather",   WeatherWidget),
+    ]
+    stream_entries: list[tuple[str, object]] = []
+    for key, cls in _stream_classes:
+        sw = cls(reader, auto_hide=False)
+        stream_entries.append((key, sw))
+        stream_manager.add_widget(key, sw)
+        p = config.stream_widget_params(key)
+        if p:
+            sw.apply_params(p)
+        stream_manager.set_widget_enabled(key, config.stream_widget_enabled(key))
+
+    if config.stream_active:
+        stream_manager.start(config.stream_port)
+
+    main_win = MainWindow(config, widget_entries, reader=reader,
+                          stream_manager=stream_manager,
+                          stream_entries=stream_entries)
     main_win.show()
 
     def on_quit() -> None:
+        stream_manager.stop()
         for _, w in widget_entries:
             w.stop()
         reader.stop()

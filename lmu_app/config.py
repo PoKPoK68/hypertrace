@@ -154,3 +154,41 @@ class AppConfig:
     @auto_load_preset.setter
     def auto_load_preset(self, v: bool) -> None:
         self._data["auto_load_preset"] = v
+
+    # ------------------------------------------------------------------
+    # Stream mode
+    # ------------------------------------------------------------------
+
+    def _s(self) -> dict:
+        return self._data.setdefault("stream", {})
+
+    def _sw(self, key: str) -> dict:
+        return self._s().setdefault("widgets", {}).setdefault(key, {})
+
+    @property
+    def stream_port(self) -> int:
+        return int(self._s().get("port", 8765))
+
+    @stream_port.setter
+    def stream_port(self, v: int) -> None:
+        self._s()["port"] = int(v)
+
+    @property
+    def stream_active(self) -> bool:
+        return bool(self._s().get("active", False))
+
+    @stream_active.setter
+    def stream_active(self, v: bool) -> None:
+        self._s()["active"] = bool(v)
+
+    def stream_widget_enabled(self, key: str) -> bool:
+        return bool(self._sw(key).get("enabled", False))
+
+    def set_stream_widget_enabled(self, key: str, enabled: bool) -> None:
+        self._sw(key)["enabled"] = bool(enabled)
+
+    def stream_widget_params(self, key: str) -> dict:
+        return dict(self._sw(key).get("params", {}))
+
+    def set_stream_widget_params(self, key: str, params: dict) -> None:
+        self._sw(key)["params"] = params

@@ -4,6 +4,29 @@ All notable changes to LMU App are documented here.
 
 ---
 
+## [0.5.0] — Stream mode & Weather overlay
+
+### New: Stream mode
+- **Stream tab** — new tab in the main window to configure OBS integration
+- Local HTTP server (configurable port) serves each overlay as a browser source URL
+- Each overlay can be enabled/disabled independently for stream, with its own settings (opacity, scale, etc.)
+- **Copy URL** button per overlay to paste directly into OBS Browser Source
+
+### New: Weather overlay
+- Air temperature, track temperature, rain %, path wetness
+- Session forecast with sky condition icons (clear → storm) polled from LMU's REST API
+
+### Settings dialogs
+- **Copy / Paste Settings** — copy settings from any overlay's config dialog and paste into another (e.g. normal → stream or vice versa)
+
+### Standings & Relative
+- Air / track temperature display is now left-aligned in the session bar
+
+### Relative
+- "Nothing" header option now fully hides the session bar instead of leaving it empty
+
+---
+
 ## [0.4.2] — Visual fixes
 
 ### All overlays

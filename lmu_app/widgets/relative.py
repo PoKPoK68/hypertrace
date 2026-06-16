@@ -312,10 +312,11 @@ class RelativeWidget(BaseWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.scale(self._scale, self._scale)
         W    = _widget_w(self._max_name_chars, self._font_size)
-        H    = _widget_h(self._ahead, self._behind, self._font_size, self._show_session_bar)
+        _show_bar = self._show_session_bar and self._header_info != "none"
+        H    = _widget_h(self._ahead, self._behind, self._font_size, _show_bar)
         ncw  = self._max_name_chars * _char_px(self._font_size)
         bdg  = _badge_px(self._font_size)
-        _sbh = SESSION_BAR_H if self._show_session_bar else 0
+        _sbh = SESSION_BAR_H if _show_bar else 0
 
         self._draw_panel(p, W, H)
 
@@ -324,7 +325,7 @@ class RelativeWidget(BaseWidget):
         rh  = _row_h(fs)
 
         # ── Session bar ───────────────────────────────────────────────────
-        if self._show_session_bar:
+        if _show_bar:
             hi = self._header_info
             if hi == "session":
                 lbl = _session_label(self._ses_type)
@@ -352,7 +353,7 @@ class RelativeWidget(BaseWidget):
                 sep_px = 8
                 trk_w = fm.horizontalAdvance(trk_str)
                 air_w = fm.horizontalAdvance(air_str)
-                x0 = W - 6 - (icon_sz + gap_px + trk_w + sep_px + icon_sz + gap_px + air_w)
+                x0 = 6
                 icon_y = 1 + _sbh // 2 - icon_sz // 2
                 p.drawPixmap(x0, icon_y, self._temp_pm_trk)
                 p.setPen(QColor(T.DIM))

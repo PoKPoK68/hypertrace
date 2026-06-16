@@ -627,8 +627,7 @@ class StandingsWidget(BaseWidget):
                 gap_px = 3; sep_px = 8
                 trk_w = fm.horizontalAdvance(trk_str)
                 air_w = fm.horizontalAdvance(air_str)
-                temp_w = icon_sz + gap_px + trk_w + sep_px + icon_sz + gap_px + air_w
-                x0     = 2 + left_w - 4 - temp_w
+                x0     = 6
                 icon_y = 1 + SESSION_BAR_H // 2 - icon_sz // 2
                 p.drawPixmap(x0, icon_y, self._temp_pm_trk)
                 p.setPen(QColor(T.DIM))
