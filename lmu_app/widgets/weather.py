@@ -1,0 +1,263 @@
+"""Weather overlay — air/track temps, rain, wetness, session forecast."""
+from __future__ import annotations
+
+import json
+import logging
+import threading
+import urllib.request
+from pathlib import Path
+
+from PySide6.QtCore import Qt, QRectF, QTimer
+from PySide6.QtGui import QColor, QPainter
+from PySide6.QtWidgets import QSizePolicy
+
+from lmu_app.api.reader import DataReader, LMUSnapshot
+from lmu_app.utils.theme import T, label_font, num_font
+from lmu_app.widgets.base import BaseWidget
+
+logger = logging.getLogger(__name__)
+
+_ASSETS      = Path(__file__).parent.parent / "assets"
+_REST_URL    = "http://localhost:6397/rest/sessions/weather"
+_NODES       = ["START", "NODE_25", "NODE_50", "NODE_75", "FINISH"]
+_NODE_LABELS = ["S", "25", "50", "75", "F"]
+_SKY_FILES   = [
+    "00_clear.svg",
+    "01_light_clouds.svg",
+    "02_partially_cloudy.svg",
+    "03_mostly_cloudy.svg",
+    "04_overcast.svg",
+    "05_cloudy_drizzle.svg",
+    "06_cloudy_light_rain.svg",
+    "07_overcast_light_rain.svg",
+    "08_overcast_rain.svg",
+    "09_overcast_heavy_rain.svg",
+    "10_overcast_storm.svg",
+]
+
+BASE_W  = 150
+_PAD_X  = 8
+_PAD_Y  = 5
+_LBL_H  = 9
+_GAP    = 1
+_VAL_H  = 15
+_ROW_H  = _LBL_H + _GAP + _VAL_H   # 25
+_SEP_Y  = _PAD_Y + _ROW_H * 2       # 55
+_FC_TOP = _SEP_Y + 4                 # 59
+_FC_HDR = 9    # "FORECAST" label
+_IC_H   = 16   # icon height (square)
+_NL_H   = 9    # node label
+BASE_H  = _FC_TOP + _FC_HDR + _IC_H + _NL_H + _PAD_Y  # 98
+
+
+def _session_outer_key(session_type: int) -> str:
+    if session_type <= 4:
+        return "PRACTICE"
+    if session_type <= 8:
+        return "QUALIFY"
+    return "RACE"
+
+
+def _fetch_forecast(session_type: int = 0) -> list[int]:
+    """Return 5 sky_type ints (0-10). Empty list on failure."""
+    try:
+        req = urllib.request.Request(_REST_URL, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            raw = resp.read()
+        data = json.loads(raw)
+        # Response is wrapped by session type: {"PRACTICE": {nodes...}, "QUALIFY": ...}
+        outer = _session_outer_key(session_type)
+        sub = (data.get(outer)
+               or data.get("PRACTICE")
+               or data.get("QUALIFY")
+               or data.get("RACE")
+               or data)
+
+        result = [int(sub.get(n, {}).get("WNV_SKY", {}).get("currentValue", -1))
+                  for n in _NODES]
+        logger.debug("Forecast sky_types (%s): %s", outer, result)
+        return result
+    except Exception as exc:
+        logger.debug("Weather REST error: %s", exc)
+        return []
+
+
+class WeatherWidget(BaseWidget):
+    WIDGET_NAME = "Weather"
+    CONFIG_SCHEMA = [
+        {"type": "separator", "label": "Appearance"},
+        {"key": "opacity", "label": "Opacity (%)", "type": "int",
+         "min": 0, "max": 100, "step": 5, "default": 85},
+        {"key": "scale", "label": "Size (%)", "type": "int",
+         "min": 50, "max": 250, "step": 5, "default": 100},
+    ]
+
+    def __init__(self, reader: DataReader, **kw):
+        self._scale      = 1.0
+        self._air_temp   = 0.0
+        self._track_temp = 0.0
+        self._raining    = 0.0
+        self._wetness    = 0.0
+        self._forecast: list[int] = []
+        self._fc_lock     = threading.Lock()
+        self._session_type: int = 0
+        self._svg_air    = None
+        self._svg_trk    = None
+        self._sky_svgs: list = []
+        super().__init__(reader, update_hz=5, **kw)
+        self._load_svgs()
+        self.setFixedSize(int(BASE_W * self._scale), int(BASE_H * self._scale))
+
+        self._fc_timer = QTimer(self)
+        self._fc_timer.setInterval(30_000)
+        self._fc_timer.timeout.connect(self._refresh_forecast)
+        self._fc_timer.start()
+        self._refresh_forecast()
+
+    def _load_svgs(self) -> None:
+        try:
+            from PySide6.QtSvg import QSvgRenderer
+        except ImportError:
+            logger.warning("PySide6.QtSvg not available — weather icons disabled")
+            return
+        for fname, attr in [("air-temp.svg", "_svg_air"), ("track-temp.svg", "_svg_trk")]:
+            try:
+                r = QSvgRenderer(str(_ASSETS / fname))
+                setattr(self, attr, r if r.isValid() else None)
+            except Exception as exc:
+                logger.warning("SVG load failed (%s): %s", fname, exc)
+        self._sky_svgs = []
+        for fname in _SKY_FILES:
+            try:
+                r = QSvgRenderer(str(_ASSETS / "weather" / fname))
+                if not r.isValid():
+                    logger.warning("SVG invalid: %s", fname)
+                self._sky_svgs.append(r if r.isValid() else None)
+            except Exception as exc:
+                logger.warning("SVG load failed (%s): %s", fname, exc)
+                self._sky_svgs.append(None)
+        logger.debug("Weather SVGs loaded: %d/11", sum(1 for r in self._sky_svgs if r))
+
+    def setup_ui(self):
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+
+    def start(self) -> None:
+        self._fc_timer.start()
+        super().start()
+
+    def stop(self) -> None:
+        self._fc_timer.stop()
+        super().stop()
+
+    def apply_params(self, params: dict) -> None:
+        self._scale   = int(params.get("scale",   100)) / 100.0
+        self._opacity = max(0, min(100, int(params.get("opacity", 85))))
+        self.setFixedSize(int(BASE_W * self._scale), int(BASE_H * self._scale))
+        self.update()
+
+    def _refresh_forecast(self) -> None:
+        st = self._session_type
+        def _work():
+            nodes = _fetch_forecast(st)
+            with self._fc_lock:
+                self._forecast = nodes
+            self.update()
+        threading.Thread(target=_work, daemon=True).start()
+
+    def on_data(self, snap: LMUSnapshot) -> None:
+        s = snap.session
+        self._session_type = s.session_type
+        self._air_temp     = s.ambient_temp
+        self._track_temp   = s.track_temp
+        self._raining      = s.raining
+        self._wetness      = s.avg_path_wetness
+        self.update()
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.scale(self._scale, self._scale)
+        self._draw_panel(p, BASE_W, BASE_H)
+        self._draw_live(p)
+        self._draw_forecast(p)
+        p.end()
+
+    def _render_svg(self, p: QPainter, renderer, rect: QRectF) -> None:
+        if renderer is None:
+            return
+        vb = renderer.viewBoxF()
+        if vb.height() == 0:
+            return
+        aspect = vb.width() / vb.height()
+        ih = rect.height()
+        iw = ih * aspect
+        ix = rect.x() + (rect.width() - iw) / 2
+        iy = rect.y() + (rect.height() - ih) / 2
+        renderer.render(p, QRectF(ix, iy, iw, ih))
+
+    def _draw_live(self, p: QPainter) -> None:
+        half = BASE_W // 2
+        rows = [
+            [(self._svg_air, "AIR",  f"{self._air_temp:.0f}°",      0),
+             (self._svg_trk, "TRK",  f"{self._track_temp:.0f}°",    1)],
+            [(None,           "RAIN", f"{self._raining * 100:.0f}%", 0),
+             (None,           "WET",  f"{self._wetness * 100:.0f}%", 1)],
+        ]
+        for row_idx, cells in enumerate(rows):
+            y = _PAD_Y + row_idx * _ROW_H
+            for svg, lbl, val, col in cells:
+                x      = col * half
+                lbl_r  = QRectF(x, y, half, _LBL_H)
+                if svg is not None:
+                    self._render_svg(p, svg, lbl_r)
+                else:
+                    p.setFont(label_font(6))
+                    p.setPen(QColor(T.DIM))
+                    p.drawText(lbl_r, Qt.AlignmentFlag.AlignCenter, lbl)
+                p.setFont(num_font(10))
+                p.setPen(QColor(T.TEXT))
+                p.drawText(QRectF(x, y + _LBL_H + _GAP, half, _VAL_H),
+                           Qt.AlignmentFlag.AlignCenter, val)
+
+        # Vertical divider
+        p.fillRect(QRectF(half, _PAD_Y + 2, 1, _ROW_H * 2 - 4), T.FAINT)
+
+    def _draw_forecast(self, p: QPainter) -> None:
+        p.fillRect(QRectF(2, _SEP_Y, BASE_W - 4, 1), T.FAINT)
+
+        p.setFont(label_font(5))
+        p.setPen(QColor(T.DIM))
+        p.drawText(QRectF(_PAD_X, _FC_TOP, BASE_W - _PAD_X * 2, _FC_HDR),
+                   Qt.AlignmentFlag.AlignCenter, "FORECAST")
+
+        icon_y  = _FC_TOP + _FC_HDR
+        label_y = icon_y + _IC_H + 1
+        slot_w  = (BASE_W - _PAD_X * 2) / 5
+
+        with self._fc_lock:
+            nodes = list(self._forecast)
+
+        if not nodes:
+            p.setFont(label_font(5))
+            p.setPen(QColor(T.DIM))
+            p.drawText(QRectF(_PAD_X, icon_y, BASE_W - _PAD_X * 2, _IC_H),
+                       Qt.AlignmentFlag.AlignCenter, "NO DATA")
+            return
+
+        for i, sky in enumerate(nodes):
+            slot_x  = _PAD_X + i * slot_w
+            ic_size = _IC_H   # square icons (24×24 viewBox)
+            ic_x    = slot_x + (slot_w - ic_size) / 2
+
+            if 0 <= sky < len(self._sky_svgs) and self._sky_svgs[sky] is not None:
+                self._sky_svgs[sky].render(p, QRectF(ic_x, icon_y, ic_size, ic_size))
+            else:
+                p.setFont(label_font(5))
+                p.setPen(QColor(T.DIM))
+                p.drawText(QRectF(slot_x, icon_y, slot_w, _IC_H),
+                           Qt.AlignmentFlag.AlignCenter, f"?{sky}")
+
+            p.setFont(label_font(5))
+            p.setPen(QColor(T.DIM))
+            p.drawText(QRectF(slot_x, label_y, slot_w, _NL_H - 1),
+                       Qt.AlignmentFlag.AlignCenter, _NODE_LABELS[i])

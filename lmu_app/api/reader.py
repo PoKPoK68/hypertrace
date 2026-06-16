@@ -91,9 +91,10 @@ class SessionData:
     num_vehicles: int     = 0
     current_et: float     = 0.0  # elapsed time session (s)
     session_time_remaining: float = 0.0
-    ambient_temp: float   = 20.0
-    track_temp: float     = 30.0
-    raining: float        = 0.0  # 0-1
+    ambient_temp: float      = 20.0
+    track_temp: float        = 30.0
+    raining: float           = 0.0  # 0-1
+    avg_path_wetness: float  = 0.0  # 0-1
     player_name: str      = ""
     vehicles: list[VehicleScoringEntry] = field(default_factory=list)
 
@@ -219,6 +220,7 @@ class LMUReader(BaseReader):
             s.ambient_temp            = sc_info.mAmbientTemp
             s.track_temp              = sc_info.mTrackTemp
             s.raining                 = sc_info.mRaining
+            s.avg_path_wetness        = sc_info.mAvgPathWetness
             s.player_name             = sc_info.mPlayerName.decode(errors="replace").rstrip("\x00")
 
             # --- Véhicules scoring ---

@@ -13,6 +13,7 @@ from lmu_app.widgets.relative import RelativeWidget
 from lmu_app.widgets.tyres import TyresWidget
 from lmu_app.widgets.fuel_calc import FuelCalcWidget
 from lmu_app.widgets.ve_calc import VECalcWidget
+from lmu_app.widgets.weather import WeatherWidget
 from lmu_app.ui.main_window import MainWindow
 
 
@@ -111,6 +112,7 @@ def main() -> int:
         ("tyres",      TyresWidget(reader,     auto_hide=False)),
         ("fuel_calc",  fuel_calc_w),
         ("ve_calc",    ve_calc_w),
+        ("weather",    WeatherWidget(reader, auto_hide=False)),
     ]
 
     merge = config.merge_calc
