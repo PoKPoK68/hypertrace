@@ -16,6 +16,7 @@ from lmu_app.widgets.ve_calc import VECalcWidget
 from lmu_app.widgets.weather import WeatherWidget
 from lmu_app.stream.server import StreamManager
 from lmu_app.ui.main_window import MainWindow
+from lmu_app.widgets.broadcast import BroadcastBattle, BroadcastDriverCard, BroadcastState, BroadcastTower
 
 
 _FONTS = [
@@ -95,7 +96,7 @@ def main() -> int:
     app.setStyle("Fusion")        # consistent rendering
     app.setPalette(_dark_palette())  # makes arrows/indicators visible on dark bg
     app.setApplicationName("LMU App")
-    app.setApplicationVersion("0.5.0")
+    app.setApplicationVersion("0.6.0")
     app.setQuitOnLastWindowClosed(False)
 
     config = AppConfig()
@@ -165,15 +166,44 @@ def main() -> int:
             sw.apply_params(p)
         stream_manager.set_widget_enabled(key, config.stream_widget_enabled(key))
 
+    stream_manager.set_hide_in_garage(config.stream_hide_in_garage)
+
+    # ── Broadcast mode ─────────────────────────────────────────────────
+    bc_state  = BroadcastState()
+    bc_state.tower_mode             = config.bc_tower_mode
+    bc_state.tower_count_overall    = config.bc_tower_count_overall
+    bc_state.tower_count_multiclass = config.bc_tower_count_multiclass
+    bc_state.tower_count_ourclass   = config.bc_tower_count_ourclass
+    bc_state.tower_filter_class     = config.bc_tower_filter_class
+    bc_state.show_team              = config.bc_tower_show_team
+
+    bc_tower  = BroadcastTower(bc_state)
+    bc_battle = BroadcastBattle(bc_state)
+    bc_driver = BroadcastDriverCard(bc_state)
+
+    stream_manager.add_widget("bc_tower",  bc_tower)
+    stream_manager.add_widget("bc_battle", bc_battle)
+    stream_manager.add_widget("bc_driver", bc_driver)
+    stream_manager.set_widget_enabled("bc_tower",  config.bc_tower_enabled)
+    stream_manager.set_widget_enabled("bc_battle", config.bc_battle_enabled)
+    stream_manager.set_widget_enabled("bc_driver", config.bc_driver_enabled)
+
     if config.stream_active:
         stream_manager.start(config.stream_port)
 
     main_win = MainWindow(config, widget_entries, reader=reader,
                           stream_manager=stream_manager,
                           stream_entries=stream_entries)
+    main_win.set_broadcast_state(bc_state)
     main_win.show()
 
+    from lmu_app.widgets.live_timing import LiveTimingPanel
+    live_timing_win = LiveTimingPanel(reader, bc_state)
+    live_timing_win.show()
+    main_win.open_live_timing.connect(lambda: (live_timing_win.show(), live_timing_win.raise_()))
+
     def on_quit() -> None:
+        live_timing_win.close()
         stream_manager.stop()
         for _, w in widget_entries:
             w.stop()

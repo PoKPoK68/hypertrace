@@ -79,6 +79,11 @@ class VehicleScoringEntry:
     vehicle_class: str    = ""
     virtual_energy: float = 0.0   # 0-1 fraction; 0 if car has no VE
     fuel: float           = 0.0   # litres
+    finish_status: int    = 0     # 0=none, 1=finished, 2=DNF, 3=DNQ, 4=DQ
+    car_number: str   = ""
+    team_name:  str   = ""
+    time_behind_class_leader: float = 0.0
+    laps_behind_class_leader: int   = 0
 
 
 @dataclass
@@ -108,6 +113,7 @@ class LMUSnapshot:
     player_in_garage: bool   = False
     game_running: bool       = False
     session_active: bool     = False   # True only when a session is actually running
+    viewed_slot_id: int      = -1      # slot_id of the currently focused/viewed driver
     timestamp: float         = 0.0
 
 
@@ -127,6 +133,10 @@ class BaseReader:
 # LMU Reader — shared memory native via SimInfo (lmu_data.py)
 # ---------------------------------------------------------------------------
 
+_REST_BASE = "http://localhost:6397"
+_REST_FOCUS_INTERVAL = 0.2   # poll focus every 200 ms (5 Hz)
+
+
 class LMUReader(BaseReader):
     """Lit la shared memory LMU via SimInfo de pyLMUSharedMemory."""
 
@@ -136,14 +146,19 @@ class LMUReader(BaseReader):
         self._lock      = threading.Lock()
         self._running   = False
         self._thread: threading.Thread | None = None
+        self._rest_thread: threading.Thread | None = None
         self._sim: object | None = None
         self._connected = False
+        self._rest_focus: int = -1   # slotID from REST API; -1 = unknown
+        self._rest_data: dict[int, dict] = {}   # slot_id → REST standings entry
 
     def start(self):
         if self._running: return
         self._running = True
         self._thread  = threading.Thread(target=self._loop, name="LMUReader", daemon=True)
         self._thread.start()
+        self._rest_thread = threading.Thread(target=self._rest_loop, name="LMURestFocus", daemon=True)
+        self._rest_thread.start()
         logger.info("LMUReader started")
 
     def stop(self):
@@ -154,6 +169,29 @@ class LMUReader(BaseReader):
             try: self._sim.close()
             except Exception: pass
         logger.info("LMUReader stopped")
+
+    def _rest_loop(self):
+        """Poll REST API: focus at 5 Hz, standings at 3 Hz."""
+        import urllib.request as _ur
+        import json as _json
+        _last_st = 0.0
+        while self._running:
+            now = time.monotonic()
+            try:
+                with _ur.urlopen(f"{_REST_BASE}/rest/watch/focus", timeout=1) as r:
+                    slot = int(r.read().decode().strip())
+                    self._rest_focus = slot if slot >= 0 else -1
+            except Exception:
+                pass
+            if now - _last_st >= 0.333:
+                try:
+                    with _ur.urlopen(f"{_REST_BASE}/rest/watch/standings", timeout=2) as r:
+                        data = _json.loads(r.read())
+                        self._rest_data = {int(item["slotID"]): item for item in data}
+                        _last_st = now
+                except Exception:
+                    pass
+            time.sleep(_REST_FOCUS_INTERVAL)
 
     def get(self) -> LMUSnapshot:
         with self._lock:
@@ -249,7 +287,17 @@ class LMUReader(BaseReader):
                     in_garage          = bool(v.mInGarageStall),
                     control            = v.mControl,
                     vehicle_class      = vclass,
+                    finish_status      = getattr(v, 'mFinishStatus', 0),
                 ))
+
+            # Merge REST standings data (car number, team, class gap)
+            for entry in s.vehicles:
+                rd = self._rest_data.get(entry.slot_id)
+                if rd:
+                    entry.car_number = str(rd.get("carNumber", ""))
+                    entry.team_name  = rd.get("fullTeamName", "")
+                    entry.time_behind_class_leader = float(rd.get("timeBehindClassLeader", 0.0))
+                    entry.laps_behind_class_leader = int(rd.get("lapsBehindClassLeader", 0))
 
             # --- VE et fuel pour tous les véhicules depuis telemInfo ---
             ve_by_id:   dict[int, float] = {}
@@ -264,6 +312,18 @@ class LMUReader(BaseReader):
             for entry in s.vehicles:
                 entry.virtual_energy = ve_by_id.get(entry.slot_id, 0.0)
                 entry.fuel           = fuel_by_id.get(entry.slot_id, 0.0)
+
+            # --- Session active + viewed vehicle ---
+            player_sc = next((e for e in s.vehicles if e.is_player), None)
+            snap.session_active = s.num_vehicles > 0 and s.current_et > 0
+            if player_sc:
+                snap.player_in_garage = player_sc.in_garage
+                snap.viewed_slot_id   = player_sc.slot_id  # fallback: own car
+
+            # REST API gives us the true focused slotID from /rest/watch/focus
+            rest_slot = self._rest_focus
+            if rest_slot > 0 and any(v.slot_id == rest_slot for v in s.vehicles):
+                snap.viewed_slot_id = rest_slot
 
             # --- Télémétrie joueur ---
             if not telem.playerHasVehicle:
@@ -296,13 +356,9 @@ class LMUReader(BaseReader):
             v.delta_best     = tel.mDeltaBest
             v.in_pits        = bool(tel.mSpeedLimiter)
 
-            # Trouver le scoring joueur pour lap_dist et on_track
-            player_sc = next((e for e in s.vehicles if e.is_player), None)
             if player_sc:
-                v.lap_dist           = player_sc.lap_dist
-                snap.session_active  = s.num_vehicles > 0 and s.current_et > 0
-                snap.is_on_track     = snap.session_active
-                snap.player_in_garage = player_sc.in_garage
+                v.lap_dist       = player_sc.lap_dist
+                snap.is_on_track = snap.session_active
 
             # --- Pneus (0=FL,1=FR,2=RL,3=RR) ---
             t = snap.tyres
@@ -320,6 +376,17 @@ class LMUReader(BaseReader):
 
         except Exception as e:
             logger.error("LMUReader tick error: %s", e)
+
+
+def lmu_rest_put(path: str, rest_base: str = _REST_BASE) -> bool:
+    """Send a PUT to the LMU REST API. Returns True on success."""
+    import urllib.request as _ur
+    try:
+        req = _ur.Request(f"{rest_base}{path}", method="PUT")
+        _ur.urlopen(req, timeout=1)
+        return True
+    except Exception:
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -419,6 +486,7 @@ class MockReader(BaseReader):
             vehicles=vehicles,
         )
 
+        player = next((v for v in vehicles if v.is_player), None)
         return LMUSnapshot(
             vehicle=VehicleData(
                 speed_kmh=285.0, rpm=9200.0, rpm_max=10500.0,
@@ -426,6 +494,7 @@ class MockReader(BaseReader):
             ),
             session=session,
             is_on_track=True, game_running=True, session_active=True,
+            viewed_slot_id=player.slot_id if player else -1,
             timestamp=time.time(),
         )
 

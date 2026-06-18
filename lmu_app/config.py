@@ -181,6 +181,14 @@ class AppConfig:
     def stream_active(self, v: bool) -> None:
         self._s()["active"] = bool(v)
 
+    @property
+    def stream_hide_in_garage(self) -> bool:
+        return bool(self._s().get("hide_in_garage", False))
+
+    @stream_hide_in_garage.setter
+    def stream_hide_in_garage(self, v: bool) -> None:
+        self._s()["hide_in_garage"] = bool(v)
+
     def stream_widget_enabled(self, key: str) -> bool:
         return bool(self._sw(key).get("enabled", False))
 
@@ -192,3 +200,86 @@ class AppConfig:
 
     def set_stream_widget_params(self, key: str, params: dict) -> None:
         self._sw(key)["params"] = params
+
+    # ------------------------------------------------------------------
+    # Broadcast mode
+    # ------------------------------------------------------------------
+
+    def _bc(self) -> dict:
+        return self._s().setdefault("broadcast", {})
+
+    @property
+    def bc_tower_enabled(self) -> bool:
+        return bool(self._bc().get("tower_enabled", True))
+
+    @bc_tower_enabled.setter
+    def bc_tower_enabled(self, v: bool) -> None:
+        self._bc()["tower_enabled"] = bool(v)
+
+    @property
+    def bc_battle_enabled(self) -> bool:
+        return bool(self._bc().get("battle_enabled", False))
+
+    @bc_battle_enabled.setter
+    def bc_battle_enabled(self, v: bool) -> None:
+        self._bc()["battle_enabled"] = bool(v)
+
+    @property
+    def bc_driver_enabled(self) -> bool:
+        return bool(self._bc().get("driver_enabled", False))
+
+    @bc_driver_enabled.setter
+    def bc_driver_enabled(self, v: bool) -> None:
+        self._bc()["driver_enabled"] = bool(v)
+
+    @property
+    def bc_tower_count_overall(self) -> int:
+        bc = self._bc()
+        return int(bc.get("tower_count_overall", bc.get("tower_count", 10)))
+
+    @bc_tower_count_overall.setter
+    def bc_tower_count_overall(self, v: int) -> None:
+        self._bc()["tower_count_overall"] = int(v)
+
+    @property
+    def bc_tower_count_multiclass(self) -> int:
+        return int(self._bc().get("tower_count_multiclass", 5))
+
+    @bc_tower_count_multiclass.setter
+    def bc_tower_count_multiclass(self, v: int) -> None:
+        self._bc()["tower_count_multiclass"] = int(v)
+
+    @property
+    def bc_tower_count_ourclass(self) -> int:
+        return int(self._bc().get("tower_count_ourclass", 10))
+
+    @bc_tower_count_ourclass.setter
+    def bc_tower_count_ourclass(self, v: int) -> None:
+        self._bc()["tower_count_ourclass"] = int(v)
+
+    @property
+    def bc_tower_mode(self) -> int:
+        bc = self._bc()
+        if "tower_mode" in bc:
+            return int(bc["tower_mode"])
+        return 1 if bc.get("tower_class_mode", False) else 0
+
+    @bc_tower_mode.setter
+    def bc_tower_mode(self, v: int) -> None:
+        self._bc()["tower_mode"] = int(v)
+
+    @property
+    def bc_tower_filter_class(self) -> str:
+        return str(self._bc().get("tower_filter_class", ""))
+
+    @bc_tower_filter_class.setter
+    def bc_tower_filter_class(self, v: str) -> None:
+        self._bc()["tower_filter_class"] = str(v)
+
+    @property
+    def bc_tower_show_team(self) -> bool:
+        return bool(self._bc().get("tower_show_team", False))
+
+    @bc_tower_show_team.setter
+    def bc_tower_show_team(self, v: bool) -> None:
+        self._bc()["tower_show_team"] = bool(v)

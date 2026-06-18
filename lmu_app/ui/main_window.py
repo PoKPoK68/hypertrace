@@ -49,6 +49,17 @@ _SS_OFF = (
     f"font-weight: bold; font-size: 10px; font-family: '{T.F_TEXT}'; }}"
     f"QPushButton:hover {{ background: #E00000; border-color: #E00000; }}"
 )
+_SS_SEG_ON = (
+    f"QPushButton {{ background: {T.ACCENT}; color: #000000; "
+    f"border: 1px solid {T.ACCENT}; border-radius: 2px; "
+    f"font-weight: bold; font-size: 9px; font-family: '{T.F_TEXT}'; padding: 0 4px; }}"
+)
+_SS_SEG_OFF = (
+    f"QPushButton {{ background: rgba(255,255,255,0.06); color: {T.DIM}; "
+    f"border: 1px solid rgba(255,255,255,0.12); border-radius: 2px; "
+    f"font-size: 9px; font-family: '{T.F_TEXT}'; padding: 0 4px; }}"
+    f"QPushButton:hover {{ color: {T.TEXT}; border-color: rgba(255,255,255,0.25); }}"
+)
 
 
 class _OnOffBtn(QPushButton):
@@ -206,7 +217,7 @@ QTabBar::tab {{
     color: {T.DIM};
     font-family: '{T.F_TEXT}';
     font-size: 11px;
-    padding: 6px 14px;
+    padding: 6px 9px;
     border: none;
     border-bottom: 2px solid transparent;
     letter-spacing: 1px;
@@ -311,6 +322,7 @@ class _StreamConfigProxy:
 
 class MainWindow(QWidget):
     """Tabbed control panel — Direction A Broadcast."""
+    open_live_timing = Signal()
 
     def __init__(
         self,
@@ -330,7 +342,7 @@ class MainWindow(QWidget):
 
         self.setWindowTitle("LMU App")
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
-        self.setFixedWidth(330)
+        self.setFixedWidth(350)
         self.setStyleSheet(_WINDOW_SS)
 
         self._toggles: dict[str, _OnOffBtn] = {}
@@ -348,6 +360,24 @@ class MainWindow(QWidget):
         self._stream_url_lbl: QLabel | None = None
         self._stream_rows_w: QWidget | None = None
         self._stream_port_spin: QSpinBox | None = None
+
+        # Broadcast director
+        self._bc_state = None   # set later by caller via set_broadcast_state()
+        self._bc_name_drv_btn:  QPushButton | None = None
+        self._bc_name_team_btn: QPushButton | None = None
+        self._bc_url_lbl:        QLabel    | None = None
+        self._bc_tower_toggle:   _OnOffBtn | None = None
+        self._bc_battle_toggle:  _OnOffBtn | None = None
+        self._bc_driver_toggle:  _OnOffBtn | None = None
+        self._bc_count_ovr_spin: QSpinBox  | None = None
+        self._bc_count_mc_spin:  QSpinBox  | None = None
+        self._bc_count_cls_spin: QSpinBox  | None = None
+        self._bc_tower_mode_btns: list     | None = None
+        self._bc_class_combo:    QComboBox | None = None
+        self._bc_viewer_combo:   QComboBox | None = None
+        self._bc_viewer_slots:   list[int]        = []
+        self._bc_no_stream_lbl:  QLabel    | None = None
+        self._live_timing_win = None
 
         self._setup_ui()
         self._apply_lock_state()
@@ -387,10 +417,11 @@ class MainWindow(QWidget):
         root.addWidget(title)
 
         tabs = QTabWidget()
-        tabs.addTab(self._make_overlays_tab(), "Overlays")
-        tabs.addTab(self._make_stream_tab(), "Stream")
-        tabs.addTab(self._make_presets_tab(), "Presets")
-        tabs.addTab(self._make_class_colors_tab(), "Class Colors")
+        tabs.addTab(self._make_overlays_tab(),     "Overlays")
+        tabs.addTab(self._make_presets_tab(),      "Presets")
+        tabs.addTab(self._make_stream_tab(),       "Stream")
+        tabs.addTab(self._make_broadcast_tab(),    "Broadcast")
+        tabs.addTab(self._make_class_colors_tab(), "Colors")
         root.addWidget(tabs)
 
     # ------------------------------------------------------------------ Tab 1
@@ -879,6 +910,7 @@ QCheckBox::indicator:checked {{
         if self._get_snapshot is None:
             return
         snap = self._get_snapshot()
+        self._update_bc_viewer_combo(snap)
         if not snap.game_running:
             self._last_session_cat = None
             return
@@ -953,6 +985,28 @@ QCheckBox::indicator:checked {{
             rows_vl.addWidget(self._make_stream_row(key, widget))
 
         vl.addWidget(rows_w)
+
+        vl.addWidget(_sep())
+
+        _svg = (Path(__file__).parent.parent / "assets" / "check.svg").as_posix()
+        _cb_ss = f"""
+QCheckBox {{ color: {T.TEXT}; font-family: '{T.F_TEXT}'; font-size: 12px; spacing: 9px; }}
+QCheckBox::indicator {{
+    width: 15px; height: 15px; border-radius: 3px;
+    border: 1px solid rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.03);
+}}
+QCheckBox::indicator:checked {{
+    background: {T.ACCENT}; border-color: {T.ACCENT};
+    image: url({_svg});
+}}
+"""
+        hig = QCheckBox("Hide in garage")
+        hig.setStyleSheet(_cb_ss)
+        hig.setChecked(self._config.stream_hide_in_garage)
+        hig.toggled.connect(self._on_stream_hide_garage)
+        vl.addWidget(hig)
+
         vl.addStretch()
 
         self._refresh_stream_ui()
@@ -1021,10 +1075,17 @@ QCheckBox::indicator:checked {{
         self._config.stream_active = checked
         self._config.save()
         self._refresh_stream_ui()
+        self._refresh_bc_ui()
 
     def _on_stream_port_changed(self, value: int) -> None:
         self._config.stream_port = value
         self._config.save()
+
+    def _on_stream_hide_garage(self, checked: bool) -> None:
+        self._config.stream_hide_in_garage = checked
+        self._config.save()
+        if self._stream_manager:
+            self._stream_manager.set_hide_in_garage(checked)
 
     def _on_stream_widget_toggle(self, key: str, checked: bool) -> None:
         self._config.set_stream_widget_enabled(key, checked)
@@ -1050,7 +1111,292 @@ QCheckBox::indicator:checked {{
             on_paste=lambda: self._paste_params(key, widget),
         ).exec()
 
-    # ------------------------------------------------------------------ Tab 3 — Class colors
+    # ------------------------------------------------------------------ Tab 4 — Broadcast
+
+    def set_broadcast_state(self, state) -> None:
+        """Called from main.py after MainWindow is constructed."""
+        self._bc_state = state
+
+    def _make_broadcast_tab(self) -> QWidget:
+        w  = QWidget()
+        vl = QVBoxLayout(w)
+        vl.setSpacing(6)
+        vl.setContentsMargins(6, 8, 6, 8)
+
+        _svg = (Path(__file__).parent.parent / "assets" / "check.svg").as_posix()
+        _cb_ss = f"""
+QCheckBox {{ color: {T.TEXT}; font-family: '{T.F_TEXT}'; font-size: 11px; spacing: 8px; }}
+QCheckBox::indicator {{
+    width: 13px; height: 13px; border-radius: 3px;
+    border: 1px solid rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.03);
+}}
+QCheckBox::indicator:checked {{
+    background: {T.ACCENT}; border-color: {T.ACCENT};
+    image: url({_svg});
+}}
+"""
+
+        # ── Broadcast URL (visible only when stream is ON) ─────────────
+        no_stream = QLabel("Start stream in the Stream tab first.")
+        no_stream.setStyleSheet(f"color: {T.DIM}; font-size: 11px;")
+        no_stream.setWordWrap(True)
+        self._bc_no_stream_lbl = no_stream
+        vl.addWidget(no_stream)
+
+        url_row = QWidget()
+        url_hl  = QHBoxLayout(url_row)
+        url_hl.setContentsMargins(0, 0, 0, 0)
+        url_hl.setSpacing(6)
+        url_lbl = QLabel()
+        url_lbl.setStyleSheet(f"color: {T.ACCENT}; font-size: 10px;")
+        url_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self._bc_url_lbl = url_lbl
+        url_hl.addWidget(url_lbl, 1)
+        copy_btn = QPushButton("Copy URL")
+        copy_btn.setFixedSize(80, 22)
+        copy_btn.setStyleSheet(_SS_BTN)
+        copy_btn.clicked.connect(self._copy_broadcast_url)
+        url_hl.addWidget(copy_btn)
+        vl.addWidget(url_row)
+
+        vl.addWidget(_sep())
+
+        # ── Section helper ─────────────────────────────────────────────
+        def _section(title: str, toggle_attr: str, enabled: bool) -> tuple[QWidget, _OnOffBtn]:
+            hdr = QWidget()
+            hl  = QHBoxLayout(hdr)
+            hl.setContentsMargins(0, 2, 0, 2)
+            hl.setSpacing(6)
+            lbl = QLabel(title)
+            lbl.setStyleSheet(
+                f"color: {T.DIM}; font-size: 10px; font-weight: bold; "
+                f"letter-spacing: 1px; text-transform: uppercase;"
+            )
+            hl.addWidget(lbl)
+            hl.addStretch()
+            tog = _OnOffBtn(enabled)
+            setattr(self, toggle_attr, tog)
+            hl.addWidget(tog)
+            return hdr, tog
+
+        # ── TOWER ──────────────────────────────────────────────────────
+        tower_hdr, tower_tog = _section("Tower", "_bc_tower_toggle",
+                                        self._config.bc_tower_enabled)
+        tower_tog.toggled.connect(self._on_bc_tower_toggle)
+        vl.addWidget(tower_hdr)
+
+        # Tower options: 3 rows, one per mode — [button] [extras] ... [N spin]
+        tower_opts = QWidget()
+        to_vl = QVBoxLayout(tower_opts)
+        to_vl.setContentsMargins(0, 0, 0, 0)
+        to_vl.setSpacing(2)
+
+        cur_mode = self._config.bc_tower_mode
+        btns: list[QPushButton] = []
+
+        def _cnt_spin(attr_name: str, spin_attr: str, mn: int, mx: int, val: int) -> QSpinBox:
+            sp = QSpinBox()
+            sp.setRange(mn, mx)
+            sp.setValue(val)
+            sp.setFixedWidth(54)
+            sp.valueChanged.connect(lambda v, a=attr_name: self._on_bc_count(a, v))
+            setattr(self, spin_attr, sp)
+            return sp
+
+        _dim_lbl = lambda t: (lambda l: (l.setStyleSheet(f"color:{T.DIM};font-size:11px;"), l)[1])(QLabel(t))
+
+        # Row 0 — Overall
+        r0 = QHBoxLayout(); r0.setSpacing(4)
+        btn0 = QPushButton("Overall"); btn0.setFixedHeight(22); btn0.setFixedWidth(72)
+        btn0.setStyleSheet(_SS_SEG_ON if cur_mode == 0 else _SS_SEG_OFF)
+        btn0.clicked.connect(lambda _, i=0: self._on_bc_tower_mode(i))
+        r0.addWidget(btn0); btns.append(btn0)
+        r0.addStretch()
+        r0.addWidget(_dim_lbl("N:"))
+        r0.addWidget(_cnt_spin("bc_tower_count_overall", "_bc_count_ovr_spin", 3, 30,
+                               self._config.bc_tower_count_overall))
+        to_vl.addLayout(r0)
+
+        # Row 1 — Multiclass
+        r1 = QHBoxLayout(); r1.setSpacing(4)
+        btn1 = QPushButton("Multiclass"); btn1.setFixedHeight(22); btn1.setFixedWidth(72)
+        btn1.setStyleSheet(_SS_SEG_ON if cur_mode == 1 else _SS_SEG_OFF)
+        btn1.clicked.connect(lambda _, i=1: self._on_bc_tower_mode(i))
+        r1.addWidget(btn1); btns.append(btn1)
+        r1.addStretch()
+        r1.addWidget(_dim_lbl("/cls:"))
+        r1.addWidget(_cnt_spin("bc_tower_count_multiclass", "_bc_count_mc_spin", 1, 10,
+                               self._config.bc_tower_count_multiclass))
+        to_vl.addLayout(r1)
+
+        # Row 2 — Class filter (auto-detected)
+        r2 = QHBoxLayout(); r2.setSpacing(4)
+        btn2 = QPushButton("Class"); btn2.setFixedHeight(22); btn2.setFixedWidth(50)
+        btn2.setStyleSheet(_SS_SEG_ON if cur_mode == 2 else _SS_SEG_OFF)
+        btn2.clicked.connect(lambda _, i=2: self._on_bc_tower_mode(i))
+        r2.addWidget(btn2); btns.append(btn2)
+        r2.addStretch()
+        r2.addWidget(_dim_lbl("N:"))
+        r2.addWidget(_cnt_spin("bc_tower_count_ourclass", "_bc_count_cls_spin", 3, 20,
+                               self._config.bc_tower_count_ourclass))
+        to_vl.addLayout(r2)
+
+        self._bc_tower_mode_btns = btns
+        vl.addWidget(tower_opts)
+
+        # Driver / Team name toggle — full-width buttons
+        name_row = QHBoxLayout(); name_row.setSpacing(4)
+        cur_show_team = getattr(self._bc_state, 'show_team', False) if self._bc_state else False
+        self._bc_name_drv_btn = QPushButton("Driver Name")
+        self._bc_name_drv_btn.setFixedHeight(22)
+        self._bc_name_drv_btn.setStyleSheet(_SS_SEG_ON if not cur_show_team else _SS_SEG_OFF)
+        self._bc_name_team_btn = QPushButton("Team Name")
+        self._bc_name_team_btn.setFixedHeight(22)
+        self._bc_name_team_btn.setStyleSheet(_SS_SEG_ON if cur_show_team else _SS_SEG_OFF)
+        self._bc_name_drv_btn.clicked.connect(lambda: self._on_bc_show_team(False))
+        self._bc_name_team_btn.clicked.connect(lambda: self._on_bc_show_team(True))
+        name_row.addWidget(self._bc_name_drv_btn)
+        name_row.addWidget(self._bc_name_team_btn)
+        vl.addLayout(name_row)
+
+        # Live Timing button
+        lt_btn = QPushButton("Open Live Timing Panel")
+        lt_btn.setFixedHeight(24)
+        lt_btn.setStyleSheet(_SS_BTN)
+        lt_btn.clicked.connect(self.open_live_timing.emit)
+        vl.addWidget(lt_btn)
+        vl.addWidget(_sep())
+
+        # ── BATTLE ─────────────────────────────────────────────────────
+        battle_hdr, battle_tog = _section("Battle", "_bc_battle_toggle",
+                                          self._config.bc_battle_enabled)
+        battle_tog.toggled.connect(self._on_bc_battle_toggle)
+        vl.addWidget(battle_hdr)
+
+        vl.addWidget(_sep())
+
+        # ── DRIVER CARD ────────────────────────────────────────────────
+        driver_hdr, driver_tog = _section("Driver Card", "_bc_driver_toggle",
+                                          self._config.bc_driver_enabled)
+        driver_tog.toggled.connect(self._on_bc_driver_toggle)
+        vl.addWidget(driver_hdr)
+
+        vl.addStretch()
+        self._refresh_bc_ui()
+        return w
+
+    # ── Broadcast handlers ─────────────────────────────────────────────
+
+    def _refresh_bc_ui(self) -> None:
+        active = self._config.stream_active
+        if self._bc_no_stream_lbl:
+            self._bc_no_stream_lbl.setVisible(not active)
+        if self._bc_url_lbl:
+            port = self._config.stream_port
+            self._bc_url_lbl.setText(
+                f"http://localhost:{port}/broadcast" if active else ""
+            )
+            self._bc_url_lbl.setVisible(active)
+
+    def _copy_broadcast_url(self) -> None:
+        url = f"http://localhost:{self._config.stream_port}/broadcast"
+        QApplication.clipboard().setText(url)
+        btn = self.sender()
+        if isinstance(btn, QPushButton):
+            btn.setText("✓ Copied")
+            QTimer.singleShot(1500, lambda b=btn: b.setText("Copy URL"))
+
+    def _on_bc_tower_toggle(self, checked: bool) -> None:
+        self._config.bc_tower_enabled = checked
+        self._config.save()
+        if self._stream_manager:
+            self._stream_manager.set_widget_enabled("bc_tower", checked)
+
+    def _on_bc_battle_toggle(self, checked: bool) -> None:
+        # Let the signal cascade naturally — _on_bc_driver_toggle(False) won't loop back
+        # because its "if checked and …" guard is False when called with checked=False.
+        if checked and self._bc_driver_toggle and self._bc_driver_toggle.isChecked():
+            self._bc_driver_toggle.setChecked(False)
+        self._config.bc_battle_enabled = checked
+        self._config.save()
+        if self._stream_manager:
+            self._stream_manager.set_widget_enabled("bc_battle", checked)
+
+    def _on_bc_driver_toggle(self, checked: bool) -> None:
+        if checked and self._bc_battle_toggle and self._bc_battle_toggle.isChecked():
+            self._bc_battle_toggle.setChecked(False)
+        self._config.bc_driver_enabled = checked
+        self._config.save()
+        if self._stream_manager:
+            self._stream_manager.set_widget_enabled("bc_driver", checked)
+
+    def _on_bc_tower_mode(self, idx: int) -> None:
+        if self._bc_tower_mode_btns:
+            for i, btn in enumerate(self._bc_tower_mode_btns):
+                btn.setStyleSheet(_SS_SEG_ON if i == idx else _SS_SEG_OFF)
+        self._config.bc_tower_mode = idx
+        self._config.save()
+        if self._bc_state is not None:
+            self._bc_state.tower_mode = idx
+
+    def _on_bc_count(self, cfg_attr: str, value: int) -> None:
+        setattr(self._config, cfg_attr, value)
+        self._config.save()
+        if self._bc_state is not None:
+            state_attr = cfg_attr.replace("bc_tower_count", "tower_count")
+            setattr(self._bc_state, state_attr, value)
+
+    def _on_bc_show_team(self, show_team: bool) -> None:
+        self._config.bc_tower_show_team = show_team
+        if self._bc_state:
+            self._bc_state.show_team = show_team
+        if self._bc_name_drv_btn and self._bc_name_team_btn:
+            self._bc_name_drv_btn.setStyleSheet(_SS_SEG_ON if not show_team else _SS_SEG_OFF)
+            self._bc_name_team_btn.setStyleSheet(_SS_SEG_ON if show_team else _SS_SEG_OFF)
+        self._config.save()
+
+    def _on_bc_class_changed(self, _idx: int) -> None:
+        if self._bc_class_combo is None:
+            return
+        abbrev = self._bc_class_combo.currentData() or ""
+        self._config.bc_tower_filter_class = abbrev
+        self._config.save()
+        if self._bc_state is not None:
+            self._bc_state.tower_filter_class = abbrev
+
+    def _on_bc_viewer_changed(self, _idx: int) -> None:
+        if self._bc_state is None or self._bc_viewer_combo is None:
+            return
+        slot_id = self._bc_viewer_combo.currentData()
+        self._bc_state.pinned_slot_id = slot_id if slot_id is not None else -1
+
+    def _update_bc_viewer_combo(self, snap=None) -> None:
+        if self._bc_viewer_combo is None or self._get_snapshot is None:
+            return
+        if snap is None:
+            snap = self._get_snapshot()
+        if not snap or not snap.session or not snap.game_running:
+            return
+        vlist = sorted(snap.session.vehicles, key=lambda v: v.place if v.place > 0 else 9999)
+        new_slots = [-1] + [v.slot_id for v in vlist]
+        if new_slots == self._bc_viewer_slots:
+            return
+        self._bc_viewer_slots = new_slots
+        pinned = self._bc_state.pinned_slot_id if self._bc_state else -1
+        combo = self._bc_viewer_combo
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem("Auto", -1)
+        for v in vlist:
+            pos_s = f"P{v.place} " if v.place > 0 else ""
+            label = f"{pos_s}{v.driver_name}" if v.driver_name else f"Car {v.slot_id}"
+            combo.addItem(label, v.slot_id)
+        idx = next((i for i in range(combo.count()) if combo.itemData(i) == pinned), 0)
+        combo.setCurrentIndex(idx)
+        combo.blockSignals(False)
+
+    # ------------------------------------------------------------------ Tab 5 — Class colors
 
     def _make_class_colors_tab(self) -> QWidget:
         w = QWidget()

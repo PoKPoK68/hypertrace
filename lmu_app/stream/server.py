@@ -48,6 +48,31 @@ tick();
 
 _INDEX_ROW = '<li><a href="/{name}">{name}</a> — <code>http://localhost:{{port}}/{name}</code></li>'
 
+_BROADCAST_HTML = (
+    "<!DOCTYPE html><html><head><meta charset='utf-8'><style>"
+    "* { margin:0; padding:0; }"
+    "html,body { background:transparent; overflow:hidden; }"
+    "img { position:fixed; display:block; }"
+    "#bc-tower  { left:8px; top:8px; }"
+    "#bc-battle { left:calc(50vw - 200px); bottom:30px; }"
+    "#bc-driver { left:calc(50vw - 180px); bottom:30px; }"
+    "</style></head><body>"
+    "<img id='bc-tower'><img id='bc-battle'><img id='bc-driver'>"
+    "<script>"
+    "function poll(id,name){"
+    "const img=document.getElementById(id);let busy=false;"
+    "function tick(){if(busy)return;busy=true;"
+    "const ni=new Image();"
+    "ni.onload=()=>{img.src=ni.src;busy=false;requestAnimationFrame(tick);};"
+    "ni.onerror=()=>{busy=false;setTimeout(tick,250);};"
+    "ni.src='/api/'+name+'.png?t='+Date.now();}"
+    "tick();}"
+    "poll('bc-tower','bc_tower');"
+    "poll('bc-battle','bc_battle');"
+    "poll('bc-driver','bc_driver');"
+    "</script></body></html>"
+)
+
 # ---------------------------------------------------------------------------
 # HTTP handler
 # ---------------------------------------------------------------------------
@@ -58,12 +83,18 @@ class _Handler(BaseHTTPRequestHandler):
 
         if path == "/":
             self._index()
+        elif path == "/broadcast":
+            self._broadcast_page()
         elif path.startswith("/api/") and path.endswith(".png"):
             self._frame(path[5:-4])
         elif path.lstrip("/"):
             self._page(path.lstrip("/"))
         else:
             self._404()
+
+    def _broadcast_page(self) -> None:
+        body = _BROADCAST_HTML.encode()
+        self._send(200, "text/html; charset=utf-8", body)
 
     def _index(self) -> None:
         srv: StreamServer = self.server  # type: ignore[assignment]
@@ -96,13 +127,16 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _send(self, code: int, ctype: str, body: bytes,
               extra: list[tuple[str, str]] | None = None) -> None:
-        self.send_response(code)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(len(body)))
-        for k, v in (extra or []):
-            self.send_header(k, v)
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(code)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            for k, v in (extra or []):
+                self.send_header(k, v)
+            self.end_headers()
+            self.wfile.write(body)
+        except (ConnectionAbortedError, BrokenPipeError, ConnectionResetError):
+            pass
 
     def _404(self) -> None:
         self.send_response(404); self.end_headers()
@@ -199,10 +233,12 @@ class StreamManager(QObject):
 
     def __init__(self, reader, parent: QObject | None = None) -> None:
         super().__init__(parent)
-        self._reader  = reader
+        self._reader        = reader
         self._server: StreamServer | None = None
         self._widgets: dict[str, QWidget] = {}
         self._enabled: set[str]           = set()
+        self._hide_in_garage: bool        = False
+        self._placeholder: bytes          = b""
 
         self._timer = QTimer(self)
         self._timer.setInterval(50)   # 20 fps
@@ -212,15 +248,15 @@ class StreamManager(QObject):
     def start(self, port: int) -> bool:
         if self._server is not None:
             self._server.try_stop()
-        # Generate 1×1 transparent PNG in main Qt thread (safe)
+        # Generate 1×1 transparent PNG in main Qt thread (Qt-safe)
         ph_px = QPixmap(1, 1)
         ph_px.fill(Qt.GlobalColor.transparent)
         ph_buf = QBuffer()
         ph_buf.open(QBuffer.OpenModeFlag.WriteOnly)
         ph_px.save(ph_buf, "PNG")
-        placeholder = bytes(ph_buf.data())
+        self._placeholder = bytes(ph_buf.data())
 
-        srv = StreamServer(port, placeholder)
+        srv = StreamServer(port, self._placeholder)
         ok  = srv.try_start()
         if ok:
             self._server = srv
@@ -232,8 +268,16 @@ class StreamManager(QObject):
     def stop(self) -> None:
         self._timer.stop()
         if self._server is not None:
+            # Push transparent placeholder so OBS clears before server stops
+            if self._placeholder:
+                for name in self._server.names():
+                    self._server.set_frame(name, self._placeholder)
+                import time; time.sleep(0.25)
             self._server.try_stop()
             self._server = None
+
+    def set_hide_in_garage(self, hide: bool) -> None:
+        self._hide_in_garage = hide
 
     @property
     def is_running(self) -> bool:
@@ -250,15 +294,22 @@ class StreamManager(QObject):
             self._enabled.add(key)
         else:
             self._enabled.discard(key)
+            if self._server and self._placeholder:
+                self._server.set_frame(key, self._placeholder)
 
     # ------------------------------------------------------------------
     def _tick(self) -> None:
         if self._server is None:
             return
         snap = self._reader.get()
+        in_garage = self._hide_in_garage and snap.player_in_garage
         for key in list(self._enabled):
             widget = self._widgets.get(key)
             if widget is None:
+                continue
+            if in_garage:
+                if self._placeholder:
+                    self._server.set_frame(key, self._placeholder)
                 continue
             if snap.game_running and snap.session_active:
                 try:

@@ -4,6 +4,39 @@ All notable changes to LMU App are documented here.
 
 ---
 
+## [0.6.0] — Broadcast mode & Live Timing
+
+### New: Broadcast tab
+- New **Broadcast** tab in the main window, dedicated to director / broadcast tooling
+- **Tower** overlay — live standings rendered as a broadcast tower; three modes: *Overall* (top N), *Multiclass* (top N per class), *Class* (top N of one class)
+- **Battle** overlay — highlights the two drivers currently fighting for position
+- **Driver Card** overlay — shows the currently viewed driver's name, position and gap
+- Toggle between **Driver Name** and **Team Name** display across all broadcast overlays (full name shown, never truncated)
+- Tower, Battle and Driver Card can each be enabled or disabled independently
+- A single **/broadcast** browser-source URL combines all three overlays into one OBS source — copy it directly from the tab
+
+### New: Live Timing Panel
+- Standalone window opened from the Broadcast tab via **Open Live Timing Panel**
+- Full live timing table: position, class color chip, car number, driver / team name, class, best lap, last lap, gap to leader and status
+- **TV / WS / CP camera buttons** on every driver row — click to focus that driver *and* switch camera simultaneously:
+  - **TV** — TracksideCycle (broadcast trackside cameras)
+  - **WS** — Windshield onboard
+  - **CP** — Cockpit onboard
+
+### Stream
+- **Hide in garage** checkbox — overlays go transparent while the player is in the garage; re-appear automatically on track
+
+---
+
+## [0.5.1] — Stream improvements
+
+### Stream
+- **OBS clears on exit** — a transparent frame is pushed to all overlays before the server stops, so OBS shows nothing instead of a frozen image
+- **Hide in garage** — new checkbox in the Stream tab; when checked, stream overlays go transparent while the player is in the garage
+- Stream tab moved after Presets in the tab bar
+
+---
+
 ## [0.5.0] — Stream mode & Weather overlay
 
 ### New: Stream mode
