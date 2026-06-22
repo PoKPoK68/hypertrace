@@ -7,7 +7,7 @@ from PySide6.QtWidgets import QSizePolicy
 
 from lmu_app.api.reader import DataReader, LMUSnapshot
 from lmu_app.utils.theme import T, label_font, num_font
-from lmu_app.widgets.base import BaseWidget
+from lmu_app.widgets.base import BaseWidget, DEFAULT_SCALE
 
 _BAR_W = 33   # 100% at font 7 bold ≈ 28px + ~5px margin total
 _BAR_H = 52
@@ -57,7 +57,7 @@ class TyresWidget(BaseWidget):
                  **kw):
         self._show_temp     = show_temp
         self._show_wear_pct = show_wear_pct
-        self._scale         = 1.0
+        self._scale         = DEFAULT_SCALE / 100.0
         self._opacity       = 85
         self._t_cold        = temp_cold
         self._t_opt_lo      = temp_opt_lo
@@ -74,7 +74,7 @@ class TyresWidget(BaseWidget):
     def apply_params(self, params: dict) -> None:
         self._show_temp     = bool(params.get("show_temp",     True))
         self._show_wear_pct = bool(params.get("show_wear_pct", True))
-        self._scale         = int(params.get("scale", 100)) / 100.0
+        self._scale         = int(params.get("scale", DEFAULT_SCALE)) / 100.0
         self._opacity       = max(0, min(100, int(params.get("opacity", 85))))
         self._t_cold        = int(params.get("temp_cold",   60))
         self._t_opt_lo      = int(params.get("temp_opt_lo", 80))

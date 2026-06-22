@@ -15,7 +15,7 @@ from PySide6.QtWidgets import QSizePolicy
 from lmu_app.api.reader import DataReader, LMUSnapshot
 from lmu_app.utils.class_colors import class_color
 from lmu_app.utils.theme import T, label_font, num_font, text_font
-from lmu_app.widgets.base import BaseWidget
+from lmu_app.widgets.base import BaseWidget, DEFAULT_SCALE
 
 _ASSETS = Path(__file__).resolve().parent.parent / "assets"
 _TRACK_TEMP_SVG = str(_ASSETS / "track-temp.svg")
@@ -159,7 +159,7 @@ class RelativeWidget(BaseWidget):
         self._ses_remaining       = 0.0
         self._track_temp          = 0.0
         self._air_temp            = 0.0
-        self._scale               = 1.0
+        self._scale               = DEFAULT_SCALE / 100.0
         self._font_size           = max(7, min(14, int(font_size)))
         self._rows:  list    = []
         self._outlap_tracking:  dict[int, int]  = {}
@@ -192,7 +192,7 @@ class RelativeWidget(BaseWidget):
         self._name_case           = str(params.get("name_case", "upper"))
         self._show_session_bar    = bool(params.get("show_session_bar",  False))
         self._header_info         = str(params.get("header_info", "session"))
-        self._scale               = int(params.get("scale", 100)) / 100.0
+        self._scale               = int(params.get("scale", DEFAULT_SCALE)) / 100.0
         self._font_size           = max(7, min(14, int(params.get("font_size", 9))))
         self._opacity        = max(0, min(100, int(params.get("opacity", 85))))
         _c = QColor(str(params.get("player_color", "#ffc800")))

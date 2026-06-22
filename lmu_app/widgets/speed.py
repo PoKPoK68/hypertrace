@@ -7,7 +7,7 @@ from PySide6.QtWidgets import QSizePolicy
 
 from lmu_app.api.reader import DataReader, LMUSnapshot
 from lmu_app.utils.theme import T, label_font, rpm_seg_color
-from lmu_app.widgets.base import BaseWidget
+from lmu_app.widgets.base import BaseWidget, DEFAULT_SCALE
 
 BASE_W, BASE_H = 90, 50
 _PAD_X, _PAD_Y = 5, 5
@@ -40,7 +40,7 @@ class SpeedWidget(BaseWidget):
         self._gear    = 0
         self._rpm     = 0.0
         self._rpm_max = 9000.0
-        self._scale   = 1.0
+        self._scale   = DEFAULT_SCALE / 100.0
         super().__init__(reader, update_hz=30, **kw)
         self.setFixedSize(int(BASE_W * self._scale), int(BASE_H * self._scale))
 
@@ -48,7 +48,7 @@ class SpeedWidget(BaseWidget):
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
     def apply_params(self, params: dict) -> None:
-        self._scale   = int(params.get("scale", 100)) / 100.0
+        self._scale   = int(params.get("scale", DEFAULT_SCALE)) / 100.0
         self._opacity = max(0, min(100, int(params.get("opacity", 85))))
         self.setFixedSize(int(BASE_W * self._scale), int(BASE_H * self._scale))
         self.update()

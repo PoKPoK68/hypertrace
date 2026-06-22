@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QSizePolicy
 
 from lmu_app.api.reader import DataReader, LMUSnapshot
 from lmu_app.utils.theme import T, label_font, num_font
-from lmu_app.widgets.base import BaseWidget
+from lmu_app.widgets.base import BaseWidget, DEFAULT_SCALE
 
 BASE_W, BASE_H = 154, 88
 
@@ -71,7 +71,7 @@ class InputsWidget(BaseWidget):
 
     def __init__(self, reader: DataReader, **kw):
         self._t = self._b = self._c = self._s = 0.0
-        self._scale = 1.0
+        self._scale = DEFAULT_SCALE / 100.0
         self._wheel_image_path = ""
         self._wheel_pixmap: QPixmap | None = None
         super().__init__(reader, update_hz=60, **kw)
@@ -86,7 +86,7 @@ class InputsWidget(BaseWidget):
         if new_path != self._wheel_image_path:
             self._wheel_image_path = new_path
             self._wheel_pixmap = _load_wheel_pixmap(self._wheel_image_path)
-        self._scale   = int(params.get("scale", 100)) / 100.0
+        self._scale   = int(params.get("scale", DEFAULT_SCALE)) / 100.0
         self._opacity = max(0, min(100, int(params.get("opacity", 85))))
         self.setFixedSize(int(BASE_W * self._scale), int(BASE_H * self._scale))
         self.update()

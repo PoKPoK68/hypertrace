@@ -13,7 +13,7 @@ from PySide6.QtWidgets import QSizePolicy
 
 from lmu_app.api.reader import DataReader, LMUSnapshot
 from lmu_app.utils.theme import T, label_font, num_font
-from lmu_app.widgets.base import BaseWidget
+from lmu_app.widgets.base import BaseWidget, DEFAULT_SCALE
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +93,7 @@ class WeatherWidget(BaseWidget):
     ]
 
     def __init__(self, reader: DataReader, **kw):
-        self._scale      = 1.0
+        self._scale      = DEFAULT_SCALE / 100.0
         self._air_temp   = 0.0
         self._track_temp = 0.0
         self._raining    = 0.0
@@ -150,7 +150,7 @@ class WeatherWidget(BaseWidget):
         super().stop()
 
     def apply_params(self, params: dict) -> None:
-        self._scale   = int(params.get("scale",   100)) / 100.0
+        self._scale   = int(params.get("scale",   DEFAULT_SCALE)) / 100.0
         self._opacity = max(0, min(100, int(params.get("opacity", 85))))
         self.setFixedSize(int(BASE_W * self._scale), int(BASE_H * self._scale))
         self.update()

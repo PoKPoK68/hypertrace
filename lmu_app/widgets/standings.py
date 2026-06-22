@@ -16,7 +16,7 @@ from PySide6.QtWidgets import QSizePolicy
 from lmu_app.api.reader import DataReader, LMUSnapshot
 from lmu_app.utils.class_colors import class_abbrev, class_color
 from lmu_app.utils.theme import T, label_font, num_font, text_font
-from lmu_app.widgets.base import BaseWidget
+from lmu_app.widgets.base import BaseWidget, DEFAULT_SCALE
 
 _ASSETS = Path(__file__).resolve().parent.parent / "assets"
 _TRACK_TEMP_SVG = str(_ASSETS / "track-temp.svg")
@@ -289,7 +289,7 @@ class StandingsWidget(BaseWidget):
         self._rh                  = _row_h(self._font_size)
         self._best_decimals       = max(0, min(3, int(best_decimals)))
         self._last_decimals       = max(0, min(3, int(last_decimals)))
-        self._scale               = 1.0
+        self._scale               = DEFAULT_SCALE / 100.0
         self._opacity             = 85
         self._player_color        = QColor(0xEC, 0xAA, 0x43, 51)
         self._entries:  list[dict]    = []
@@ -354,7 +354,7 @@ class StandingsWidget(BaseWidget):
         self._rh                  = _row_h(self._font_size)
         self._best_decimals       = max(0, min(3, int(params.get("best_decimals", 3))))
         self._last_decimals       = max(0, min(3, int(params.get("last_decimals", 3))))
-        self._scale               = int(params.get("scale", 100)) / 100.0
+        self._scale               = int(params.get("scale", DEFAULT_SCALE)) / 100.0
         self._opacity             = max(0, min(100, int(params.get("opacity", 85))))
         _c = QColor(str(params.get("player_color", "#ffc800")))
         if not _c.isValid(): _c = QColor(255, 200, 0)

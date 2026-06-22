@@ -4,6 +4,17 @@ All notable changes to LMU App are documented here.
 
 ---
 
+## [0.6.1] — Overlay size & camera polish
+
+### All overlays
+- **Default size +15 %** — all overlays are 15 % larger out of the box; configurable via a single `DEFAULT_SCALE` constant in `base.py`
+
+### Live Timing
+- Camera switching to WS / CP is now significantly faster — advances the Onboard ring in one calculated step instead of polling in a loop
+- CP camera fixed: corrects off-by-one errors with a single verification pass after switching
+
+---
+
 ## [0.6.0] — Broadcast mode & Live Timing
 
 ### New: Broadcast tab

@@ -13,6 +13,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_SCALE = 115  # default overlay scale in %; change here to resize all overlays globally
+
 
 class BaseWidget(QWidget):
     """Frameless, always-on-top overlay widget with drag-to-move and auto-hide."""

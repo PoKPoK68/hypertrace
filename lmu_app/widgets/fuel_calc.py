@@ -7,7 +7,7 @@ from PySide6.QtWidgets import QSizePolicy
 from lmu_app.api.reader import DataReader, LMUSnapshot
 from lmu_app.utils.class_colors import CLASS_ENTRIES
 from lmu_app.utils.theme import T, label_font, num_font, draw_panel
-from lmu_app.widgets.base import BaseWidget
+from lmu_app.widgets.base import BaseWidget, DEFAULT_SCALE
 
 # ── Layout constants (shared with ve_calc via import) ─────────────────────
 _PAD      = 5
@@ -167,7 +167,7 @@ class FuelCalcWidget(BaseWidget):
         self._show_refuel     = True
         self._show_finish     = True
 
-        self._scale        = 1.0
+        self._scale        = DEFAULT_SCALE / 100.0
         self._safety_laps  = 1.0
         self._merge        = False
 
@@ -244,7 +244,7 @@ class FuelCalcWidget(BaseWidget):
         self.setFixedSize(int(self._w * self._scale), int(self._layout_h * self._scale))
 
     def apply_params(self, params: dict) -> None:
-        self._scale       = int(params.get("scale", 100)) / 100.0
+        self._scale       = int(params.get("scale", DEFAULT_SCALE)) / 100.0
         self._opacity     = max(0, min(100, int(params.get("opacity", 85))))
         self._safety_laps = float(params.get("safety_laps", 1.0))
 
