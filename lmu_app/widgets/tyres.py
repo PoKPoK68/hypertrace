@@ -9,22 +9,20 @@ from lmu_app.api.reader import DataReader, LMUSnapshot
 from lmu_app.utils.theme import T, label_font, num_font
 from lmu_app.widgets.base import BaseWidget, DEFAULT_SCALE
 
-_BAR_W = 33   # 100% at font 7 bold ≈ 28px + ~5px margin total
+_BAR_W = 33
 _BAR_H = 52
-_PAD   = 5
-_GAP_X = 6
-_GAP_Y = 6
+_G     = 4    # écart uniforme : bords, entre pneus gauche/droite, avant/arrière
 
-WIDGET_W = _PAD * 2 + _BAR_W * 2 + _GAP_X   # 82
-WIDGET_H = _PAD * 2 + _BAR_H * 2 + _GAP_Y   # 120
+WIDGET_W = _G * 2 + _BAR_W * 2 + _G   # = 3*G + 2*BAR_W
+WIDGET_H = _G * 2 + _BAR_H * 2 + _G
 
 _LABELS = ["FL", "FR", "RL", "RR"]
 
 _POSITIONS = [
-    (_PAD,                    _PAD),
-    (_PAD + _BAR_W + _GAP_X, _PAD),
-    (_PAD,                    _PAD + _BAR_H + _GAP_Y),
-    (_PAD + _BAR_W + _GAP_X, _PAD + _BAR_H + _GAP_Y),
+    (_G,              _G),
+    (_G + _BAR_W + _G, _G),
+    (_G,              _G + _BAR_H + _G),
+    (_G + _BAR_W + _G, _G + _BAR_H + _G),
 ]
 
 
@@ -66,7 +64,7 @@ class TyresWidget(BaseWidget):
         self._temps:  list[float] = [0.0] * 4
         self._wears:  list[float] = [1.0] * 4
         super().__init__(reader, update_hz=10, **kw)
-        self.setFixedSize(WIDGET_W, WIDGET_H)
+        self.setFixedSize(int(WIDGET_W * self._scale), int(WIDGET_H * self._scale))
 
     def setup_ui(self):
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
@@ -106,9 +104,7 @@ class TyresWidget(BaseWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.scale(self._scale, self._scale)
-
         self._draw_panel(p, WIDGET_W, WIDGET_H)
-
         for i, (x, y) in enumerate(_POSITIONS):
             self._draw_tyre(p, x, y, i)
         p.end()
@@ -117,9 +113,6 @@ class TyresWidget(BaseWidget):
         wear  = max(0.0, min(1.0, self._wears[idx] if idx < 4 else 1.0))
         temp  =                   self._temps[idx]  if idx < 4 else 0.0
         label = _LABELS[idx] if idx < 4 else ""
-
-        p.save()
-        p.setClipRect(x, y, _BAR_W, _BAR_H)
 
         # Track background
         p.setBrush(T.TRACK)
@@ -142,7 +135,7 @@ class TyresWidget(BaseWidget):
                        Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter,
                        f"{temp:.0f}°")
 
-        # Corner label (FL/FR/RL/RR) — centered in rectangle
+        # Corner label (FL/FR/RL/RR) — centered
         p.setFont(label_font(6))
         p.setPen(QColor(255, 255, 255, 140))
         p.drawText(QRectF(x, y, _BAR_W, _BAR_H),
@@ -154,5 +147,3 @@ class TyresWidget(BaseWidget):
             p.setPen(txt_col)
             p.drawText(QRectF(x, y + _BAR_H - 13, _BAR_W, 13),
                        Qt.AlignmentFlag.AlignCenter, f"{wear * 100:.0f}%")
-
-        p.restore()

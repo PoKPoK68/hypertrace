@@ -21,7 +21,8 @@ _ASSETS = Path(__file__).resolve().parent.parent / "assets"
 _TRACK_TEMP_SVG = str(_ASSETS / "track-temp.svg")
 _AIR_TEMP_SVG   = str(_ASSETS / "air-temp.svg")
 
-_W_BASE       = 74    # fixed: 28px pos column + 40px gap area + 6px margin
+_POS_COL_W    = 28    # largeur colonne position
+_MARGIN       = 6     # marge droite
 SESSION_BAR_H = 22
 
 
@@ -33,8 +34,14 @@ def _badge_px(font_size: int) -> int:
     return max(14, round(22 * font_size / 9))
 
 
-def _widget_w(max_name_chars: int, font_size: int = 9) -> int:
-    return max_name_chars * _char_px(font_size) + _W_BASE
+def _gap_col_w(font_size: int, decimals: int) -> int:
+    # "+12.345" = 4 chars de base + nb décimales
+    max_chars = 4 + max(0, decimals)
+    return max_chars * _char_px(font_size) + 4
+
+
+def _widget_w(max_name_chars: int, font_size: int = 9, decimals: int = 1) -> int:
+    return _POS_COL_W + max_name_chars * _char_px(font_size) + _gap_col_w(font_size, decimals) + _MARGIN
 
 
 def _row_h(font_size: int) -> int:
@@ -172,7 +179,7 @@ class RelativeWidget(BaseWidget):
         self._temp_pm_sz  = 0
         self._opacity = 85
         super().__init__(reader, update_hz=10, **kw)
-        self.setFixedSize(int(_widget_w(max_name_chars, self._font_size) * self._scale),
+        self.setFixedSize(int(_widget_w(max_name_chars, self._font_size, self._interval_decimals) * self._scale),
                           int(_widget_h(drivers_ahead, drivers_behind, self._font_size, show_session_bar) * self._scale))
 
     def setup_ui(self):
@@ -199,7 +206,7 @@ class RelativeWidget(BaseWidget):
         if not _c.isValid(): _c = QColor(255, 200, 0)
         _c.setAlpha(round(255 * max(0, min(100, int(params.get("player_color_alpha", 20)))) / 100))
         self._player_color = _c
-        self.setFixedSize(int(_widget_w(self._max_name_chars, self._font_size) * self._scale),
+        self.setFixedSize(int(_widget_w(self._max_name_chars, self._font_size, self._interval_decimals) * self._scale),
                           int(_widget_h(self._ahead, self._behind, self._font_size, self._show_session_bar) * self._scale))
         self.update()
 
@@ -311,7 +318,7 @@ class RelativeWidget(BaseWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.scale(self._scale, self._scale)
-        W    = _widget_w(self._max_name_chars, self._font_size)
+        W    = _widget_w(self._max_name_chars, self._font_size, self._interval_decimals)
         _show_bar = self._show_session_bar and self._header_info != "none"
         H    = _widget_h(self._ahead, self._behind, self._font_size, _show_bar)
         ncw  = self._max_name_chars * _char_px(self._font_size)
@@ -321,7 +328,8 @@ class RelativeWidget(BaseWidget):
         self._draw_panel(p, W, H)
 
         fs  = self._font_size
-        fss = max(6, fs - 2)
+        fsh = max(6.0, fs - 1.5)   # session bar / column header labels
+        fss = max(6, fs - 2)   # row badges (GAR, PIT, OUT…)
         rh  = _row_h(fs)
 
         # ── Session bar ───────────────────────────────────────────────────
@@ -329,7 +337,7 @@ class RelativeWidget(BaseWidget):
             hi = self._header_info
             if hi == "session":
                 lbl = _session_label(self._ses_type)
-                f = label_font(max(6, fss))
+                f = label_font(max(6, fsh))
                 p.setFont(f)
                 fm   = p.fontMetrics()
                 lbl_w = fm.horizontalAdvance(lbl)
@@ -340,11 +348,11 @@ class RelativeWidget(BaseWidget):
                 p.drawText(6 + lbl_w + 6, baseline,
                            _fmt_session_time(self._current_et, self._ses_remaining))
             elif hi == "temp":
-                p.setFont(num_font(fss))
+                p.setFont(num_font(fsh))
                 fm = p.fontMetrics()
                 trk_str = f"{self._track_temp:.0f}°"
                 air_str = f"{self._air_temp:.0f}°"
-                icon_sz = max(6, fss + 1)
+                icon_sz = max(6, fsh + 1)
                 if icon_sz != self._temp_pm_sz:
                     self._temp_pm_trk = QIcon(_TRACK_TEMP_SVG).pixmap(icon_sz, icon_sz)
                     self._temp_pm_air = QIcon(_AIR_TEMP_SVG).pixmap(icon_sz, icon_sz)

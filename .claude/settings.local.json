@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv\\\\Scripts\\\\pyinstaller.exe LMUApp.spec)",
+      "PowerShell(Compress-Archive -Path \"c:\\\\LMUApp\\\\lmuapp\\\\dist\\\\LMUApp\" -DestinationPath \"c:\\\\LMUApp\\\\lmuapp\\\\dist\\\\LMUApp-0.4.0.zip\" -Force)",
+      "Bash(python -c ' *)",
+      "Bash(pip show *)",
+      "Bash(python -c \"import tinypedal; import os; print\\(os.path.dirname\\(tinypedal.__file__\\)\\)\")",
+      "Bash(find /tmp/TinyPedal -type f -name \"*.py\" | grep -E \"\\(weather|forecast|shared|memory\\)\" | head -20)",
+      "Read(//tmp/**)",
+      "Bash(xargs grep -l \"forecast\\\\|Forecast\")",
+      "Bash(xargs grep -l \"class.*Weather\\\\|Weather.*class\")",
+      "Bash(xargs grep -l \"pyRfactor2SharedMemory\")",
+      "Bash(grep -E \"\\\\.py$\")",
+      "Bash(find /mnt/c/LMUApp/lmuapp/lmu_app/assets -type f | sort)",
+      "Read(//mnt/c/LMUApp/lmuapp/lmu_app/**)",
+      "PowerShell(cd $env:TEMP; if \\(Test-Path \"TinyPedal\"\\) { Remove-Item -Recurse -Force \"TinyPedal\" }; git clone --depth 1 https://github.com/s-victor/TinyPedal.git 2>&1 | Select-Object -First 10)",
+      "PowerShell($tempPath = \"C:\\\\Temp\"; if \\(-not \\(Test-Path $tempPath\\)\\) { New-Item -ItemType Directory -Force $tempPath | Out-Null }; cd $tempPath; git clone --depth 1 https://github.com/s-victor/TinyPedal.git)",
+      "Bash(xargs grep -l \"WNV_SKY\")",
+      "Bash(xargs grep -l \"weather\\\\|WNV\")",
+      "Bash(mkdir -p /mnt/c/LMUApp/lmuapp/lmu_app/stream)",
+      "PowerShell(New-Item -ItemType Directory -Force \"c:\\\\LMUApp\\\\lmuapp\\\\lmu_app\\\\stream\")"
+    ],
+    "additionalDirectories": [
+      "\\mnt\\c\\LMUApp\\lmuapp\\lmu_app"
+    ]
+  }
+}

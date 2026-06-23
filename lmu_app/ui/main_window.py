@@ -373,6 +373,7 @@ class MainWindow(QWidget):
         self._bc_count_mc_spin:  QSpinBox  | None = None
         self._bc_count_cls_spin: QSpinBox  | None = None
         self._bc_tower_mode_btns: list     | None = None
+        self._bc_tower_spin_rows: list     | None = None
         self._bc_class_combo:    QComboBox | None = None
         self._bc_viewer_combo:   QComboBox | None = None
         self._bc_viewer_slots:   list[int]        = []
@@ -1186,65 +1187,6 @@ QCheckBox::indicator:checked {{
         tower_tog.toggled.connect(self._on_bc_tower_toggle)
         vl.addWidget(tower_hdr)
 
-        # Tower options: 3 rows, one per mode — [button] [extras] ... [N spin]
-        tower_opts = QWidget()
-        to_vl = QVBoxLayout(tower_opts)
-        to_vl.setContentsMargins(0, 0, 0, 0)
-        to_vl.setSpacing(2)
-
-        cur_mode = self._config.bc_tower_mode
-        btns: list[QPushButton] = []
-
-        def _cnt_spin(attr_name: str, spin_attr: str, mn: int, mx: int, val: int) -> QSpinBox:
-            sp = QSpinBox()
-            sp.setRange(mn, mx)
-            sp.setValue(val)
-            sp.setFixedWidth(54)
-            sp.valueChanged.connect(lambda v, a=attr_name: self._on_bc_count(a, v))
-            setattr(self, spin_attr, sp)
-            return sp
-
-        _dim_lbl = lambda t: (lambda l: (l.setStyleSheet(f"color:{T.DIM};font-size:11px;"), l)[1])(QLabel(t))
-
-        # Row 0 — Overall
-        r0 = QHBoxLayout(); r0.setSpacing(4)
-        btn0 = QPushButton("Overall"); btn0.setFixedHeight(22); btn0.setFixedWidth(72)
-        btn0.setStyleSheet(_SS_SEG_ON if cur_mode == 0 else _SS_SEG_OFF)
-        btn0.clicked.connect(lambda _, i=0: self._on_bc_tower_mode(i))
-        r0.addWidget(btn0); btns.append(btn0)
-        r0.addStretch()
-        r0.addWidget(_dim_lbl("N:"))
-        r0.addWidget(_cnt_spin("bc_tower_count_overall", "_bc_count_ovr_spin", 3, 30,
-                               self._config.bc_tower_count_overall))
-        to_vl.addLayout(r0)
-
-        # Row 1 — Multiclass
-        r1 = QHBoxLayout(); r1.setSpacing(4)
-        btn1 = QPushButton("Multiclass"); btn1.setFixedHeight(22); btn1.setFixedWidth(72)
-        btn1.setStyleSheet(_SS_SEG_ON if cur_mode == 1 else _SS_SEG_OFF)
-        btn1.clicked.connect(lambda _, i=1: self._on_bc_tower_mode(i))
-        r1.addWidget(btn1); btns.append(btn1)
-        r1.addStretch()
-        r1.addWidget(_dim_lbl("/cls:"))
-        r1.addWidget(_cnt_spin("bc_tower_count_multiclass", "_bc_count_mc_spin", 1, 10,
-                               self._config.bc_tower_count_multiclass))
-        to_vl.addLayout(r1)
-
-        # Row 2 — Class filter (auto-detected)
-        r2 = QHBoxLayout(); r2.setSpacing(4)
-        btn2 = QPushButton("Class"); btn2.setFixedHeight(22); btn2.setFixedWidth(50)
-        btn2.setStyleSheet(_SS_SEG_ON if cur_mode == 2 else _SS_SEG_OFF)
-        btn2.clicked.connect(lambda _, i=2: self._on_bc_tower_mode(i))
-        r2.addWidget(btn2); btns.append(btn2)
-        r2.addStretch()
-        r2.addWidget(_dim_lbl("N:"))
-        r2.addWidget(_cnt_spin("bc_tower_count_ourclass", "_bc_count_cls_spin", 3, 20,
-                               self._config.bc_tower_count_ourclass))
-        to_vl.addLayout(r2)
-
-        self._bc_tower_mode_btns = btns
-        vl.addWidget(tower_opts)
-
         # Driver / Team name toggle — full-width buttons
         name_row = QHBoxLayout(); name_row.setSpacing(4)
         cur_show_team = getattr(self._bc_state, 'show_team', False) if self._bc_state else False
@@ -1259,6 +1201,58 @@ QCheckBox::indicator:checked {{
         name_row.addWidget(self._bc_name_drv_btn)
         name_row.addWidget(self._bc_name_team_btn)
         vl.addLayout(name_row)
+
+        # Tower options: 3 rows, one per mode — [button] [extras] ... [N spin]
+        tower_opts = QWidget()
+        to_vl = QVBoxLayout(tower_opts)
+        to_vl.setContentsMargins(0, 0, 0, 0)
+        to_vl.setSpacing(4)
+
+        cur_mode = self._config.bc_tower_mode
+
+        def _cnt_spin(attr_name: str, spin_attr: str, mn: int, mx: int, val: int) -> QSpinBox:
+            sp = QSpinBox()
+            sp.setRange(mn, mx)
+            sp.setValue(val)
+            sp.setFixedWidth(54)
+            sp.valueChanged.connect(lambda v, a=attr_name: self._on_bc_count(a, v))
+            setattr(self, spin_attr, sp)
+            return sp
+
+        _dim_lbl = lambda t: (lambda l: (l.setStyleSheet(f"color:{T.DIM};font-size:11px;"), l)[1])(QLabel(t))
+
+        # Ligne de boutons horizontale — Overall / Multiclass / Class
+        btn_row = QHBoxLayout(); btn_row.setSpacing(4)
+        btns: list[QPushButton] = []
+        for i, label in enumerate(("Overall", "Multiclass", "Class")):
+            b = QPushButton(label); b.setFixedHeight(22)
+            b.setStyleSheet(_SS_SEG_ON if cur_mode == i else _SS_SEG_OFF)
+            b.clicked.connect(lambda _, idx=i: self._on_bc_tower_mode(idx))
+            btn_row.addWidget(b); btns.append(b)
+        to_vl.addLayout(btn_row)
+
+        # Lignes de spinner — une par mode, on affiche seulement celle du mode actif
+        def _spin_row(lbl: str, attr: str, spin_attr: str, mn: int, mx: int, val: int) -> QWidget:
+            w = QWidget()
+            hl = QHBoxLayout(w); hl.setContentsMargins(0, 0, 0, 0); hl.setSpacing(4)
+            hl.addWidget(_dim_lbl(lbl))
+            hl.addWidget(_cnt_spin(attr, spin_attr, mn, mx, val))
+            hl.addStretch()
+            return w
+
+        spin0 = _spin_row("Number of drivers:", "bc_tower_count_overall",   "_bc_count_ovr_spin", 3, 30,
+                          self._config.bc_tower_count_overall)
+        spin1 = _spin_row("Number of drivers:", "bc_tower_count_multiclass", "_bc_count_mc_spin", 1, 10,
+                          self._config.bc_tower_count_multiclass)
+        spin2 = _spin_row("Number of drivers:", "bc_tower_count_ourclass",  "_bc_count_cls_spin", 3, 20,
+                          self._config.bc_tower_count_ourclass)
+        for i, sw in enumerate((spin0, spin1, spin2)):
+            sw.setVisible(i == cur_mode)
+            to_vl.addWidget(sw)
+
+        self._bc_tower_mode_btns  = btns
+        self._bc_tower_spin_rows  = [spin0, spin1, spin2]
+        vl.addWidget(tower_opts)
 
         # Live Timing button
         lt_btn = QPushButton("Open Live Timing Panel")
@@ -1335,6 +1329,9 @@ QCheckBox::indicator:checked {{
         if self._bc_tower_mode_btns:
             for i, btn in enumerate(self._bc_tower_mode_btns):
                 btn.setStyleSheet(_SS_SEG_ON if i == idx else _SS_SEG_OFF)
+        if self._bc_tower_spin_rows:
+            for i, row in enumerate(self._bc_tower_spin_rows):
+                row.setVisible(i == idx)
         self._config.bc_tower_mode = idx
         self._config.save()
         if self._bc_state is not None:

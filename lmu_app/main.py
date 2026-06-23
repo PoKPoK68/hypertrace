@@ -32,8 +32,7 @@ def _load_fonts() -> None:
     from PySide6.QtGui import QFontDatabase
     from lmu_app.utils import theme
     fonts_dir = Path(__file__).parent / "assets" / "fonts"
-    _text_set = False
-    _num_set  = False
+    _num_set = False
     for name in _FONTS:
         path = fonts_dir / name
         fid = QFontDatabase.addApplicationFont(str(path))
@@ -41,20 +40,18 @@ def _load_fonts() -> None:
             logging.warning("Font failed to load: %s", path)
             continue
         families = QFontDatabase.applicationFontFamilies(fid)
-        logging.info("Loaded font %s → fid=%d families=%s", name, fid, families)
+        logging.debug("Loaded font %s → fid=%d families=%s", name, fid, families)
         if not families:
             continue
         family = families[0]
         # Take the first file's registered name only — subsequent weights of the
         # same typeface may register under "Family Bold" / "Family Medium" as
         # separate families; we want the base family that covers all weights.
-        if "JetBrains" in name and not _text_set:
+        if "JetBrains" in name and not _num_set:
             theme.T.F_TEXT = family
-            _text_set = True
-        elif "Saira" in name and not _num_set:
-            theme.T.F_NUM = family
+            theme.T.F_NUM  = family
             _num_set = True
-    logging.info("Active font tokens — F_TEXT=%r  F_NUM=%r", theme.T.F_TEXT, theme.T.F_NUM)
+    logging.debug("Active font tokens — F_TEXT=%r  F_NUM=%r", theme.T.F_TEXT, theme.T.F_NUM)
 
 
 def _dark_palette() -> QPalette:
@@ -96,7 +93,7 @@ def main() -> int:
     app.setStyle("Fusion")        # consistent rendering
     app.setPalette(_dark_palette())  # makes arrows/indicators visible on dark bg
     app.setApplicationName("LMU App")
-    app.setApplicationVersion("0.6.1")
+    app.setApplicationVersion("0.6.2")
     app.setQuitOnLastWindowClosed(False)
 
     config = AppConfig()
@@ -107,12 +104,12 @@ def main() -> int:
     ve_calc_w   = VECalcWidget(reader,   auto_hide=False)
 
     widget_entries: list[tuple[str, object]] = [
-        ("speed",      SpeedWidget(reader,     auto_hide=False)),
-        ("inputs",     InputsWidget(reader,    auto_hide=False)),
-        ("standings",  StandingsWidget(reader, auto_hide=False)),
-        ("relative",   RelativeWidget(reader,  auto_hide=False)),
-        ("tyres",      TyresWidget(reader,     auto_hide=False)),
         ("fuel_calc",  fuel_calc_w),
+        ("inputs",     InputsWidget(reader,    auto_hide=False)),
+        ("relative",   RelativeWidget(reader,  auto_hide=False)),
+        ("speed",      SpeedWidget(reader,     auto_hide=False)),
+        ("standings",  StandingsWidget(reader, auto_hide=False)),
+        ("tyres",      TyresWidget(reader,     auto_hide=False)),
         ("ve_calc",    ve_calc_w),
         ("weather",    WeatherWidget(reader, auto_hide=False)),
     ]
@@ -199,7 +196,6 @@ def main() -> int:
 
     from lmu_app.widgets.live_timing import LiveTimingPanel
     live_timing_win = LiveTimingPanel(reader, bc_state)
-    live_timing_win.show()
     main_win.open_live_timing.connect(lambda: (live_timing_win.show(), live_timing_win.raise_()))
 
     def on_quit() -> None:

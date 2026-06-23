@@ -4,6 +4,29 @@ All notable changes to LMU App are documented here.
 
 ---
 
+## [0.6.2] — Visual polish
+
+### All overlays
+- **JetBrains Mono everywhere** — F_TEXT and F_NUM unified, Bold by default, TypeWriter style hint to ensure correct font resolution
+- **Dashes "-"** are always white in all columns (best, last, gap, interval)
+
+### Standings
+- **Per-class best lap** — purple only for the best time within a driver's own class (multiclass fix: HYP and GT3 each have their own reference)
+- **VE/Fuel color coding** — green ≥ 20% / 20 L, orange < 20, red < 10
+- **Position column** widened to fit 2-digit numbers
+- **Header font** separated from class badge font — column labels at 7.5 pt, badges unchanged
+
+### Tyres
+- **Uniform spacing** — outer margins and inter-tyre gaps are identical (`_G = 4 px`)
+
+### Relative
+- **Interval column** — width adjusts dynamically based on the configured decimal count
+
+### UI
+- Live Timing no longer opens automatically on startup
+
+---
+
 ## [0.6.1] — Overlay size & camera polish
 
 ### All overlays

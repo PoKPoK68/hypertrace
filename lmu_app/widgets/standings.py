@@ -57,7 +57,7 @@ def _class_rank(cls_name: str) -> int:
     return 99
 
 COLUMN_DEFS = {
-    "pos":      ("",      16, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter),
+    "pos":      ("",      24, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter),
     "name":     ("",      -1, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
     "gap":      ("GAP",   52, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
     "interval": ("INT",   52, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
@@ -293,7 +293,7 @@ class StandingsWidget(BaseWidget):
         self._opacity             = 85
         self._player_color        = QColor(0xEC, 0xAA, 0x43, 51)
         self._entries:  list[dict]    = []
-        self._best_overall            = 9999.0
+        self._best_by_class: dict[str, float] = {}
         self._player_fuel             = 0.0
         self._player_ve               = 0.0
         self._outlap_tracking:    dict[int, int]  = {}
@@ -411,8 +411,10 @@ class StandingsWidget(BaseWidget):
         player_class       = player.vehicle_class
         player_cls_vehicles = by_class[player_class]
 
-        valid_best = [v.best_lap for v in player_cls_vehicles if v.best_lap > 0]
-        self._best_overall = min(valid_best) if valid_best else 9999.0
+        self._best_by_class: dict[str, float] = {}
+        for cls_name, cls_vehicles in by_class.items():
+            valid = [v.best_lap for v in cls_vehicles if v.best_lap > 0]
+            self._best_by_class[cls_name] = min(valid) if valid else 9999.0
 
         # Outlap / pit-lap tracking (all vehicles)
         new_prev: dict[int, bool] = {}
@@ -561,8 +563,8 @@ class StandingsWidget(BaseWidget):
             "laps_behind":           laps_behind,
             "interval_laps":         interval_laps,
             "is_player":             v.is_player,
-            "is_best":               v.best_lap > 0 and abs(v.best_lap - self._best_overall) < 0.001,
-            "is_last_session_best":  v.last_lap > 0 and abs(v.last_lap - self._best_overall) < 0.001,
+            "is_best":               v.best_lap > 0 and abs(v.best_lap - self._best_by_class.get(v.vehicle_class, 9999.0)) < 0.001,
+            "is_last_session_best":  v.last_lap > 0 and abs(v.last_lap - self._best_by_class.get(v.vehicle_class, 9999.0)) < 0.001,
             "is_last_personal_best": v.last_lap > 0 and v.best_lap > 0 and abs(v.last_lap - v.best_lap) < 0.01,
             "is_race":               is_race,
             "is_outlap":             slot in self._outlap_tracking,
@@ -585,7 +587,8 @@ class StandingsWidget(BaseWidget):
 
         fs  = self._font_size
         fsd = max(7, fs - 1)
-        fss = max(6, fs - 2)
+        fsh = max(6.0, fs - 1.5)   # column header labels (GAP, INT, BEST…)
+        fss = max(6, fs - 2)   # class/row badges (HYP, GT3, GAR…)
 
         # ── Merged header row (session info + column labels) ──────────────
         pos_w  = _col_w("pos",  ncw, fs, self._dw) if "pos"  in self.columns else 0
@@ -604,7 +607,7 @@ class StandingsWidget(BaseWidget):
             hi = self._header_info
             if hi == "session":
                 lbl = _session_label(self._ses_type)[0]
-                f = label_font(max(6, fss))
+                f = label_font(max(6, fsh))
                 p.setFont(f)
                 fm   = p.fontMetrics()
                 lbl_w = fm.horizontalAdvance(lbl)
@@ -646,7 +649,7 @@ class StandingsWidget(BaseWidget):
             hdr_label, _, align = COLUMN_DEFS[col]
             cw = _col_w(col, ncw, fs, self._dw)
             if hdr_label:
-                p.setFont(label_font(max(6, fss)))
+                p.setFont(label_font(max(6, fsh)))
                 p.setPen(QColor(T.DIM))
                 p.drawText(x_col + _CP, 1, cw - 2*_CP, SESSION_BAR_H, align, hdr_label)
             x_col += cw
@@ -734,7 +737,6 @@ class StandingsWidget(BaseWidget):
 
                 elif col == "best":
                     bc = (QColor(T.PURPLE) if e["is_best"]
-                          else QColor(T.DIM) if e["best"] <= 0
                           else QColor(T.TEXT))
                     p.setFont(num_font(fsd)); p.setPen(bc)
                     p.drawText(x + _CP, y, cw - 2*_CP, rh, align, _fmt_lap(e["best"], self._best_decimals))
@@ -742,7 +744,6 @@ class StandingsWidget(BaseWidget):
                 elif col == "last":
                     lc = (QColor(T.PURPLE) if e["is_last_session_best"]
                           else QColor(T.GOOD) if e["is_last_personal_best"]
-                          else QColor(T.DIM) if e["last"] <= 0
                           else QColor(T.TEXT))
                     p.setFont(num_font(fsd)); p.setPen(lc)
                     p.drawText(x + _CP, y, cw - 2*_CP, rh, align, _fmt_lap(e["last"], self._last_decimals))
@@ -757,7 +758,7 @@ class StandingsWidget(BaseWidget):
                     else:
                         txt = _fmt_gap(e["gap"], e["is_race"], self._gap_decimals)
                     p.setFont(num_font(fsd))
-                    p.setPen(QColor(T.DIM) if not txt else QColor(T.TEXT))
+                    p.setPen(QColor(T.TEXT) if txt else QColor(T.DIM))
                     p.drawText(x + _CP, y, cw - 2*_CP, rh, align, txt)
 
                 elif col == "interval":
@@ -770,16 +771,22 @@ class StandingsWidget(BaseWidget):
                     else:
                         txt = _fmt_gap(e["interval"], e["is_race"], self._interval_decimals)
                     p.setFont(num_font(fsd))
-                    p.setPen(QColor(T.DIM) if not txt else QColor(T.TEXT))
+                    p.setPen(QColor(T.TEXT) if txt else QColor(T.DIM))
                     p.drawText(x + _CP, y, cw - 2*_CP, rh, align, txt)
 
                 elif col == "fuel_ve":
                     ve   = e["virtual_energy"]
                     fuel = e.get("fuel", 0.0)
                     if ve > 0.001:
-                        txt, vc = f"{ve*100:.0f}%", QColor(T.GOOD)
+                        vc = (QColor(T.CRIT) if ve < 0.10
+                              else QColor(T.WARN) if ve < 0.20
+                              else QColor(T.GOOD))
+                        txt = f"{ve*100:.0f}%"
                     elif fuel > 0.01:
-                        txt, vc = f"{fuel:.1f}L", QColor(T.TEXT)
+                        vc = (QColor(T.CRIT) if fuel < 10
+                              else QColor(T.WARN) if fuel < 20
+                              else QColor(T.TEXT))
+                        txt = f"{fuel:.1f}L"
                     else:
                         txt, vc = "---", QColor(T.DIM)
                     p.setFont(num_font(fsd)); p.setPen(vc)

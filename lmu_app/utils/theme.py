@@ -79,8 +79,8 @@ class T:
     }
 
     # ---- type -----------------------------------------------------------
-    F_TEXT = "JetBrains Mono"        # names, labels, titles, headers
-    F_NUM = "Saira SemiCondensed"     # speed, gear, gaps, lap times, %, °
+    F_TEXT = "JetBrains Mono"          # names, labels, titles, headers
+    F_NUM  = "JetBrains Mono"         # speed, gear, gaps, lap times, %, °
     LABEL_TRACKING = 114             # PercentageSpacing for uppercase labels (~0.14em)
 
     # ---- RPM / shift-light bar -----------------------------------------
@@ -108,8 +108,9 @@ def accent_hairline(w: float, opacity_pct: int = 100) -> QLinearGradient:
     return g
 
 
-def label_font(size: int, weight: QFont.Weight = QFont.Weight.Bold) -> QFont:
-    f = QFont(T.F_TEXT, size, weight)
+def label_font(size: float, weight: QFont.Weight = QFont.Weight.Bold) -> QFont:
+    f = QFont(T.F_TEXT, -1, weight)
+    f.setPointSizeF(size)
     f.setCapitalization(QFont.Capitalization.AllUppercase)
     f.setLetterSpacing(QFont.SpacingType.PercentageSpacing, T.LABEL_TRACKING)
     return f
@@ -121,8 +122,10 @@ def num_font(size: int, weight: QFont.Weight = QFont.Weight.Bold) -> QFont:
     return f
 
 
-def text_font(size: int, weight: QFont.Weight = QFont.Weight.Medium) -> QFont:
-    return QFont(T.F_TEXT, size, weight)
+def text_font(size: int, weight: QFont.Weight = QFont.Weight.Bold) -> QFont:
+    f = QFont(T.F_TEXT, size, weight)
+    f.setStyleHint(QFont.StyleHint.TypeWriter)
+    return f
 
 
 def rpm_seg_color(frac: float) -> QColor:
