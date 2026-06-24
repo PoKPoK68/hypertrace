@@ -1,11 +1,15 @@
 """lmu_app/widgets/broadcast.py — Broadcast overlay widgets: Tower, Battle, Driver Card."""
 from __future__ import annotations
 
+import logging
 import time as _time
 from collections import defaultdict
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from PySide6.QtCore import Qt, QRectF
-from PySide6.QtGui import QColor, QPainter
+from PySide6.QtGui import QColor, QPainter, QPixmap
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
 from lmu_app.api.reader import LMUSnapshot
@@ -16,6 +20,34 @@ from lmu_app.utils.theme import T, accent_hairline, border_pen, label_font, num_
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+_LOGOS_DIR  = Path(__file__).parent.parent.parent / "assets" / "brandlogo"
+_logo_cache: dict[tuple, QPixmap | None] = {}   # (vehicle_name, max_w, max_h) → scaled pixmap
+
+
+def _get_logo(vehicle_name: str, max_w: int = 24, max_h: int = 20) -> QPixmap | None:
+    if not vehicle_name:
+        return None
+    key = (vehicle_name, max_w, max_h)
+    if key in _logo_cache:
+        return _logo_cache[key]
+    vn_lower  = vehicle_name.lower()
+    best_path = None
+    best_len  = 0
+    for p in _LOGOS_DIR.glob("*.png"):
+        brand = p.stem.lower()
+        if brand in vn_lower and len(brand) > best_len:
+            best_path = p
+            best_len  = len(brand)
+    if best_path:
+        raw = QPixmap(best_path.as_posix())
+        px  = raw.scaled(max_w, max_h, Qt.AspectRatioMode.KeepAspectRatio,
+                         Qt.TransformationMode.SmoothTransformation) if not raw.isNull() else None
+    else:
+        px = None
+    _logo_cache[key] = px
+    return px
+
 
 def _fmt_lap(t: float, d: int = 1) -> str:
     if t <= 0:
@@ -37,7 +69,7 @@ def _ses_clock(remaining: float) -> str:
     t = max(0, int(remaining))
     h, r = divmod(t, 3600)
     m, s = divmod(r, 60)
-    return f"{h}:{m:02d}:{s:02d}"
+    return f"{h:02d}:{m:02d}:{s:02d}"
 
 
 def _fmt_name(raw: str, is_team: bool) -> str:
@@ -53,6 +85,14 @@ def _name_short(raw: str) -> str:
     if len(parts) >= 2:
         return f"{parts[0][0]}. {' '.join(parts[1:]).upper()}"
     return raw.upper()
+
+
+def _name_last(raw: str) -> str:
+    """'Firstname Lastname' → 'LASTNAME'"""
+    if not raw:
+        return raw
+    parts = raw.strip().split()
+    return ' '.join(parts[1:]).upper() if len(parts) >= 2 else raw.upper()
 
 
 def _class_rank(cls_name: str) -> int:
@@ -84,6 +124,7 @@ class BroadcastState:
         self.tower_count_overall:    int = 10
         self.tower_count_multiclass: int = 5
         self.tower_count_ourclass:   int = 10
+        self.tower_parade_count:     int = 5   # rows in the scrolling mobile section
         self.tower_filter_class:     str = ""  # abbrev like "GT3"; "" = auto (viewed car's class)
         self.pinned_slot_id:         int = -1  # manual override for viewed driver; -1 = auto
         self.show_team: bool = False   # True = show team name; False = show driver name
@@ -142,16 +183,17 @@ _TCLSH   = 16    # class header height
 _TCP     = 3     # column padding
 
 _TPOS_W  = 24
-_TNUM_W  = 28   # car number column
+_TLOGO_W = 28   # manufacturer logo column
+_TNUM_W  = 36   # car number column
 _TINFO_W = 90
 
 # Panel width depends on mode (team names need more space)
-_TW_DRV  = 308   # driver mode panel width
-_TW_TEAM = 348   # team mode panel width
+_TW_DRV  = 338   # driver mode panel width
+_TW_TEAM = 388   # team mode panel width
 
 # Derived name column widths
-_TNME_W_DRV  = _TW_DRV  - 8 - _TPOS_W - _TNUM_W - _TINFO_W   # = 158
-_TNME_W_TEAM = _TW_TEAM - 8 - _TPOS_W - _TNUM_W - _TINFO_W   # = 198
+_TNME_W_DRV  = _TW_DRV  - 8 - _TPOS_W - _TLOGO_W - _TNUM_W - _TINFO_W
+_TNME_W_TEAM = _TW_TEAM - 8 - _TPOS_W - _TLOGO_W - _TNUM_W - _TINFO_W
 
 # Badge area (protrudes to the right of the panel)
 _TBDG_GAP  = 4
@@ -164,8 +206,9 @@ _TBDG_COLS = {"PIT": "#B05010", "GAR": "#484848", "DNF": "#880000", "DQ": "#6600
 _COL_LABELS      = ("GAP", "INT", "VE", "POS")
 _COL_CYCLE_S     = 6.0    # seconds per column mode
 _LAP_FLASH_S     = 5.0    # seconds to show new lap time
-_PARADE_INTERVAL = 120.0  # seconds between parades
+_PARADE_INTERVAL = 20.0   # seconds between parades
 _PARADE_STEP     = 5.0    # seconds per parade window step
+_TSEP_H          = 5      # separator height between fixed and mobile sections
 
 
 class BroadcastTower(_BcWidget):
@@ -291,7 +334,7 @@ class BroadcastTower(_BcWidget):
             for v in s.vehicles:
                 by_class[v.vehicle_class].append(v)
             for cls in by_class:
-                by_class[cls].sort(key=_sort)
+                by_class[cls].sort(key=_sort_place)  # position réelle, garage inclus
 
             for cls_name in sorted(by_class, key=_class_rank):
                 vlist = by_class[cls_name]
@@ -343,47 +386,54 @@ class BroadcastTower(_BcWidget):
             active_v = [v for v in all_v if not v.in_garage and v.finish_status not in (2, 3, 4)]
             leader   = active_v[0] if active_v else (all_v[0] if all_v else None)
 
-            # ── Parade update ────────────────────────────────────────────
+            # ── Parade — fixed top + scrolling mobile bottom ──────────────
+            pc          = max(1, self._state.tower_parade_count)
+            fixed_count = max(0, n - pc)
+            mobile_pool = all_v[fixed_count:]
+
             if self._last_normal_ts == 0.0:
                 self._last_normal_ts = now
 
             if not self._parade_active:
-                if len(active_v) > n and now - self._last_normal_ts >= _PARADE_INTERVAL:
+                if len(mobile_pool) > pc and now - self._last_normal_ts >= _PARADE_INTERVAL:
                     self._parade_active  = True
-                    self._parade_offset  = 0
+                    self._parade_offset  = pc   # start at second window
                     self._parade_step_ts = now
             else:
                 if now - self._parade_step_ts >= _PARADE_STEP:
-                    self._parade_offset += (n - 1)
+                    self._parade_offset += pc
                     self._parade_step_ts = now
-                    if self._parade_offset >= len(active_v) - 1:
+                    if self._parade_offset >= len(mobile_pool):
                         self._parade_active  = False
+                        self._parade_offset  = 0
                         self._last_normal_ts = now
 
             # ── Build entries ────────────────────────────────────────────
-            if self._parade_active and not active_v:
-                self._parade_active  = False
-                self._last_normal_ts = now
-            if self._parade_active:
-                entries.append(self._row(active_v[0], None, _pos(active_v[0], 0), is_race, leader))
-                offset = self._parade_offset
-                step   = n - 1
-                window = active_v[1 + offset : 1 + offset + step]
-                for j, v in enumerate(window):
-                    pi = 1 + offset + j - 1
-                    prev_v = active_v[pi] if pi >= 0 else None
-                    entries.append(self._row(v, prev_v, _pos(v, 1 + offset + j), is_race, leader))
-            else:
-                for i, v in enumerate(all_v[:n]):
-                    prev_v = all_v[i - 1] if i else None
-                    entries.append(self._row(v, prev_v, _pos(v, i), is_race, leader))
+            # Fixed section (top)
+            for i, v in enumerate(all_v[:fixed_count]):
+                prev_v = all_v[i - 1] if i else None
+                entries.append(self._row(v, prev_v, _pos(v, i), is_race, leader))
+
+            # Separator
+            if fixed_count > 0 and mobile_pool:
+                entries.append({"sep": True})
+
+            # Mobile section (bottom, scrolls)
+            offset        = self._parade_offset if self._parade_active else 0
+            mobile_window = mobile_pool[offset : offset + pc]
+            for j, v in enumerate(mobile_window):
+                abs_i  = fixed_count + offset + j
+                prev_v = all_v[abs_i - 1] if abs_i > 0 else None
+                entries.append(self._row(v, prev_v, _pos(v, abs_i), is_race, leader))
 
         tw      = _TW_TEAM if self._state.show_team else _TW_DRV
         tw_full = tw + _TBDG_GAP + _TBDG_W
         self._entries = entries
         h = _TSEH + 4
         for e in entries:
-            h += _TCLSH if e.get("hdr") else _TRH
+            if e.get("hdr"):   h += _TCLSH
+            elif e.get("sep"): h += _TSEP_H
+            else:              h += _TRH
         h += 4
         self.setFixedSize(tw_full, max(h, _TSEH + 8))
         self.update()
@@ -460,14 +510,13 @@ class BroadcastTower(_BcWidget):
 
         pinned_id = self._state.pinned_slot_id
         return {
-            "pos":       pos,
-            "slot_id":   v.slot_id,
-            "car_num":   v.car_number,
-            "name":      _fmt_name(
-                             (v.team_name if self._state.show_team else v.driver_name)
-                             or v.vehicle_name or f"Car {v.slot_id}",
-                             self._state.show_team,
-                         ),
+            "pos":          pos,
+            "slot_id":      v.slot_id,
+            "car_num":      v.car_number,
+            "vehicle_name": v.vehicle_name or "",
+            "name":      (v.team_name or v.vehicle_name or f"Car {v.slot_id}")
+                         if self._state.show_team
+                         else _name_last(v.driver_name or v.vehicle_name or f"Car {v.slot_id}"),
             "featured":  v.slot_id == self._viewed_slot_id,
             "pinned":    pinned_id > 0 and v.slot_id == pinned_id,
             "info_txt":  info_txt,
@@ -488,25 +537,20 @@ class BroadcastTower(_BcWidget):
         p.setPen(Qt.PenStyle.NoPen)
         p.drawRoundedRect(1, 1, W - 2, _TSEH, T.RADIUS, T.RADIUS)
 
-        # Session name (line 1) + clock (line 2) — left-aligned
-        ses_name = _ses_name(self._ses_type)
-        p.setFont(label_font(10))
-        line1_y = 4 + p.fontMetrics().ascent()
-        p.setPen(QColor(T.ACCENT))
-        p.drawText(10, line1_y, ses_name)
+        # Clock (bigger) + session name — left-aligned, side by side
+        clock_txt = _ses_clock(self._rem)
+        ses_name  = _ses_name(self._ses_type).upper()
 
-        p.setFont(label_font(8))
-        line2_y = _TSEH - 4 - p.fontMetrics().descent()
+        p.setFont(num_font(14))
         p.setPen(QColor(T.TEXT))
-        p.drawText(10, line2_y, _ses_clock(self._rem))
+        clock_w = p.fontMetrics().horizontalAdvance(clock_txt)
+        p.drawText(QRectF(10, 0, clock_w, _TSEH),
+                   Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, clock_txt)
 
-        # Current column mode label — aligned above the info column
-        info_x = 4 + _TPOS_W + _TNUM_W + tnme_w
         p.setFont(label_font(8))
-        p.setPen(QColor(T.DIM))
-        p.drawText(info_x, 0, _TINFO_W, _TSEH,
-                   Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter,
-                   _COL_LABELS[self._col_mode])
+        p.setPen(QColor(T.ACCENT))
+        p.drawText(QRectF(10 + clock_w + 14, 0, 120, _TSEH),
+                   Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, ses_name)
 
         # Flag indicator (14×14 rounded square, right)
         gp = self._game_phase
@@ -529,6 +573,12 @@ class BroadcastTower(_BcWidget):
 
         y = _TSEH + 4
         for e in self._entries:
+            if e.get("sep"):
+                mid = y + _TSEP_H // 2
+                p.setPen(QColor(T.ACCENT))
+                p.drawLine(8, mid, W - 8, mid)
+                y += _TSEP_H
+                continue
             if e.get("hdr"):
                 ab  = e["abbrev"]
                 col = e["cls_col"]
@@ -539,6 +589,13 @@ class BroadcastTower(_BcWidget):
                 p.drawRoundedRect(4, y + 1, bw, _TCLSH - 2, 2, 2)
                 p.setPen(QColor(T.TEXT))
                 p.drawText(4, y + 1, bw, _TCLSH - 2, Qt.AlignmentFlag.AlignCenter, ab)
+                # Column label on the same row, in the info column area
+                info_x = 4 + _TPOS_W + _TNUM_W + tnme_w
+                p.setFont(label_font(7))
+                p.setPen(QColor(T.DIM))
+                p.drawText(info_x, y, _TINFO_W - 6, _TCLSH,
+                           Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
+                           _COL_LABELS[self._col_mode])
                 y += _TCLSH
                 continue
 
@@ -565,12 +622,20 @@ class BroadcastTower(_BcWidget):
                        str(pos) if pos > 0 else "—")
             x += _TPOS_W
 
-            # Car number — left-aligned with 4 px gap from the position column
+            # Manufacturer logo — shifted right of center toward car number
+            logo = _get_logo(e.get("vehicle_name", ""))
+            if logo:
+                lx = x + (_TLOGO_W - logo.width()) // 2 + 4
+                ly = y + (_TRH     - logo.height()) // 2
+                p.drawPixmap(lx, ly, logo)
+            x += _TLOGO_W
+
+            # Car number
             num_txt = e.get("car_num", "")
             if num_txt:
                 p.setFont(label_font(7)); p.setPen(QColor(T.DIM))
-                p.drawText(x + 4, y, _TNUM_W - 4, _TRH,
-                           Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                p.drawText(x, y, _TNUM_W - 4, _TRH,
+                           Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
                            f"#{num_txt}")
             x += _TNUM_W
 
@@ -582,11 +647,11 @@ class BroadcastTower(_BcWidget):
                        e["name"])
             x += tnme_w
 
-            # Info column — same rect as header label → columns align
+            # Info column — right-aligned with small right margin
             p.setFont(num_font(9))
             p.setPen(QColor(e["info_col"]))
-            p.drawText(x, y, _TINFO_W, _TRH,
-                       Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter,
+            p.drawText(x, y, _TINFO_W - 6, _TRH,
+                       Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
                        e["info_txt"])
 
             # Status badge (protrudes beyond panel right edge)
@@ -705,17 +770,18 @@ class BroadcastBattle(_BcWidget):
             bl  = v.best_lap
             sb  = cls_ses_best.get(v.vehicle_class, float('inf'))
             return {
-                "pos":         _cls_pos(v),
-                "car_num":     v.car_number,
-                "name":        _fmt_name(
-                                   (v.team_name if self._state.show_team else v.driver_name)
-                                   or v.vehicle_name or f"Car {v.slot_id}",
-                                   self._state.show_team,
-                               ),
-                "last":        v.last_lap,
-                "last_col":    _last_col(v),
-                "best":        bl,
-                "best_is_ses": bl > 0 and bl <= sb + 0.002,
+                "pos":          _cls_pos(v),
+                "car_num":      v.car_number,
+                "vehicle_name": v.vehicle_name or "",
+                "name":         _fmt_name(
+                                    (v.team_name if self._state.show_team else v.driver_name)
+                                    or v.vehicle_name or f"Car {v.slot_id}",
+                                    self._state.show_team,
+                                ),
+                "last":         v.last_lap,
+                "last_col":     _last_col(v),
+                "best":         bl,
+                "best_is_ses":  bl > 0 and bl <= sb + 0.002,
             }
 
         if va and vb:
@@ -783,13 +849,17 @@ class BroadcastBattle(_BcWidget):
             lap_font = num_font(10)
             la = Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
 
-            # Position number (large) + car number below
+            # Position number (large) + car number below + logo
             p.setFont(num_font(24)); p.setPen(pc)
             p.drawText(pos_x, 6, _BPOS_W, 38, pos_align, str(pos))
             num_txt = driver.get("car_num", "")
             if num_txt:
                 p.setFont(label_font(10)); p.setPen(QColor(T.DIM))
                 p.drawText(pos_x, 46, _BPOS_W, 14, pos_align, f"#{num_txt}")
+            logo = _get_logo(driver.get("vehicle_name", ""), 22, 14)
+            if logo:
+                lx = pos_x + (_BPOS_W - logo.width()) // 2
+                p.drawPixmap(lx, 63, logo)
 
             # Driver name
             name_align = (Qt.AlignmentFlag.AlignVCenter |
@@ -868,18 +938,19 @@ class BroadcastDriverCard(_BcWidget):
             idx = next((i for i, vh in enumerate(same_class) if vh.slot_id == v.slot_id), None)
             cls_pos = (idx + 1) if idx is not None else v.place
             self._driver = {
-                "pos":    cls_pos,
-                "car_num": v.car_number,
-                "name":   _fmt_name(
-                              (v.team_name if self._state.show_team else v.driver_name)
-                              or v.vehicle_name or f"Car {v.slot_id}",
-                              self._state.show_team,
-                          ),
-                "team":   v.team_name,
-                "last":   v.last_lap,
-                "best":   v.best_lap,
-                "ve":     v.virtual_energy,
-                "fuel":   v.fuel,
+                "pos":          cls_pos,
+                "car_num":      v.car_number,
+                "vehicle_name": v.vehicle_name or "",
+                "name":         _fmt_name(
+                                    (v.team_name if self._state.show_team else v.driver_name)
+                                    or v.vehicle_name or f"Car {v.slot_id}",
+                                    self._state.show_team,
+                                ),
+                "team":         v.team_name,
+                "last":         v.last_lap,
+                "best":         v.best_lap,
+                "ve":           v.virtual_energy,
+                "fuel":         v.fuel,
             }
         else:
             self._driver = None
@@ -911,12 +982,20 @@ class BroadcastDriverCard(_BcWidget):
                    Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter,
                    str(pos))
 
-        # Car number — between position and name
+        # Manufacturer logo — after position, before car number
+        _dlogo_w = 28
+        logo = _get_logo(driver.get("vehicle_name", ""))
+        if logo:
+            lx = 6 + _DPOS_W + 4 + (_dlogo_w - logo.width()) // 2
+            ly = row1_y + (row1_h - logo.height()) // 2
+            p.drawPixmap(lx, ly, logo)
+
+        # Car number — shifted right by logo column
         num_txt = driver.get("car_num", "")
         _dnum_w = 32
         if num_txt:
             p.setFont(label_font(9)); p.setPen(QColor(T.DIM))
-            p.drawText(6 + _DPOS_W + 4, row1_y, _dnum_w, row1_h,
+            p.drawText(6 + _DPOS_W + 4 + _dlogo_w + 4, row1_y, _dnum_w, row1_h,
                        Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter,
                        f"#{num_txt}")
 
@@ -949,9 +1028,9 @@ class BroadcastDriverCard(_BcWidget):
             p.drawText(val_x, row1_y, val_w + 4, row1_h,
                        Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, fv_txt)
 
-        # Driver name (between car number and VE block)
+        # Driver name (after logo column + car number)
         _dnum_w = 32
-        name_x = 6 + _DPOS_W + 4 + (_dnum_w + 4 if num_txt else 0)
+        name_x = 6 + _DPOS_W + 4 + _dlogo_w + 4 + (_dnum_w + 4 if num_txt else 0)
         name_w = W - name_x - ve_block_w - 12
         p.setFont(text_font(12)); p.setPen(QColor(T.TEXT))
         p.drawText(name_x, row1_y, name_w, row1_h,

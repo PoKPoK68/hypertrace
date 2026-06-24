@@ -258,6 +258,14 @@ class AppConfig:
         self._bc()["tower_count_ourclass"] = int(v)
 
     @property
+    def bc_tower_parade_count(self) -> int:
+        return int(self._bc().get("tower_parade_count", 5))
+
+    @bc_tower_parade_count.setter
+    def bc_tower_parade_count(self, v: int) -> None:
+        self._bc()["tower_parade_count"] = int(v)
+
+    @property
     def bc_tower_mode(self) -> int:
         bc = self._bc()
         if "tower_mode" in bc:

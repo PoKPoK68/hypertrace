@@ -4,6 +4,19 @@ All notable changes to LMU App are documented here.
 
 ---
 
+## [0.6.5] — Manufacturer logos in broadcast overlays
+
+### Broadcast Tower
+- **Manufacturer logo column** — a logo column between position and car number displays the manufacturer brand logo, sourced from `assets/brandlogo/`; matched from the vehicle model name (`mVehicleModel` from telemetry data)
+
+### Broadcast Driver Card
+- **Manufacturer logo** — logo displayed between position number and car number on the main row
+
+### Broadcast Battle
+- **Manufacturer logo** — small logo shown below the car number in each driver's position column
+
+---
+
 ## [0.6.4] — Delta overlay & bug fixes
 
 ### New: Delta overlay

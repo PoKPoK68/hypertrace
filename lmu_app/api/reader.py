@@ -323,18 +323,27 @@ class LMUReader(BaseReader):
                     entry.best_lap_sector2 = float(rd.get("bestLapSectorTime2", -1.0))
 
             # --- VE et fuel pour tous les véhicules depuis telemInfo ---
-            ve_by_id:   dict[int, float] = {}
-            fuel_by_id: dict[int, float] = {}
+            ve_by_id:    dict[int, float] = {}
+            fuel_by_id:  dict[int, float] = {}
+            model_by_id: dict[int, str]   = {}
             try:
                 for i in range(min(telem.activeVehicles, 104)):
                     t = telem.telemInfo[i]
                     ve_by_id[t.mID]   = float(t.mVirtualEnergy)
                     fuel_by_id[t.mID] = float(t.mFuel)
+                    try:
+                        m = t.mVehicleModel.decode(errors="replace").rstrip("\x00")
+                        if m:
+                            model_by_id[t.mID] = m
+                    except AttributeError:
+                        pass
             except (AttributeError, IndexError):
                 pass
             for entry in s.vehicles:
                 entry.virtual_energy = ve_by_id.get(entry.slot_id, 0.0)
                 entry.fuel           = fuel_by_id.get(entry.slot_id, 0.0)
+                if entry.slot_id in model_by_id:
+                    entry.vehicle_name = model_by_id[entry.slot_id]
 
             # --- Session active + viewed vehicle ---
             player_sc = next((e for e in s.vehicles if e.is_player), None)

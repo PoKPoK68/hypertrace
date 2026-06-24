@@ -1117,6 +1117,7 @@ QCheckBox::indicator:checked {{
     def set_broadcast_state(self, state) -> None:
         """Called from main.py after MainWindow is constructed."""
         self._bc_state = state
+        state.tower_parade_count = self._config.bc_tower_parade_count
 
     def _make_broadcast_tab(self) -> QWidget:
         w  = QWidget()
@@ -1244,14 +1245,20 @@ QCheckBox::indicator:checked {{
                           self._config.bc_tower_count_overall)
         spin1 = _spin_row("Number of drivers:", "bc_tower_count_multiclass", "_bc_count_mc_spin", 1, 10,
                           self._config.bc_tower_count_multiclass)
-        spin2 = _spin_row("Number of drivers:", "bc_tower_count_ourclass",  "_bc_count_cls_spin", 3, 20,
+        spin2 = _spin_row("Number of drivers:", "bc_tower_count_ourclass",  "_bc_count_cls_spin", 3, 30,
                           self._config.bc_tower_count_ourclass)
         for i, sw in enumerate((spin0, spin1, spin2)):
             sw.setVisible(i == cur_mode)
             to_vl.addWidget(sw)
 
+        spin_pc = _spin_row("Parade drivers:", "bc_tower_parade_count", "_bc_parade_count_spin", 1, 20,
+                            self._config.bc_tower_parade_count)
+        spin_pc.setVisible(cur_mode in (0, 2))
+        to_vl.addWidget(spin_pc)
+
         self._bc_tower_mode_btns  = btns
         self._bc_tower_spin_rows  = [spin0, spin1, spin2]
+        self._bc_parade_count_spin = spin_pc
         vl.addWidget(tower_opts)
 
         # Live Timing button
@@ -1332,6 +1339,8 @@ QCheckBox::indicator:checked {{
         if self._bc_tower_spin_rows:
             for i, row in enumerate(self._bc_tower_spin_rows):
                 row.setVisible(i == idx)
+        if hasattr(self, "_bc_parade_count_spin"):
+            self._bc_parade_count_spin.setVisible(idx in (0, 2))
         self._config.bc_tower_mode = idx
         self._config.save()
         if self._bc_state is not None:
@@ -1341,7 +1350,8 @@ QCheckBox::indicator:checked {{
         setattr(self._config, cfg_attr, value)
         self._config.save()
         if self._bc_state is not None:
-            state_attr = cfg_attr.replace("bc_tower_count", "tower_count")
+            state_attr = (cfg_attr.replace("bc_tower_count", "tower_count")
+                                  .replace("bc_tower_parade", "tower_parade"))
             setattr(self._bc_state, state_attr, value)
 
     def _on_bc_show_team(self, show_team: bool) -> None:
