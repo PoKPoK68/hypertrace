@@ -217,6 +217,7 @@ def render_widget_png(widget: QWidget) -> bytes:
     buf.open(QBuffer.OpenModeFlag.WriteOnly)
     px.save(buf, "PNG")
     data = bytes(buf.data())
+    buf.close()
     logger.debug("render_widget_png %s: %dx%d → %d bytes", widget.__class__.__name__, w, h, len(data))
     return data
 
@@ -256,6 +257,7 @@ class StreamManager(QObject):
         ph_buf.open(QBuffer.OpenModeFlag.WriteOnly)
         ph_px.save(ph_buf, "PNG")
         self._placeholder = bytes(ph_buf.data())
+        ph_buf.close()
 
         srv = StreamServer(port, self._placeholder)
         ok  = srv.try_start()

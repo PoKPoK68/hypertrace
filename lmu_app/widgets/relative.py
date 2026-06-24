@@ -172,6 +172,7 @@ class RelativeWidget(BaseWidget):
         self._outlap_tracking:  dict[int, int]  = {}
         self._pit_lap_tracking: dict[int, int]  = {}
         self._prev_in_pits:     dict[int, bool] = {}
+        self._last_session_player_laps: int = -1
         self._class_colors:   dict[str, str]  = {}
         self._player_color = QColor(0xEC, 0xAA, 0x43, 51)
         self._temp_pm_trk = None
@@ -220,6 +221,13 @@ class RelativeWidget(BaseWidget):
         player   = next((v for v in vehicles if v.is_player), None)
         if not player:
             return
+
+        # New session: lap counter went backwards → clear all badge state
+        if self._last_session_player_laps >= 0 and player.total_laps < self._last_session_player_laps:
+            self._outlap_tracking.clear()
+            self._pit_lap_tracking.clear()
+            self._prev_in_pits.clear()
+        self._last_session_player_laps = player.total_laps
 
         # Outlap / pit-lap tracking
         new_prev: dict[int, bool] = {}

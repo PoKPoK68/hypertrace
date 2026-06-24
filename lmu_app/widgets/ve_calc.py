@@ -185,6 +185,16 @@ class VECalcWidget(BaseWidget):
         self._fuel_cap     = max(1.0, v.fuel_capacity)
 
         if player:
+            # New session detected: lap counter went backwards → clear history
+            if self._last_total_laps >= 0 and player.total_laps < self._last_total_laps:
+                self._last_total_laps   = -1
+                self._ve_history.clear()
+                self._last_lap_ve       = 0.0
+                self._last_lap_fuel     = 0.0
+                self._last_lap_ratio    = 0.0
+                self._ve_at_lap_start   = -1.0
+                self._fuel_at_lap_start = -1.0
+
             if self._fuel_prev_tick >= 0 and (v.fuel - self._fuel_prev_tick) > 2.0:
                 self._fuel_at_lap_start = v.fuel
             if self._ve_at_lap_start >= 0 and (v.virtual_energy - self._ve_at_lap_start) > 0.05:

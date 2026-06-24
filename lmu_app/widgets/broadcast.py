@@ -361,6 +361,9 @@ class BroadcastTower(_BcWidget):
                         self._last_normal_ts = now
 
             # ── Build entries ────────────────────────────────────────────
+            if self._parade_active and not active_v:
+                self._parade_active  = False
+                self._last_normal_ts = now
             if self._parade_active:
                 entries.append(self._row(active_v[0], None, _pos(active_v[0], 0), is_race, leader))
                 offset = self._parade_offset

@@ -161,7 +161,7 @@ class WeatherWidget(BaseWidget):
             nodes = _fetch_forecast(st)
             with self._fc_lock:
                 self._forecast = nodes
-            self.update()
+                self.update()
         threading.Thread(target=_work, daemon=True).start()
 
     def on_data(self, snap: LMUSnapshot) -> None:

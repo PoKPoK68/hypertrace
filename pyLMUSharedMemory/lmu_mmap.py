@@ -47,11 +47,11 @@ def windows_mmap(name: str, size: int) -> mmap.mmap:
 
 def linux_mmap(name: str, size: int) -> mmap.mmap:
     """Linux mmap - read data from '/dev/shm/filename' if available"""
-    file = open("/dev/shm/" + name, "a+b")
-    if file.tell() == 0:
-        file.write(b"\0" * size)
-        file.flush()
-    return mmap.mmap(file.fileno(), size)
+    with open("/dev/shm/" + name, "a+b") as file:
+        if file.tell() == 0:
+            file.write(b"\0" * size)
+            file.flush()
+        return mmap.mmap(file.fileno(), size)
 
 
 class MMapControl:

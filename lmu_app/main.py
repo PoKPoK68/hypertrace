@@ -14,6 +14,7 @@ from lmu_app.widgets.tyres import TyresWidget
 from lmu_app.widgets.fuel_calc import FuelCalcWidget
 from lmu_app.widgets.ve_calc import VECalcWidget
 from lmu_app.widgets.weather import WeatherWidget
+from lmu_app.widgets.delta import DeltaWidget
 from lmu_app.stream.server import StreamManager
 from lmu_app.ui.main_window import MainWindow
 from lmu_app.widgets.broadcast import BroadcastBattle, BroadcastDriverCard, BroadcastState, BroadcastTower
@@ -93,7 +94,7 @@ def main() -> int:
     app.setStyle("Fusion")        # consistent rendering
     app.setPalette(_dark_palette())  # makes arrows/indicators visible on dark bg
     app.setApplicationName("LMU App")
-    app.setApplicationVersion("0.6.3")
+    app.setApplicationVersion("0.6.4")
     app.setQuitOnLastWindowClosed(False)
 
     config = AppConfig()
@@ -104,6 +105,7 @@ def main() -> int:
     ve_calc_w   = VECalcWidget(reader,   auto_hide=False)
 
     widget_entries: list[tuple[str, object]] = [
+        ("delta",      DeltaWidget(reader,     auto_hide=False)),
         ("fuel_calc",  fuel_calc_w),
         ("inputs",     InputsWidget(reader,    auto_hide=False)),
         ("relative",   RelativeWidget(reader,  auto_hide=False)),
@@ -111,7 +113,7 @@ def main() -> int:
         ("standings",  StandingsWidget(reader, auto_hide=False)),
         ("tyres",      TyresWidget(reader,     auto_hide=False)),
         ("ve_calc",    ve_calc_w),
-        ("weather",    WeatherWidget(reader, auto_hide=False)),
+        ("weather",    WeatherWidget(reader,   auto_hide=False)),
     ]
 
     merge = config.merge_calc
@@ -144,12 +146,13 @@ def main() -> int:
     stream_manager = StreamManager(reader)
 
     _stream_classes = [
-        ("speed",     SpeedWidget),
-        ("inputs",    InputsWidget),
-        ("standings", StandingsWidget),
-        ("relative",  RelativeWidget),
-        ("tyres",     TyresWidget),
+        ("delta",     DeltaWidget),
         ("fuel_calc", FuelCalcWidget),
+        ("inputs",    InputsWidget),
+        ("relative",  RelativeWidget),
+        ("speed",     SpeedWidget),
+        ("standings", StandingsWidget),
+        ("tyres",     TyresWidget),
         ("ve_calc",   VECalcWidget),
         ("weather",   WeatherWidget),
     ]

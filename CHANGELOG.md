@@ -4,6 +4,23 @@ All notable changes to LMU App are documented here.
 
 ---
 
+## [0.6.4] — Delta overlay & bug fixes
+
+### New: Delta overlay
+- **Last Lap / Best Lap / Delta** — compact overlay showing last lap (color-coded: purple = class best, green = personal best, white = no improvement), personal best lap in purple, and live delta vs best lap
+- **Delta bar** — centered bar visualising the gap (green left = gaining, red right = losing); range configurable in settings
+- Available in stream mode
+
+### Bug fixes
+- **Parade crash** — broadcast tower no longer crashes when all drivers DNF or enter garage while parade mode is active
+- **QBuffer leak** — stream PNG buffers are now explicitly closed after each render (was leaking at 30 Hz)
+- **REST race condition** — `_rest_focus` and `_rest_data` now protected by a dedicated lock; reads take a snapshot to minimise lock hold time
+- **REST thread not joined** — `LMUReader.stop()` now joins the REST thread before returning
+- **Bounds check on `playerVehicleIdx`** — guards against out-of-range telemetry index (0–103)
+- **Session reset** — fuel/VE history and pit/outlap badges now clear correctly when a new session starts
+
+---
+
 ## [0.6.3] — Live Timing & Pedals
 
 ### Live Timing

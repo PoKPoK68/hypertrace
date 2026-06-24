@@ -157,6 +157,7 @@ class LMUReader(BaseReader):
         self._rest_thread: threading.Thread | None = None
         self._sim: object | None = None
         self._connected = False
+        self._rest_lock  = threading.Lock()
         self._rest_focus: int = -1   # slotID from REST API; -1 = unknown
         self._rest_data: dict[int, dict] = {}   # slot_id → REST standings entry
 
@@ -173,6 +174,8 @@ class LMUReader(BaseReader):
         self._running = False
         if self._thread:
             self._thread.join(timeout=2.0)
+        if self._rest_thread:
+            self._rest_thread.join(timeout=1.0)
         if self._sim:
             try: self._sim.close()
             except Exception: pass
@@ -188,14 +191,17 @@ class LMUReader(BaseReader):
             try:
                 with _ur.urlopen(f"{_REST_BASE}/rest/watch/focus", timeout=1) as r:
                     slot = int(r.read().decode().strip())
-                    self._rest_focus = slot if slot >= 0 else -1
+                    with self._rest_lock:
+                        self._rest_focus = slot if slot >= 0 else -1
             except Exception:
                 pass
             if now - _last_st >= 0.333:
                 try:
                     with _ur.urlopen(f"{_REST_BASE}/rest/watch/standings", timeout=2) as r:
                         data = _json.loads(r.read())
-                        self._rest_data = {int(item["slotID"]): item for item in data}
+                        new_data = {int(item["slotID"]): item for item in data}
+                    with self._rest_lock:
+                        self._rest_data = new_data
                         _last_st = now
                 except Exception:
                     pass
@@ -299,8 +305,10 @@ class LMUReader(BaseReader):
                 ))
 
             # Merge REST standings data (car number, team, class gap)
+            with self._rest_lock:
+                rest_snapshot = dict(self._rest_data)
             for entry in s.vehicles:
-                rd = self._rest_data.get(entry.slot_id)
+                rd = rest_snapshot.get(entry.slot_id)
                 if rd:
                     entry.car_number = str(rd.get("carNumber", ""))
                     entry.team_name  = rd.get("fullTeamName", "")
@@ -336,7 +344,8 @@ class LMUReader(BaseReader):
                 snap.viewed_slot_id   = player_sc.slot_id  # fallback: own car
 
             # REST API gives us the true focused slotID from /rest/watch/focus
-            rest_slot = self._rest_focus
+            with self._rest_lock:
+                rest_slot = self._rest_focus
             if rest_slot > 0 and any(v.slot_id == rest_slot for v in s.vehicles):
                 snap.viewed_slot_id = rest_slot
 
@@ -347,6 +356,10 @@ class LMUReader(BaseReader):
                 return
 
             idx  = telem.playerVehicleIdx
+            if not (0 <= idx < 104):
+                with self._lock:
+                    self._snapshot = snap
+                return
             tel  = telem.telemInfo[idx]
 
             # Vitesse locale (norme du vecteur mLocalVel)
