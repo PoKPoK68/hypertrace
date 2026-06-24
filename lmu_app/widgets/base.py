@@ -5,8 +5,8 @@ import logging
 from typing import TYPE_CHECKING, Callable
 
 from PySide6.QtCore import QPoint, QRectF, QTimer, Qt
-from PySide6.QtGui import QColor, QMouseEvent, QPen
-from PySide6.QtWidgets import QWidget
+from PySide6.QtGui import QColor, QKeyEvent, QMouseEvent, QPen
+from PySide6.QtWidgets import QApplication, QWidget
 
 if TYPE_CHECKING:
     from lmu_app.api.reader import DataReader, LMUSnapshot
@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 DEFAULT_SCALE = 115  # default overlay scale in %; change here to resize all overlays globally
+_SNAP_DIST    = 5    # px — distance to screen edge / peer overlay that triggers magnetic snap
 
 
 class BaseWidget(QWidget):
@@ -111,16 +112,75 @@ class BaseWidget(QWidget):
         if not self._locked and event.button() == Qt.MouseButton.LeftButton:
             self._dragging = True
             self._drag_offset = event.globalPosition().toPoint() - self.pos()
+            self.grabKeyboard()
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         if self._dragging:
-            self.move(event.globalPosition().toPoint() - self._drag_offset)
+            raw = event.globalPosition().toPoint() - self._drag_offset
+            self.move(self._snapped(raw.x(), raw.y()))
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if self._dragging:
             self._dragging = False
+            self.releaseKeyboard()
             if self._on_position_changed:
                 self._on_position_changed(self.x(), self.y())
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        step = 10 if event.modifiers() & Qt.KeyboardModifier.ControlModifier else 1
+        key  = event.key()
+        dx = dy = 0
+        if   key == Qt.Key.Key_Left:  dx = -step
+        elif key == Qt.Key.Key_Right: dx =  step
+        elif key == Qt.Key.Key_Up:    dy = -step
+        elif key == Qt.Key.Key_Down:  dy =  step
+        else:
+            super().keyPressEvent(event)
+            return
+        self.move(self.x() + dx, self.y() + dy)
+        if self._on_position_changed:
+            self._on_position_changed(self.x(), self.y())
+
+    def _snapped(self, x: int, y: int) -> QPoint:
+        """Return position snapped to screen edges and peer overlays when within _SNAP_DIST."""
+        screen = QApplication.primaryScreen().geometry()
+        w, h   = self.width(), self.height()
+
+        snap_x: int | None = None
+        snap_y: int | None = None
+        best_dx = _SNAP_DIST
+        best_dy = _SNAP_DIST
+
+        def _try_x(cx: int) -> None:
+            nonlocal snap_x, best_dx
+            d = abs(x - cx)
+            if d < best_dx:
+                best_dx = d; snap_x = cx
+
+        def _try_y(cy: int) -> None:
+            nonlocal snap_y, best_dy
+            d = abs(y - cy)
+            if d < best_dy:
+                best_dy = d; snap_y = cy
+
+        # Screen edges
+        _try_x(screen.left())
+        _try_x(screen.right() - w + 1)
+        _try_y(screen.top())
+        _try_y(screen.bottom() - h + 1)
+
+        # Peer overlays
+        for peer in QApplication.topLevelWidgets():
+            if peer is self or not isinstance(peer, BaseWidget) or not peer.isVisible():
+                continue
+            px, py, pw, ph = peer.x(), peer.y(), peer.width(), peer.height()
+            for cx in (px, px + pw, px - w, px + pw - w):
+                _try_x(cx)
+            for cy in (py, py + ph, py - h, py + ph - h):
+                _try_y(cy)
+
+        return QPoint(snap_x if snap_x is not None else x,
+                      snap_y if snap_y is not None else y)
 
     # ------------------------------------------------------------------
     # Internal tick

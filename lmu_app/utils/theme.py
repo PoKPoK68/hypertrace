@@ -80,7 +80,7 @@ class T:
 
     # ---- type -----------------------------------------------------------
     F_TEXT = "JetBrains Mono"          # names, labels, titles, headers
-    F_NUM  = "JetBrains Mono"         # speed, gear, gaps, lap times, %, °
+    F_NUM  = "JetBrains Mono"          # speed, gear, gaps, lap times, %, °
     LABEL_TRACKING = 114             # PercentageSpacing for uppercase labels (~0.14em)
 
     # ---- RPM / shift-light bar -----------------------------------------

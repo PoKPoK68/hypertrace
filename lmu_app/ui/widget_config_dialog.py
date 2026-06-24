@@ -180,7 +180,10 @@ class WidgetConfigDialog(QDialog):
         self.setStyleSheet(_STYLE)
 
         has_side = any(e.get("side_panel") for e in self._schema)
-        self.setMinimumWidth(510 if has_side else 380)
+        if has_side:
+            self.setMinimumWidth(560)
+        else:
+            self.setFixedWidth(400)
 
         self._setup_ui()
 
@@ -275,7 +278,7 @@ class WidgetConfigDialog(QDialog):
             inner = QWidget()
             vl    = QVBoxLayout(inner)
             vl.setSpacing(2)
-            vl.setContentsMargins(0, 0, 0, 0)
+            vl.setContentsMargins(0, 0, 8, 0)
             pre_w, pre_form = self._make_pre_form()
             vl.addWidget(pre_w)
             current_form = pre_form
@@ -317,6 +320,11 @@ class WidgetConfigDialog(QDialog):
             paste_btn.setStyleSheet(_icon_btn_ss)
             paste_btn.clicked.connect(self._do_paste)
             btn_row.addWidget(paste_btn)
+
+        reset_btn = QPushButton("Reset to defaults")
+        reset_btn.setStyleSheet(_icon_btn_ss)
+        reset_btn.clicked.connect(self._do_reset)
+        btn_row.addWidget(reset_btn)
 
         btn_row.addStretch()
 
@@ -560,6 +568,14 @@ class WidgetConfigDialog(QDialog):
 
             parent.toggled.connect(_update)
             _update(parent.isChecked())
+
+    def _do_reset(self) -> None:
+        defaults = {
+            e["key"]: e["default"]
+            for e in self._schema
+            if "key" in e and "default" in e
+        }
+        self._load_controls(defaults)
 
     def _apply_live(self) -> None:
         params = self._collect()

@@ -15,6 +15,7 @@ from PySide6.QtWidgets import QSizePolicy
 
 from lmu_app.api.reader import DataReader, LMUSnapshot
 from lmu_app.utils.class_colors import class_abbrev, class_color
+from lmu_app.utils.logos import get_logo as _get_logo
 from lmu_app.utils.theme import T, label_font, num_font, text_font
 from lmu_app.widgets.base import BaseWidget, DEFAULT_SCALE
 
@@ -56,16 +57,19 @@ def _class_rank(cls_name: str) -> int:
             return i
     return 99
 
+_LOGO_COL_W = 26   # fixed width for manufacturer logo column
+
 COLUMN_DEFS = {
-    "pos":      ("",      24, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter),
-    "name":     ("",      -1, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
-    "gap":      ("GAP",   52, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
-    "interval": ("INT",   52, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
-    "best":     ("BEST",  62, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
-    "last":     ("LAST",  62, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
-    "fuel_ve":  ("VE/F",  44, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
+    "pos":      ("",      24,          Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter),
+    "logo":     ("",      _LOGO_COL_W, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter),
+    "name":     ("",      -1,          Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
+    "gap":      ("GAP",   52,          Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
+    "interval": ("INT",   52,          Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
+    "best":     ("BEST",  62,          Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
+    "last":     ("LAST",  62,          Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
+    "fuel_ve":  ("VE/F",  44,          Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
 }
-DEFAULT_COLUMNS = ["pos", "name", "gap", "interval", "best", "last"]
+DEFAULT_COLUMNS = ["pos", "logo", "name", "gap", "interval", "best", "last"]
 
 # All colors from theme.T — no hex literals in this module.
 
@@ -161,12 +165,14 @@ class StandingsWidget(BaseWidget):
     WIDGET_NAME = "Standings"
     CONFIG_SCHEMA = [
         {"type": "separator", "label": "Appearance"},
-        {"key": "opacity", "label": "Opacity (%)", "type": "int",
+        {"key": "opacity",   "label": "Opacity (%)", "type": "int",
          "min": 0, "max": 100, "step": 5, "default": 85},
-        {"key": "scale",   "label": "Size (%)",    "type": "int",
+        {"key": "scale",     "label": "Size (%)",    "type": "int",
          "min": 50, "max": 250, "step": 5, "default": 100},
+        {"key": "font_size", "label": "Font size",   "type": "int",
+         "min": 7, "max": 14, "step": 1, "default": 9},
         {"type": "separator", "label": "Header"},
-        {"key": "header_info", "label": "Header info", "type": "choice",
+        {"key": "header_info", "label": "Content", "type": "choice",
          "options": [
              {"value": "session", "label": "Session + Time"},
              {"value": "temp",    "label": "Temperatures"},
@@ -174,58 +180,57 @@ class StandingsWidget(BaseWidget):
          ], "default": "session"},
         {"key": "show_class_badge", "label": "Car class badge", "type": "bool", "default": True},
         {"type": "separator", "label": "Rows"},
-        {"key": "show_other_classes",  "label": "Multiclass",        "type": "bool", "default": False},
-        {"key": "other_classes_top_n", "label": "Leaders per class", "type": "int",
-         "min": 1, "max": 6, "step": 1, "default": 3, "show_if": "show_other_classes"},
-        {"key": "top_n",    "label": "Leaders shown", "type": "int",
+        {"key": "top_n",    "label": "Top drivers (your class)", "type": "int",
          "min": 1, "max": 6, "step": 1, "default": 3},
-        {"key": "around_n", "label": "Around player", "type": "int",
+        {"key": "around_n", "label": "Rows around your position", "type": "int",
          "min": 0, "max": 6, "step": 1, "default": 2},
+        {"key": "show_other_classes",  "label": "Show other classes", "type": "bool", "default": False},
+        {"key": "other_classes_top_n", "label": "Leaders per other class", "type": "int",
+         "min": 1, "max": 6, "step": 1, "default": 3, "show_if": "show_other_classes"},
         {"type": "separator", "label": "Names"},
-        {"key": "max_name_chars", "label": "Name max chars", "type": "int",
-         "min": 4, "max": 30, "step": 1, "default": 16},
-        {"key": "name_format", "label": "Name format", "type": "choice",
+        {"key": "name_format", "label": "Format", "type": "choice",
          "options": [
              {"value": "full",    "label": "First Last"},
              {"value": "initial", "label": "F. Last"},
              {"value": "last",    "label": "Last only"},
          ], "default": "full"},
-        {"key": "name_case", "label": "Name casing", "type": "choice",
+        {"key": "name_case", "label": "Case", "type": "choice",
          "options": [
              {"value": "upper", "label": "NAME LASTNAME"},
              {"value": "mixed", "label": "Name LASTNAME"},
              {"value": "title", "label": "Name Lastname"},
          ], "default": "upper"},
-        {"key": "font_size", "label": "Font size", "type": "int",
-         "min": 7, "max": 14, "step": 1, "default": 9},
-        {"type": "separator", "label": "Main row"},
-        {"key": "show_player_bg",    "label": "Colored background",  "type": "bool", "default": True},
-        {"key": "player_color",      "label": "Color",               "type": "color", "default": "#ECAA43",
+        {"key": "max_name_chars", "label": "Max characters", "type": "int",
+         "min": 4, "max": 30, "step": 1, "default": 16},
+        {"type": "separator", "label": "Player row"},
+        {"key": "show_player_bg",    "label": "Highlight background", "type": "bool", "default": True},
+        {"key": "player_color",      "label": "Color",      "type": "color", "default": "#ECAA43",
          "show_if": "show_player_bg"},
-        {"key": "player_color_alpha","label": "Opacity (%)",         "type": "int",
+        {"key": "player_color_alpha","label": "Intensity (%)", "type": "int",
          "min": 0, "max": 100, "step": 5, "default": 20, "show_if": "show_player_bg"},
         {"type": "separator", "label": "Columns"},
-        {"key": "show_best_col",     "label": "Best lap",  "type": "bool", "default": True},
-        {"key": "best_decimals",     "label": "Decimals",  "type": "int",
-         "min": 0, "max": 3, "step": 1, "default": 3, "show_if": "show_best_col"},
-        {"key": "show_last_col",     "label": "Last lap",  "type": "bool", "default": True},
-        {"key": "last_decimals",     "label": "Decimals",  "type": "int",
-         "min": 0, "max": 3, "step": 1, "default": 3, "show_if": "show_last_col"},
-        {"key": "show_gap_col",      "label": "GAP",       "type": "bool", "default": True},
-        {"key": "gap_decimals",      "label": "Decimals",  "type": "int",
+        {"key": "show_gap_col",      "label": "Gap to leader", "type": "bool", "default": True},
+        {"key": "gap_decimals",      "label": "Decimals",      "type": "int",
          "min": 0, "max": 3, "step": 1, "default": 1, "show_if": "show_gap_col"},
-        {"key": "show_interval_col", "label": "INT",       "type": "bool", "default": True},
-        {"key": "interval_decimals", "label": "Decimals",  "type": "int",
+        {"key": "show_interval_col", "label": "Interval",      "type": "bool", "default": True},
+        {"key": "interval_decimals", "label": "Decimals",      "type": "int",
          "min": 0, "max": 3, "step": 1, "default": 1, "show_if": "show_interval_col"},
-        {"key": "show_fuel_ve_col",  "label": "VE / Fuel", "type": "bool", "default": False},
-        {"type": "separator", "label": "Pit info"},
-        {"key": "show_lap_badge",  "label": "Pitted lap",   "type": "bool", "default": True},
-        {"key": "show_out_badge",  "label": "Outlap",        "type": "bool", "default": True},
-        {"key": "show_gar_badge",  "label": "Pit / Garage",  "type": "bool", "default": True},
+        {"key": "show_best_col",     "label": "Best lap",      "type": "bool", "default": True},
+        {"key": "best_decimals",     "label": "Decimals",      "type": "int",
+         "min": 0, "max": 3, "step": 1, "default": 3, "show_if": "show_best_col"},
+        {"key": "show_last_col",     "label": "Last lap",      "type": "bool", "default": True},
+        {"key": "last_decimals",     "label": "Decimals",      "type": "int",
+         "min": 0, "max": 3, "step": 1, "default": 3, "show_if": "show_last_col"},
+        {"key": "show_fuel_ve_col",  "label": "VE / Fuel",     "type": "bool", "default": False},
+        {"type": "separator", "label": "Badges"},
+        {"key": "show_lap_badge",  "label": "Pitted lap",  "type": "bool", "default": True},
+        {"key": "show_out_badge",  "label": "Out lap",      "type": "bool", "default": True},
+        {"key": "show_gar_badge",  "label": "Pit / Garage", "type": "bool", "default": True},
         {"type": "separator", "label": "Column order", "side_panel": True},
         {"key": "columns", "label": "", "type": "ordered_multiselect", "side_panel": True,
          "options": [
              {"value": "pos",      "label": "Position"},
+             {"value": "logo",     "label": "Brand logo"},
              {"value": "name",     "label": "Name"},
              {"value": "gap",      "label": "Gap to leader"},
              {"value": "interval", "label": "Interval"},
@@ -240,7 +245,7 @@ class StandingsWidget(BaseWidget):
              "last":     "show_last_col",
              "fuel_ve":  "show_fuel_ve_col",
          },
-         "default": ["pos", "name", "gap", "interval", "best", "last", "fuel_ve"]},
+         "default": ["pos", "logo", "name", "gap", "interval", "best", "last", "fuel_ve"]},
     ]
 
     def __init__(self, reader: DataReader,
@@ -259,7 +264,7 @@ class StandingsWidget(BaseWidget):
                  best_decimals: int = 3, last_decimals: int = 3,
                  **kw):
         _show_map = {
-            "pos": True, "name": True,
+            "pos": True, "logo": True, "name": True,
             "gap": show_gap_col, "interval": show_interval_col,
             "best": show_best_col, "last": show_last_col, "fuel_ve": show_fuel_ve_col,
         }
@@ -368,6 +373,7 @@ class StandingsWidget(BaseWidget):
                 col_order.append(c)
         show_map = {
             "pos":      True,
+            "logo":     True,
             "name":     True,
             "gap":      bool(params.get("show_gap_col",      True)),
             "interval": bool(params.get("show_interval_col", True)),
@@ -555,6 +561,7 @@ class StandingsWidget(BaseWidget):
 
         return {
             "pos":                   class_rank + 1,
+            "vehicle_name":          v.vehicle_name or "",
             "name_raw":              v.driver_name or v.vehicle_name or f"Car {v.slot_id}",
             "best":                  v.best_lap,
             "last":                  v.last_lap,
@@ -705,6 +712,22 @@ class StandingsWidget(BaseWidget):
                     p.setFont(num_font(fs))
                     p.setPen(pc)
                     p.drawText(x + _CP, y, cw - 2*_CP, rh, align, str(pos))
+
+                elif col == "logo":
+                    s  = self._scale
+                    # Load at 3× physical size so Qt downsamples → sharp result
+                    pw = max(12, round((_LOGO_COL_W - 2) * s * 3))
+                    ph = max(6,  round((rh - 4)          * s * 3))
+                    logo = _get_logo(e.get("vehicle_name", ""), pw, ph)
+                    if logo:
+                        max_lw = float(_LOGO_COL_W - 2)
+                        max_lh = float(rh - 4)
+                        sc  = min(max_lw / logo.width(), max_lh / logo.height())
+                        dw  = logo.width()  * sc
+                        dh  = logo.height() * sc
+                        lx  = x + (_LOGO_COL_W - dw) / 2
+                        ly  = y + (rh - dh) / 2
+                        p.drawPixmap(QRectF(lx, ly, dw, dh), logo, QRectF(logo.rect()))
 
                 elif col == "name":
                     raw_badge = e["badge"]

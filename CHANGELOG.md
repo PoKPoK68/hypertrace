@@ -4,6 +4,25 @@ All notable changes to LMU App are documented here.
 
 ---
 
+## [0.6.6] — Overlay UX & settings polish
+
+### Overlay positioning
+- **Snap to screen edges** — overlays magnetically snap to screen edges when dragged within 5 px
+- **Snap to other overlays** — overlays also snap to each other's edges and sides for easy alignment
+- **Keyboard nudge** — hold left mouse button on an overlay then use arrow keys to nudge 1 px at a time; Ctrl+arrow moves 10 px
+
+### Settings dialog
+- **Reset to defaults** button — restores all settings for a widget to their default values in one click
+- **Standings**: reorganised sections — font size moved to Appearance; cleaner labels; "Player row" and "Badges" sections; columns listed in logical order with decimals immediately below their toggle
+- **Relative**: restructured — Appearance (opacity/scale/font size), Rows (drivers + gap decimals), Names, Player row, Header (content hidden when header is off), Badges
+- **Fixed**: horizontal scrollbar no longer appears in the Standings config dialog
+- **Fixed**: dialogs without a side panel are now constrained to 400 px width; scrollbar no longer collides with content
+
+### Fonts
+- **JetBrains Mono zero** — the zero digit is now a plain oval (no slash, no dot), eliminating confusion with 8
+
+---
+
 ## [0.6.5] — Manufacturer logos in broadcast overlays
 
 ### Broadcast Tower

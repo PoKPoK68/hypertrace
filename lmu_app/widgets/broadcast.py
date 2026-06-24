@@ -1,52 +1,22 @@
 """lmu_app/widgets/broadcast.py — Broadcast overlay widgets: Tower, Battle, Driver Card."""
 from __future__ import annotations
 
-import logging
 import time as _time
 from collections import defaultdict
-from pathlib import Path
-
-logger = logging.getLogger(__name__)
 
 from PySide6.QtCore import Qt, QRectF
-from PySide6.QtGui import QColor, QPainter, QPixmap
+from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
 from lmu_app.api.reader import LMUSnapshot
 from lmu_app.utils.class_colors import class_abbrev, class_color
+from lmu_app.utils.logos import get_logo as _get_logo
 from lmu_app.utils.theme import T, accent_hairline, border_pen, label_font, num_font, panel_brush, text_font
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-_LOGOS_DIR  = Path(__file__).parent.parent.parent / "assets" / "brandlogo"
-_logo_cache: dict[tuple, QPixmap | None] = {}   # (vehicle_name, max_w, max_h) → scaled pixmap
-
-
-def _get_logo(vehicle_name: str, max_w: int = 24, max_h: int = 20) -> QPixmap | None:
-    if not vehicle_name:
-        return None
-    key = (vehicle_name, max_w, max_h)
-    if key in _logo_cache:
-        return _logo_cache[key]
-    vn_lower  = vehicle_name.lower()
-    best_path = None
-    best_len  = 0
-    for p in _LOGOS_DIR.glob("*.png"):
-        brand = p.stem.lower()
-        if brand in vn_lower and len(brand) > best_len:
-            best_path = p
-            best_len  = len(brand)
-    if best_path:
-        raw = QPixmap(best_path.as_posix())
-        px  = raw.scaled(max_w, max_h, Qt.AspectRatioMode.KeepAspectRatio,
-                         Qt.TransformationMode.SmoothTransformation) if not raw.isNull() else None
-    else:
-        px = None
-    _logo_cache[key] = px
-    return px
 
 
 def _fmt_lap(t: float, d: int = 1) -> str:
