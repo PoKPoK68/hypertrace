@@ -84,6 +84,14 @@ class VehicleScoringEntry:
     team_name:  str   = ""
     time_behind_class_leader: float = 0.0
     laps_behind_class_leader: int   = 0
+    # Sector times from REST API
+    cur_sector1: float     = -1.0   # currentSectorTime1 (in-progress lap, -1 if not yet crossed)
+    cur_sector2: float     = -1.0   # currentSectorTime2 cumulative (-1 if not yet crossed)
+    last_sector1: float    = -1.0   # lastSectorTime1 (last lap S1)
+    last_sector2: float    = -1.0   # lastSectorTime2 cumulative (last lap S1+S2)
+    best_sector1: float    = -1.0   # bestSectorTime1 (personal best S1)
+    best_sector2: float    = -1.0   # bestSectorTime2 cumulative (personal best S1+S2)
+    best_lap_sector2: float = -1.0  # bestLapSectorTime2 (S1+S2 from best lap, for S3 calc)
 
 
 @dataclass
@@ -298,6 +306,13 @@ class LMUReader(BaseReader):
                     entry.team_name  = rd.get("fullTeamName", "")
                     entry.time_behind_class_leader = float(rd.get("timeBehindClassLeader", 0.0))
                     entry.laps_behind_class_leader = int(rd.get("lapsBehindClassLeader", 0))
+                    entry.cur_sector1      = float(rd.get("currentSectorTime1", -1.0))
+                    entry.cur_sector2      = float(rd.get("currentSectorTime2", -1.0))
+                    entry.last_sector1     = float(rd.get("lastSectorTime1", -1.0))
+                    entry.last_sector2     = float(rd.get("lastSectorTime2", -1.0))
+                    entry.best_sector1     = float(rd.get("bestSectorTime1", -1.0))
+                    entry.best_sector2     = float(rd.get("bestSectorTime2", -1.0))
+                    entry.best_lap_sector2 = float(rd.get("bestLapSectorTime2", -1.0))
 
             # --- VE et fuel pour tous les véhicules depuis telemInfo ---
             ve_by_id:   dict[int, float] = {}

@@ -93,7 +93,7 @@ def main() -> int:
     app.setStyle("Fusion")        # consistent rendering
     app.setPalette(_dark_palette())  # makes arrows/indicators visible on dark bg
     app.setApplicationName("LMU App")
-    app.setApplicationVersion("0.6.2")
+    app.setApplicationVersion("0.6.3")
     app.setQuitOnLastWindowClosed(False)
 
     config = AppConfig()

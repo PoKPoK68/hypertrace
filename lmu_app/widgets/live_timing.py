@@ -80,11 +80,11 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 """
 
 _COLS       = ["P", "C", "#", "Driver / Team", "Cls",
-               "Best Lap", "Last Lap", "Gap", "Status", "TV", "WS", "CP"]
-_COL_WIDTHS = [28, 28, 42, 160, 40, 80, 80, 70, 55, 30, 30, 30]
-_COL_TV     = 9
-_COL_WS     = 10   # Windshield
-_COL_CP     = 11   # Cockpit
+               "Best Lap", "Last Lap", "S1", "S2", "S3", "Gap", "Status", "TV", "WS", "CP"]
+_COL_WIDTHS = [28, 28, 42, 160, 40, 80, 80, 58, 58, 58, 70, 55, 30, 30, 30]
+_COL_TV     = 12
+_COL_WS     = 13   # Windshield
+_COL_CP     = 14   # Cockpit
 
 # Camera type integers — PUT /rest/watch/focus/{cameraType}/{trackSideGroup}/{shouldAdvance}
 # Verified by probing GET /rest/replay/CameraController/getCameraInfo after each call:
@@ -206,6 +206,23 @@ def _last_lap_color(last_lap: float, best_lap: float, cls_ses_best: float) -> QC
     return QColor(T.WARN)
 
 
+def _fmt_sector(t: float) -> str:
+    if t <= 0:
+        return "—"
+    return f"{t:.3f}"
+
+
+def _sector_color(t: float, personal_best: float, cls_best: float) -> QColor | None:
+    """purple=class best, green=personal best, yellow=no improvement."""
+    if t <= 0:
+        return None
+    if cls_best > 0 and t <= cls_best + 0.001:
+        return QColor(T.PURPLE)
+    if personal_best > 0 and t <= personal_best + 0.001:
+        return QColor(T.GOOD)
+    return QColor(T.WARN)
+
+
 def _cam_btn_widget(label: str, ss: str, on_click) -> QWidget:
     """Minimal camera button widget — click logic is handled by caller."""
     btn = QPushButton(label)
@@ -260,16 +277,18 @@ class LiveTimingPanel(QWidget):
         self._lbl_session.setStyleSheet(f"color: {T.ACCENT}; font-size: 13px; font-weight: bold;")
         hdr.addWidget(self._lbl_session)
 
-        self._lbl_track = QLabel("")
-        self._lbl_track.setStyleSheet(f"color: {T.TEXT}; font-size: 11px;")
-        hdr.addWidget(self._lbl_track)
-
-        hdr.addStretch()
+        hdr.addSpacing(6)
 
         self._lbl_clock = QLabel("—:——:——")
         self._lbl_clock.setStyleSheet(
             f"color: {T.TEXT}; font-size: 12px; font-family: monospace;")
         hdr.addWidget(self._lbl_clock)
+
+        self._lbl_track = QLabel("")
+        self._lbl_track.setStyleSheet(f"color: {T.TEXT}; font-size: 11px;")
+        hdr.addWidget(self._lbl_track)
+
+        hdr.addStretch()
 
         hdr.addSpacing(12)
 
@@ -362,9 +381,15 @@ class LiveTimingPanel(QWidget):
         s = snap.session
         is_race = s.session_type >= 10
 
-        ses_names = ["Test", "P1", "P2", "P3", "P4", "Q1", "Q2", "Q3", "Q4",
-                     "Warmup", "R1", "R2", "R3", "R4"]
-        ses_name = ses_names[s.session_type] if 0 <= s.session_type < len(ses_names) else "Session"
+        t = s.session_type
+        if t <= 4:
+            ses_name = "PRACTICE"
+        elif t <= 8:
+            ses_name = "QUALIFYING"
+        elif t == 9:
+            ses_name = "WARMUP"
+        else:
+            ses_name = "RACE"
         self._lbl_session.setText(ses_name)
         self._lbl_track.setText(f"  {s.track_name}")
 
@@ -392,6 +417,22 @@ class LiveTimingPanel(QWidget):
                 cls = v.vehicle_class
                 if cls not in cls_ses_best or v.best_lap < cls_ses_best[cls]:
                     cls_ses_best[cls] = v.best_lap
+
+        # Class best sectors (for purple color)
+        cls_best_s1: dict[str, float] = {}
+        cls_best_s2: dict[str, float] = {}
+        cls_best_s3: dict[str, float] = {}
+        for v in vehicles:
+            cls = v.vehicle_class
+            s1 = v.best_sector1
+            s2 = (v.best_sector2 - v.best_sector1) if (v.best_sector2 > 0 and v.best_sector1 > 0) else -1.0
+            s3 = (v.best_lap - v.best_lap_sector2) if (v.best_lap > 0 and v.best_lap_sector2 > 0) else -1.0
+            if s1 > 0:
+                cls_best_s1[cls] = min(cls_best_s1.get(cls, s1), s1)
+            if s2 > 0:
+                cls_best_s2[cls] = min(cls_best_s2.get(cls, s2), s2)
+            if s3 > 0:
+                cls_best_s3[cls] = min(cls_best_s3.get(cls, s3), s3)
 
         # Class leader best for quali gap
         cls_leader_best: dict[str, float] = {}
@@ -465,6 +506,31 @@ class LiveTimingPanel(QWidget):
                                      cls_ses_best.get(v.vehicle_class, float('inf')))
             self._table.setItem(row, 6, _cell(_fmt_lap(v.last_lap), color=ll_col))
 
+            # S1 / S2 / S3
+            cls = v.vehicle_class
+            # Display: current in-progress sectors if available, else last lap
+            disp_s1 = v.cur_sector1 if v.cur_sector1 > 0 else v.last_sector1
+            disp_s2 = ((v.cur_sector2 - v.cur_sector1)
+                       if (v.cur_sector2 > 0 and v.cur_sector1 > 0)
+                       else ((v.last_sector2 - v.last_sector1)
+                             if (v.last_sector2 > 0 and v.last_sector1 > 0)
+                             else -1.0))
+            disp_s3 = ((v.last_lap - v.last_sector2)
+                       if (v.last_lap > 0 and v.last_sector2 > 0)
+                       else -1.0)
+            # Personal best per sector
+            pb_s1 = v.best_sector1
+            pb_s2 = ((v.best_sector2 - v.best_sector1)
+                     if (v.best_sector2 > 0 and v.best_sector1 > 0) else -1.0)
+            pb_s3 = ((v.best_lap - v.best_lap_sector2)
+                     if (v.best_lap > 0 and v.best_lap_sector2 > 0) else -1.0)
+            self._table.setItem(row, 7, _cell(_fmt_sector(disp_s1),
+                color=_sector_color(disp_s1, pb_s1, cls_best_s1.get(cls, -1.0))))
+            self._table.setItem(row, 8, _cell(_fmt_sector(disp_s2),
+                color=_sector_color(disp_s2, pb_s2, cls_best_s2.get(cls, -1.0))))
+            self._table.setItem(row, 9, _cell(_fmt_sector(disp_s3),
+                color=_sector_color(disp_s3, pb_s3, cls_best_s3.get(cls, -1.0))))
+
             # Gap
             if is_race:
                 if v.laps_behind_class_leader > 0:
@@ -482,7 +548,7 @@ class LiveTimingPanel(QWidget):
                 else:
                     delta = v.best_lap - cls_best
                     gap_txt = "" if delta < 0.001 else f"+{delta:.3f}"
-            self._table.setItem(row, 7, _cell(gap_txt))
+            self._table.setItem(row, 10, _cell(gap_txt))
 
             # Status
             if v.finish_status == 2:
@@ -495,7 +561,7 @@ class LiveTimingPanel(QWidget):
                 st, st_col = "PIT", QColor("#E08030")
             else:
                 st, st_col = "—", QColor(T.DIM)
-            self._table.setItem(row, 8, _cell(st, color=st_col))
+            self._table.setItem(row, 11, _cell(st, color=st_col))
 
             # Camera buttons — only recreated when slot list changes
             if rebuild_cams:

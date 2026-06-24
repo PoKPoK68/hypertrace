@@ -4,6 +4,20 @@ All notable changes to LMU App are documented here.
 
 ---
 
+## [0.6.3] — Live Timing & Pedals
+
+### Live Timing
+- **Sector times** — S1 / S2 / S3 columns added; shows current in-progress sectors when available, falls back to last lap; color-coded per class (purple = class best, green = personal best, yellow = no improvement)
+- **Session label** — displays full name (PRACTICE / QUALIFYING / RACE) instead of abbreviated code
+- **Header order** — session name first, then remaining time, then track name
+
+### Pedals (stream)
+- **Per-pedal toggles** — throttle, brake and clutch can each be enabled or disabled independently; widget resizes automatically
+- **Per-channel trace toggles** — each trace curve (T / B / C) can be shown or hidden independently
+- **Stream refresh rate** — configurable per widget via `stream_hz`; tick loop runs at 60 fps with per-widget throttling
+
+---
+
 ## [0.6.2] — Visual polish
 
 ### All overlays

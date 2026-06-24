@@ -239,9 +239,10 @@ class StreamManager(QObject):
         self._enabled: set[str]           = set()
         self._hide_in_garage: bool        = False
         self._placeholder: bytes          = b""
+        self._last_render: dict[str, float] = {}   # key → monotonic time of last render
 
         self._timer = QTimer(self)
-        self._timer.setInterval(50)   # 20 fps
+        self._timer.setInterval(16)   # ~60 fps tick — per-widget throttling handles actual rate
         self._timer.timeout.connect(self._tick)
 
     # ------------------------------------------------------------------
@@ -301,12 +302,19 @@ class StreamManager(QObject):
     def _tick(self) -> None:
         if self._server is None:
             return
+        import time as _time
+        now = _time.monotonic()
         snap = self._reader.get()
         in_garage = self._hide_in_garage and snap.player_in_garage
         for key in list(self._enabled):
             widget = self._widgets.get(key)
             if widget is None:
                 continue
+            # Per-widget rate throttling: respect stream_hz attribute (default 30)
+            hz = getattr(widget, "stream_hz", 30)
+            if now - self._last_render.get(key, 0.0) < 1.0 / hz:
+                continue
+            self._last_render[key] = now
             if in_garage:
                 if self._placeholder:
                     self._server.set_frame(key, self._placeholder)
