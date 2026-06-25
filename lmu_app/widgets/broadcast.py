@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QSizePolicy, QWidget
 from lmu_app.api.reader import LMUSnapshot
 from lmu_app.utils.class_colors import class_abbrev, class_color
 from lmu_app.utils.logos import get_logo as _get_logo
+from lmu_app.utils.compounds import draw_compound_badge as _draw_compound_badge
 from lmu_app.utils.theme import T, accent_hairline, border_pen, label_font, num_font, panel_brush, text_font
 
 
@@ -56,62 +57,6 @@ def _ve_label(abbrev: str) -> str:
 
 # ---------------------------------------------------------------------------
 # Compound badge helpers
-# ---------------------------------------------------------------------------
-
-_COMP_COLORS: dict[str, tuple[str, str]] = {
-    "S": ("#CC2200", "#FFFFFF"),   # Soft  → rouge
-    "M": ("#F5C518", "#111111"),   # Medium → jaune
-    "H": ("#DDDDDD", "#111111"),   # Hard  → blanc
-    "W": ("#4488CC", "#FFFFFF"),   # Wet   → bleu
-}
-
-
-def _comp_letter(name: str) -> str:
-    n = name.strip().upper()
-    if "SOFT" in n:  return "S"
-    if "MED"  in n:  return "M"
-    if "HARD" in n:  return "H"
-    if "WET"  in n or "INTER" in n: return "W"
-    return n[:1] if n else ""
-
-
-def _draw_compound_badge(p: QPainter, cx: int, cy: int, comps: list[str], r: int = 11) -> None:
-    """Badge compound centré en (cx, cy). r=rayon du cercle unique."""
-    letters = [_comp_letter(c) for c in comps]
-    valid   = [l for l in letters if l]
-    if not valid:
-        return
-    all_same = len(set(valid)) == 1
-
-    p.setPen(Qt.PenStyle.NoPen)
-    if all_same:
-        L = valid[0]
-        bg, fg = _COMP_COLORS.get(L, ("#777777", "#FFFFFF"))
-        p.setBrush(QColor(bg))
-        p.drawEllipse(cx - r, cy - r, 2 * r, 2 * r)
-        p.setFont(label_font(8))
-        p.setPen(QColor(fg))
-        p.drawText(cx - r, cy - r, 2 * r, 2 * r, Qt.AlignmentFlag.AlignCenter, L)
-    else:
-        dot = max(6, r - 2)
-        gap = 2
-        # Centre la grille 2×2 autour de (cx, cy)
-        ox = cx - dot - gap // 2
-        oy = cy - dot - gap // 2
-        positions = [
-            (ox,             oy),
-            (ox + dot + gap, oy),
-            (ox,             oy + dot + gap),
-            (ox + dot + gap, oy + dot + gap),
-        ]
-        for i, (px_, py_) in enumerate(positions):
-            L = letters[i] if i < len(letters) else ""
-            bg, _ = _COMP_COLORS.get(L, ("#AAAAAA", "#FFFFFF"))
-            p.setBrush(QColor(bg))
-            p.setPen(Qt.PenStyle.NoPen)
-            p.drawEllipse(QRectF(px_, py_, dot, dot))
-
-
 def _name_short(raw: str) -> str:
     """'Firstname Lastname' → 'F. LASTNAME'"""
     if not raw:
@@ -189,6 +134,7 @@ class BroadcastState:
 class _BcWidget(QWidget):
     WIDGET_NAME:   str  = ""
     CONFIG_SCHEMA: list = []
+    stream_hz:     int  = 20   # broadcast overlays don't need high refresh
 
     def __init__(self) -> None:
         super().__init__(None)
@@ -238,7 +184,7 @@ _TW_FULL_TEAM = _TW_TEAM + _TBDG_GAP + _TBDG_W
 
 _TBDG_COLS = {"PIT": "#B05010", "GAR": "#484848", "DNF": "#880000", "DQ": "#660066"}
 
-_COL_LABELS      = ("GAP", "INT", "VE", "POS")
+_COL_LABELS      = ("GAP", "Interval", "VE", "Pos +/-")
 _COL_CYCLE_S     = 6.0    # seconds per column mode
 _LAP_FLASH_S     = 5.0    # seconds to show new lap time
 _PARADE_INTERVAL = 20.0   # seconds between parades
@@ -371,6 +317,12 @@ class BroadcastTower(_BcWidget):
             for cls in by_class:
                 by_class[cls].sort(key=_sort_place)  # position réelle, garage inclus
 
+            if is_race and not self._start_pos:
+                for cls_name in sorted(by_class, key=_class_rank):
+                    for i, v in enumerate(by_class[cls_name]):
+                        if not v.in_garage:
+                            self._start_pos[v.slot_id] = i + 1
+
             for cls_name in sorted(by_class, key=_class_rank):
                 vlist = by_class[cls_name]
                 if not vlist:
@@ -383,7 +335,7 @@ class BroadcastTower(_BcWidget):
                                 "ve_label": _ve_label(ab)})
                 for i, v in enumerate(vlist[:n]):
                     prev_v = vlist[i - 1] if i else None
-                    entries.append(self._row(v, prev_v, i + 1, is_race, leader))
+                    entries.append(self._row(v, prev_v, i + 1, is_race, leader, cls_pos=i + 1))
 
         else:  # ── Overall (0) or Class filter (2) ─────────────────────────
             if mode == 2:
@@ -417,10 +369,18 @@ class BroadcastTower(_BcWidget):
             def _pos(v_item: object, idx: int) -> int:
                 return (idx + 1) if mode == 2 else v_item.place
 
+            # Class rank for every vehicle (used for Pos +/- column, always per class)
+            _cls_ctr: dict[str, int] = defaultdict(int)
+            _cls_pos_map: dict[int, int] = {}
+            for _v in all_v:
+                if not _v.in_garage:
+                    _cls_ctr[_v.vehicle_class] += 1
+                    _cls_pos_map[_v.slot_id] = _cls_ctr[_v.vehicle_class]
+
             if is_race and not self._start_pos:
-                for i, v in enumerate(all_v):
-                    if not v.in_garage:
-                        self._start_pos[v.slot_id] = _pos(v, i)
+                for v in all_v:
+                    if not v.in_garage and v.slot_id in _cls_pos_map:
+                        self._start_pos[v.slot_id] = _cls_pos_map[v.slot_id]
 
             active_v = [v for v in all_v if not v.in_garage and v.finish_status not in (2, 3, 4)]
             leader   = active_v[0] if active_v else (all_v[0] if all_v else None)
@@ -451,7 +411,8 @@ class BroadcastTower(_BcWidget):
             # Fixed section (top)
             for i, v in enumerate(all_v[:fixed_count]):
                 prev_v = all_v[i - 1] if i else None
-                entries.append(self._row(v, prev_v, _pos(v, i), is_race, leader))
+                entries.append(self._row(v, prev_v, _pos(v, i), is_race, leader,
+                                         cls_pos=_cls_pos_map.get(v.slot_id, 0)))
 
             # Separator
             if fixed_count > 0 and mobile_pool:
@@ -463,7 +424,8 @@ class BroadcastTower(_BcWidget):
             for j, v in enumerate(mobile_window):
                 abs_i  = fixed_count + offset + j
                 prev_v = all_v[abs_i - 1] if abs_i > 0 else None
-                entries.append(self._row(v, prev_v, _pos(v, abs_i), is_race, leader))
+                entries.append(self._row(v, prev_v, _pos(v, abs_i), is_race, leader,
+                                         cls_pos=_cls_pos_map.get(v.slot_id, 0)))
 
         tw      = _TW_TEAM if self._state.show_team else _TW_DRV
         tw_full = tw + _TBDG_GAP + _TBDG_W
@@ -477,7 +439,7 @@ class BroadcastTower(_BcWidget):
         self.setFixedSize(tw_full, max(h, _TSEH + 8))
         self.update()
 
-    def _row(self, v, prev, pos: int, is_race: bool, leader) -> dict:
+    def _row(self, v, prev, pos: int, is_race: bool, leader, cls_pos: int = 0) -> dict:
         # Status badge
         fs = v.finish_status
         if fs == 2:
@@ -500,7 +462,8 @@ class BroadcastTower(_BcWidget):
             gap  = (v.best_lap - lb)  if (v.best_lap > 0 and lb  > 0) else -1.0
             intv = (v.best_lap - pb)  if (v.best_lap > 0 and pb  > 0) else -1.0
 
-        start = self._start_pos.get(v.slot_id, pos)
+        cp    = cls_pos if cls_pos > 0 else pos   # class position for POS gained/lost
+        start = self._start_pos.get(v.slot_id, cp)
 
         # Info column — only truly out drivers (DNF/DQ) are fully blanked
         inactive = status in ("DNF", "DQ")
@@ -513,20 +476,24 @@ class BroadcastTower(_BcWidget):
             col_mode = self._col_mode
             if col_mode == 0:   # GAP
                 if pos == 1:
-                    if not is_race and v.best_lap > 0:
+                    if is_race:
+                        info_txt, info_col = "LEADER", T.DIM
+                    elif v.best_lap > 0:
                         info_txt, info_col = _fmt_lap(v.best_lap, 3), T.TEXT
                     else:
-                        info_txt, info_col = "", T.DIM
+                        info_txt, info_col = "—", T.DIM
                 elif gap > 0:
                     info_txt, info_col = f"+{gap:.3f}", T.TEXT
                 else:
                     info_txt, info_col = "—", T.DIM
             elif col_mode == 1:  # INT
                 if pos == 1:
-                    if not is_race and v.best_lap > 0:
+                    if is_race:
+                        info_txt, info_col = "LEADER", T.DIM
+                    elif v.best_lap > 0:
                         info_txt, info_col = _fmt_lap(v.best_lap, 3), T.TEXT
                     else:
-                        info_txt, info_col = "", T.DIM
+                        info_txt, info_col = "—", T.DIM
                 elif intv > 0:
                     info_txt, info_col = f"+{intv:.3f}", T.TEXT
                 else:
@@ -542,8 +509,8 @@ class BroadcastTower(_BcWidget):
                     info_txt = f"{fuel:.0f}L"
                 else:
                     info_txt, info_col = "—", T.DIM
-            else:                # POS gained/lost
-                d = start - pos
+            else:                # POS gained/lost (class-relative)
+                d = start - cp
                 if is_race and d > 0:
                     info_txt, info_col = f"▲{d}", T.GOOD
                 elif is_race and d < 0:
@@ -573,6 +540,7 @@ class BroadcastTower(_BcWidget):
         tnme_w = _TNME_W_TEAM if self._state.show_team else _TNME_W_DRV
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         self._panel(p, W, H)        # panel drawn at panel width only
 
         # Session bar background
@@ -633,12 +601,12 @@ class BroadcastTower(_BcWidget):
                 p.setPen(QColor(T.TEXT))
                 p.drawText(4, y + 1, bw, _TCLSH - 2, Qt.AlignmentFlag.AlignCenter, ab)
                 # Column label on the same row, in the info column area
-                info_x = 4 + _TPOS_W + _TNUM_W + tnme_w
+                info_x = W - 4 - _TINFO_W
                 col_label = (e.get("ve_label", "VE") if self._col_mode == 2
                              else _COL_LABELS[self._col_mode])
                 p.setFont(label_font(7))
                 p.setPen(QColor(T.DIM))
-                p.drawText(info_x, y, _TINFO_W - 6, _TCLSH,
+                p.drawText(info_x, y, _TINFO_W - 2, _TCLSH,
                            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
                            col_label)
                 y += _TCLSH
@@ -754,7 +722,9 @@ class BroadcastBattle(_BcWidget):
         self._state     = state
         self._driver_a: dict | None = None
         self._driver_b: dict | None = None
-        self._gap_s     = -1.0
+        self._gap_s        = -1.0   # live gap (updated every tick)
+        self._gap_display  = -1.0   # displayed gap (refreshed every 2 s)
+        self._gap_last_ts  = 0.0
         self._is_race   = False
         self.setFixedSize(_BW, _BH)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
@@ -777,7 +747,7 @@ class BroadcastBattle(_BcWidget):
                     if v.vehicle_class == va.vehicle_class
                     and v.slot_id != va.slot_id
                     and not v.in_garage
-                    and (not is_race or v.total_laps == va.total_laps)]
+                    and (not is_race or abs(v.total_laps - va.total_laps) <= 1)]
             vb = min(same, key=lambda v: abs(v.place - va.place)) if same else None
 
         def _cls_pos(car) -> int:
@@ -801,8 +771,8 @@ class BroadcastBattle(_BcWidget):
             if ll <= 0 or bl <= 0:
                 return T.DIM
             sb = cls_ses_best.get(v.vehicle_class, float('inf'))
-            if ll <= bl + 0.002:   # personal best
-                return T.PURPLE if bl <= sb + 0.002 else T.GOOD
+            if ll < bl:
+                return T.PURPLE if bl <= sb else T.GOOD
             return T.WARN
 
         def _d(v) -> dict:
@@ -820,7 +790,7 @@ class BroadcastBattle(_BcWidget):
                 "last":         v.last_lap,
                 "last_col":     _last_col(v),
                 "best":         bl,
-                "best_is_ses":  bl > 0 and bl <= sb + 0.002,
+                "best_is_ses":  bl > 0 and bl <= sb,
                 "compounds":    v.compounds,
             }
 
@@ -838,9 +808,15 @@ class BroadcastBattle(_BcWidget):
                 self._gap_s = abs(va.best_lap - vb.best_lap)
             else:
                 self._gap_s = -1.0
+            now = _time.monotonic()
+            if now - self._gap_last_ts >= 2.0:
+                self._gap_display = self._gap_s
+                self._gap_last_ts = now
         else:
             self._driver_a = None
             self._driver_b = None
+            self._gap_display = -1.0
+            self._gap_last_ts = 0.0
         self.update()
 
     def paintEvent(self, _) -> None:
@@ -849,6 +825,7 @@ class BroadcastBattle(_BcWidget):
         W, H = _BW, _BH
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         self._panel(p, W, H)
 
         # Vertical separator lines bounding the center gap area
@@ -857,9 +834,9 @@ class BroadcastBattle(_BcWidget):
         p.fillRect(QRectF(cx0, 10, 1, H - 20), T.FAINT)
         p.fillRect(QRectF(cx1, 10, 1, H - 20), T.FAINT)
 
-        # Center gap label + value
-        if self._gap_s >= 0:
-            gap_txt = f"+{self._gap_s:.3f}"
+        # Center gap label + value (refreshed every 2 s to avoid visual noise)
+        if self._gap_display >= 0:
+            gap_txt = f"+{self._gap_display:.3f}"
         else:
             gap_txt = "—"
         p.setFont(label_font(7)); p.setPen(QColor(T.DIM))
@@ -992,6 +969,16 @@ class BroadcastDriverCard(_BcWidget):
             )
             idx = next((i for i, vh in enumerate(same_class) if vh.slot_id == v.slot_id), None)
             cls_pos = (idx + 1) if idx is not None else v.place
+
+            ses_best = min((vh.best_lap for vh in same_class if vh.best_lap > 0), default=float('inf'))
+            ll, bl = v.last_lap, v.best_lap
+            if ll <= 0:
+                last_col = T.DIM
+            elif bl > 0 and ll < bl:
+                last_col = T.PURPLE if bl <= ses_best else T.GOOD
+            else:
+                last_col = T.TEXT
+
             self._driver = {
                 "pos":          cls_pos,
                 "car_num":      v.car_number,
@@ -1002,8 +989,10 @@ class BroadcastDriverCard(_BcWidget):
                                     self._state.show_team,
                                 ),
                 "team":         v.team_name,
-                "last":         v.last_lap,
-                "best":         v.best_lap,
+                "last":         ll,
+                "last_col":     last_col,
+                "best":         bl,
+                "best_is_ses":  bl > 0 and bl <= ses_best,
                 "ve":           v.virtual_energy,
                 "fuel":         v.fuel,
                 "compounds":    v.compounds,
@@ -1019,6 +1008,7 @@ class BroadcastDriverCard(_BcWidget):
         driver = self._driver
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         self._panel(p, W, H)
 
         lbl_f = label_font(7)
@@ -1106,7 +1096,7 @@ class BroadcastDriverCard(_BcWidget):
         p.drawText(6, row2_y, 28, row2_h,
                    Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, "LAST")
         p.setFont(val_f)
-        p.setPen(QColor(T.DIM) if driver["last"] <= 0 else QColor(T.TEXT))
+        p.setPen(QColor(driver["last_col"]))
         p.drawText(34, row2_y, 84, row2_h,
                    Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, last_txt)
 
@@ -1115,7 +1105,7 @@ class BroadcastDriverCard(_BcWidget):
         p.drawText(126, row2_y, 28, row2_h,
                    Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, "BEST")
         p.setFont(val_f)
-        p.setPen(QColor(T.PURPLE) if driver["best"] > 0 else QColor(T.DIM))
+        p.setPen(QColor(T.PURPLE) if driver.get("best_is_ses") else QColor(T.TEXT) if driver["best"] > 0 else QColor(T.DIM))
         p.drawText(154, row2_y, 84, row2_h,
                    Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, best_txt)
 
@@ -1142,9 +1132,9 @@ def _sector_col(t: float, pb: float, ses_best: float) -> str | None:
     """
     if t <= 0:
         return None
-    if ses_best > 0 and t <= ses_best + 0.001:
+    if ses_best > 0 and t < ses_best:
         return T.PURPLE
-    if pb > 0 and t <= pb + 0.001:
+    if pb > 0 and t < pb:
         return T.GOOD
     return T.WARN
 
@@ -1156,6 +1146,9 @@ class BroadcastSectors(_BcWidget):
         super().__init__()
         self._state = state
         self._data: dict | None = None
+        self._tracked_slot: int  = -1
+        self._prev_in_lap:  bool = False   # True when driver is mid-lap (cur_s1 or cur_s2 ≥ 0)
+        self._blank_until:  float = 0.0    # monotonic deadline for the 10-s blank window
         self.setFixedSize(_QW, _QH)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
@@ -1177,6 +1170,21 @@ class BroadcastSectors(_BcWidget):
         )
         cls_pos = next((i + 1 for i, vh in enumerate(same_cls) if vh.slot_id == v.slot_id), v.place)
         leader = same_cls[0] if same_cls else v
+
+        # Detect lap completion: driver transitions from mid-lap to start of new lap
+        in_lap = v.cur_sector1 >= 0 or v.cur_sector2 >= 0
+        if v.slot_id != self._tracked_slot:
+            self._tracked_slot = v.slot_id
+            self._prev_in_lap  = in_lap
+            self._blank_until  = 0.0
+        else:
+            if self._prev_in_lap and not in_lap:
+                # Driver just crossed the finish line — blank starts 10 s from now
+                self._blank_until = _time.monotonic() + 10.0
+            elif in_lap:
+                # S1 crossed on new lap — cancel any pending blank
+                self._blank_until = 0.0
+            self._prev_in_lap = in_lap
 
         self._data = {
             "pos":          cls_pos,
@@ -1209,6 +1217,7 @@ class BroadcastSectors(_BcWidget):
         W, H = _QW, _QH
         p    = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         self._panel(p, W, H)
 
         # ── Top row: pos | logo | car# | name | best lap ─────────────────
@@ -1243,7 +1252,7 @@ class BroadcastSectors(_BcWidget):
         best_blk_w = 72
         _q_badge_space = 28   # 22px badge + 6px gap before BEST block
         ldr_lap = d["ldr_lap"]
-        is_ses_best = best_lap > 0 and ldr_lap > 0 and best_lap <= ldr_lap + 0.001
+        is_ses_best = best_lap > 0 and ldr_lap > 0 and best_lap <= ldr_lap
         p.setFont(num_font(10))
         p.setPen(QColor(T.PURPLE if is_ses_best else T.TEXT if best_lap > 0 else T.DIM))
         p.drawText(W - 6 - best_blk_w, top_y, best_blk_w, top_h,
@@ -1263,41 +1272,49 @@ class BroadcastSectors(_BcWidget):
         p.fillRect(QRectF(8, 50, W - 16, 1), T.FAINT)
 
         # ── Sector bars ──────────────────────────────────────────────────
-        # Determine which sectors are complete in the current lap
+        # Show last lap data for 10 s after crossing the line, then go blank.
+        # As soon as cur_s1 ≥ 0 (S1 crossed on new lap) the blank is lifted.
+        now = _time.monotonic()
+        _post_lap   = self._blank_until > 0.0 and d["cur_s1"] < 0 and d["cur_s2"] < 0
+        _show_blank = _post_lap and now >= self._blank_until  # ≥10 s after line
+
         cur_s1  = d["cur_s1"]
         cur_s2  = d["cur_s2"]
-        s1_done = cur_s1 >= 0   # crossed S1 line → S1 complete, now in S2 or S3
-        s2_done = cur_s2 >= 0   # crossed S2 line → in S3
+        s1_done = cur_s1 >= 0
+        s2_done = cur_s2 >= 0
 
-        # (time, personal_best, last_for_color, leader_ref, in_progress)
-        if s1_done:
-            sec1 = (cur_s1,       d["best_s1"], d["last_s1"], d["ldr_s1"], False)
-        else:
-            sec1 = (d["last_s1"], d["best_s1"], -1.0,         d["ldr_s1"], False)
+        # (cumulative_t, personal_best, leader_ref, in_progress, display_t)
+        # cumulative_t / leader_ref are used for the delta gap (always cumulative).
+        # display_t is the pure sector split shown inside the bar.
+        ls1 = d["last_s1"]; ls2 = d["last_s2"]; llap = d["last_lap"]
+        s2_split_cur  = (cur_s2  - cur_s1)  if (s2_done  and cur_s1  > 0) else -1.0
+        s2_split_last = (ls2     - ls1)      if (ls2 > 0  and ls1     > 0) else -1.0
+        s3_split_last = (llap    - ls2)      if (llap > 0 and ls2     > 0) else -1.0
 
-        if s2_done:
-            sec2 = (cur_s2,       d["best_s2"], d["last_s2"], d["ldr_s2"], False)
+        if _show_blank:
+            sec1 = (-1.0, d["best_s1"],  d["ldr_s1"],  False, -1.0)
+            sec2 = (-1.0, d["best_s2"],  d["ldr_s2"],  False, -1.0)
+            sec3 = (-1.0, d["best_lap"], d["ldr_lap"], False, -1.0)
         elif s1_done:
-            sec2 = (-1.0,         d["best_s2"], d["last_s2"], d["ldr_s2"], True)
+            sec1 = (cur_s1, d["best_s1"],  d["ldr_s1"],  False, cur_s1)
+            sec2 = (cur_s2, d["best_s2"],  d["ldr_s2"],  False, s2_split_cur) if s2_done else (-1.0, d["best_s2"],  d["ldr_s2"],  True, -1.0)
+            sec3 = (-1.0,   d["best_lap"], d["ldr_lap"], True,  -1.0)
         else:
-            sec2 = (d["last_s2"], d["best_s2"], -1.0,         d["ldr_s2"], False)
+            sec1 = (ls1,  d["best_s1"],  d["ldr_s1"],  False, ls1)
+            sec2 = (ls2,  d["best_s2"],  d["ldr_s2"],  False, s2_split_last)
+            sec3 = (llap, d["best_lap"], d["ldr_lap"], False, s3_split_last)
 
-        if s1_done or s2_done:
-            sec3 = (-1.0,          d["best_lap"], d["last_lap"], d["ldr_lap"], True)
-        else:
-            sec3 = (d["last_lap"], d["best_lap"], -1.0,          d["ldr_lap"], False)
-
-        lbl_y   = 55
-        delta_y = 67
-        bar_y   = 84
-        bar_h   = 14
+        lbl_y   = 54
+        delta_y = 63
+        bar_y   = 77
+        bar_h   = 26
 
         x = 8
-        for label, (t, pb, la, ref, in_prog) in zip(("S1", "S2", "S3"), (sec1, sec2, sec3)):
+        for label, (t, pb, ref, in_prog, disp_t) in zip(("S1", "S2", "S3"), (sec1, sec2, sec3)):
             sw = _QSEC
 
             p.setFont(label_font(7)); p.setPen(QColor(T.DIM))
-            p.drawText(x, lbl_y, sw, 10, Qt.AlignmentFlag.AlignCenter, label)
+            p.drawText(x, lbl_y, sw, 8, Qt.AlignmentFlag.AlignCenter, label)
 
             if not in_prog and t > 0 and ref > 0:
                 delta = t - ref
@@ -1306,13 +1323,19 @@ class BroadcastSectors(_BcWidget):
             else:
                 delta_txt = "—"
                 delta_col = QColor(T.DIM)
-            p.setFont(num_font(9)); p.setPen(delta_col)
-            p.drawText(x, delta_y, sw, 14, Qt.AlignmentFlag.AlignCenter, delta_txt)
+            p.setFont(num_font(8)); p.setPen(delta_col)
+            p.drawText(x, delta_y, sw, 12, Qt.AlignmentFlag.AlignCenter, delta_txt)
 
             bar_col_str = None if in_prog else _sector_col(t, pb, ref)
             p.setBrush(QColor(bar_col_str) if bar_col_str else QColor(40, 40, 46))
             p.setPen(Qt.PenStyle.NoPen)
             p.drawRoundedRect(x + 2, bar_y, sw - 4, bar_h, 3, 3)
+
+            if not in_prog and disp_t > 0:
+                txt_col = "#111111" if bar_col_str == T.WARN else T.TEXT
+                p.setFont(num_font(9)); p.setPen(QColor(txt_col))
+                p.drawText(x + 2, bar_y, sw - 4, bar_h,
+                           Qt.AlignmentFlag.AlignCenter, _fmt_lap(disp_t, 3))
 
             x += sw
 

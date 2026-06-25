@@ -4,6 +4,37 @@ All notable changes to LMU App are documented here.
 
 ---
 
+## [0.6.8] — Broadcast polish & lap time color fixes
+
+### Broadcast Tower
+- **P1 row** now shows best lap time (practice/quali) or "LEADER" (race) in the GAP and Interval columns
+- Column header labels now align correctly with the data column (was offset by the logo column width)
+- POS +/- column is now per-class in Overall mode (was overall position delta)
+- Column headers renamed: "Interval" (was "INT"), "Pos +/-" (was "POS")
+
+### Broadcast Battle
+- Gap display is now refreshed every 2 s to avoid visual noise
+- Rival filter now tolerates ±1 lap difference (prevents card disappearing when crossing the finish line)
+
+### Broadcast Driver Card
+- Last lap time is now colored purple/green when improved, white otherwise (was always white)
+
+### Broadcast Sectors
+- Sector bars thickened to 26 px; sector time displayed inside the bar
+- After crossing the finish line, sector data stays visible for 10 s then goes blank
+
+### Lap time color convention — all overlays
+- **Strict `<` comparison everywhere** — equal times are no longer considered an improvement (no more `+0.001` / `+0.002` tolerance)
+- Rule: `last < personal_best` → green; if also `personal_best ≤ class_session_best` → purple
+- Same logic applied to sectors: `t < personal_sector_best` → green; `t < class_sector_best` → purple
+- Applied across `broadcast.py`, `live_timing.py`, `standings.py`, `delta.py`
+- No improvement → yellow in broadcast overlays and live timing; white in standings and delta
+
+### Refresh rate
+- All broadcast overlays reduced to 20 Hz (was higher)
+
+---
+
 ## [0.6.7] — Compound badges & sector color fixes
 
 ### Broadcast overlays — compound badges

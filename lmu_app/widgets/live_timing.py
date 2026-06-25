@@ -199,10 +199,8 @@ def _last_lap_color(last_lap: float, best_lap: float, cls_ses_best: float) -> QC
         return None
     if best_lap <= 0:
         return QColor(T.WARN)
-    if last_lap <= best_lap + 0.002:
-        if best_lap <= cls_ses_best + 0.002:
-            return QColor(T.PURPLE)
-        return QColor(T.GOOD)
+    if last_lap < best_lap:
+        return QColor(T.PURPLE if best_lap <= cls_ses_best else T.GOOD)
     return QColor(T.WARN)
 
 
@@ -216,9 +214,9 @@ def _sector_color(t: float, personal_best: float, cls_best: float) -> QColor | N
     """purple=class best, green=personal best, yellow=no improvement."""
     if t <= 0:
         return None
-    if cls_best > 0 and t <= cls_best + 0.001:
+    if cls_best > 0 and t < cls_best:
         return QColor(T.PURPLE)
-    if personal_best > 0 and t <= personal_best + 0.001:
+    if personal_best > 0 and t < personal_best:
         return QColor(T.GOOD)
     return QColor(T.WARN)
 

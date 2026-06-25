@@ -121,11 +121,9 @@ class DeltaWidget(BaseWidget):
             p.drawText(QRectF(_PAD, y, lbl_w, _ROW_H),
                        Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, "LAST")
             if self._last_lap <= 0:
-                last_col = QColor(T.TEXT)
-            elif self._cls_ses_best > 0 and abs(self._last_lap - self._cls_ses_best) < 0.002:
-                last_col = QColor(T.PURPLE)
-            elif self._best_lap > 0 and abs(self._last_lap - self._best_lap) < 0.002:
-                last_col = QColor(T.GOOD)
+                last_col = QColor(T.DIM)
+            elif self._best_lap > 0 and self._last_lap < self._best_lap:
+                last_col = QColor(T.PURPLE if self._cls_ses_best > 0 and self._best_lap <= self._cls_ses_best else T.GOOD)
             else:
                 last_col = QColor(T.TEXT)
             p.setFont(num_font(9))

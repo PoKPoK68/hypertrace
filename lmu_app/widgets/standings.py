@@ -15,6 +15,7 @@ from PySide6.QtWidgets import QSizePolicy
 
 from lmu_app.api.reader import DataReader, LMUSnapshot
 from lmu_app.utils.class_colors import class_abbrev, class_color
+from lmu_app.utils.compounds import draw_compound_badge as _draw_compound_badge
 from lmu_app.utils.logos import get_logo as _get_logo
 from lmu_app.utils.theme import T, label_font, num_font, text_font
 from lmu_app.widgets.base import BaseWidget, DEFAULT_SCALE
@@ -63,6 +64,7 @@ COLUMN_DEFS = {
     "pos":      ("",      24,          Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter),
     "logo":     ("",      _LOGO_COL_W, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter),
     "name":     ("",      -1,          Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
+    "compound": ("",      26,          Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter),
     "gap":      ("GAP",   52,          Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
     "interval": ("INT",   52,          Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
     "best":     ("BEST",  62,          Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
@@ -222,6 +224,7 @@ class StandingsWidget(BaseWidget):
         {"key": "last_decimals",     "label": "Decimals",      "type": "int",
          "min": 0, "max": 3, "step": 1, "default": 3, "show_if": "show_last_col"},
         {"key": "show_fuel_ve_col",  "label": "VE / Fuel",     "type": "bool", "default": False},
+        {"key": "show_compound_col", "label": "Tire compound",  "type": "bool", "default": True},
         {"type": "separator", "label": "Badges"},
         {"key": "show_lap_badge",  "label": "Pitted lap",  "type": "bool", "default": True},
         {"key": "show_out_badge",  "label": "Out lap",      "type": "bool", "default": True},
@@ -232,6 +235,7 @@ class StandingsWidget(BaseWidget):
              {"value": "pos",      "label": "Position"},
              {"value": "logo",     "label": "Brand logo"},
              {"value": "name",     "label": "Name"},
+             {"value": "compound", "label": "Tire compound"},
              {"value": "gap",      "label": "Gap to leader"},
              {"value": "interval", "label": "Interval"},
              {"value": "best",     "label": "Best lap"},
@@ -239,13 +243,14 @@ class StandingsWidget(BaseWidget):
              {"value": "fuel_ve",  "label": "VE / Fuel"},
          ],
          "show_keys": {
+             "compound": "show_compound_col",
              "gap":      "show_gap_col",
              "interval": "show_interval_col",
              "best":     "show_best_col",
              "last":     "show_last_col",
              "fuel_ve":  "show_fuel_ve_col",
          },
-         "default": ["pos", "logo", "name", "gap", "interval", "best", "last", "fuel_ve"]},
+         "default": ["pos", "logo", "name", "compound", "gap", "interval", "best", "last", "fuel_ve"]},
     ]
 
     def __init__(self, reader: DataReader,
@@ -259,12 +264,13 @@ class StandingsWidget(BaseWidget):
                  show_other_classes: bool = False, other_classes_top_n: int = 3,
                  show_gap_col: bool = True, show_interval_col: bool = True,
                  show_best_col: bool = True, show_last_col: bool = True,
-                 show_fuel_ve_col: bool = False,
+                 show_fuel_ve_col: bool = False, show_compound_col: bool = True,
                  font_size: int = 9,
                  best_decimals: int = 3, last_decimals: int = 3,
                  **kw):
         _show_map = {
             "pos": True, "logo": True, "name": True,
+            "compound": show_compound_col,
             "gap": show_gap_col, "interval": show_interval_col,
             "best": show_best_col, "last": show_last_col, "fuel_ve": show_fuel_ve_col,
         }
@@ -329,7 +335,7 @@ class StandingsWidget(BaseWidget):
             "interval": fm.horizontalAdvance(_gap_ref(self._interval_decimals)) + 2 * _CP,
             "best":     fm.horizontalAdvance(_lap_ref(self._best_decimals))     + 2 * _CP,
             "last":     fm.horizontalAdvance(_lap_ref(self._last_decimals))     + 2 * _CP,
-            "fuel_ve":  fm.horizontalAdvance("100%")                            + 2 * _CP,
+            "fuel_ve":  fm.horizontalAdvance("100%")                            + 2 * _CP + 4,
         }
 
     def setup_ui(self):
@@ -375,6 +381,7 @@ class StandingsWidget(BaseWidget):
             "pos":      True,
             "logo":     True,
             "name":     True,
+            "compound": bool(params.get("show_compound_col", True)),
             "gap":      bool(params.get("show_gap_col",      True)),
             "interval": bool(params.get("show_interval_col", True)),
             "best":     bool(params.get("show_best_col",     True)),
@@ -570,14 +577,15 @@ class StandingsWidget(BaseWidget):
             "laps_behind":           laps_behind,
             "interval_laps":         interval_laps,
             "is_player":             v.is_player,
-            "is_best":               v.best_lap > 0 and abs(v.best_lap - self._best_by_class.get(v.vehicle_class, 9999.0)) < 0.001,
-            "is_last_session_best":  v.last_lap > 0 and abs(v.last_lap - self._best_by_class.get(v.vehicle_class, 9999.0)) < 0.001,
-            "is_last_personal_best": v.last_lap > 0 and v.best_lap > 0 and abs(v.last_lap - v.best_lap) < 0.01,
+            "is_best":               v.best_lap > 0 and v.best_lap <= self._best_by_class.get(v.vehicle_class, 9999.0),
+            "is_last_session_best":  v.last_lap > 0 and v.best_lap > 0 and v.last_lap < v.best_lap and v.best_lap <= self._best_by_class.get(v.vehicle_class, 9999.0),
+            "is_last_personal_best": v.last_lap > 0 and v.best_lap > 0 and v.last_lap < v.best_lap,
             "is_race":               is_race,
             "is_outlap":             slot in self._outlap_tracking,
             "badge":                 badge,
             "virtual_energy":        v.virtual_energy,
             "fuel":                  v.fuel,
+            "compounds":             v.compounds,
         }
 
     # ------------------------------------------------------------------
@@ -585,6 +593,7 @@ class StandingsWidget(BaseWidget):
     def paintEvent(self, _):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         p.scale(self._scale, self._scale)
         ncw  = self._max_name_chars * _char_px(self._font_size)
         W    = _total_w(self.columns, ncw, self._font_size, self._dw)
@@ -758,6 +767,13 @@ class StandingsWidget(BaseWidget):
                         p.setFont(num_font(fss)); p.setPen(fg_c)
                         p.drawText(bx2, by2, bdg, rh - 6, Qt.AlignmentFlag.AlignCenter, raw_badge)
 
+                elif col == "compound":
+                    _draw_compound_badge(p,
+                                         x + cw / 2,
+                                         y + rh / 2,
+                                         e.get("compounds", []),
+                                         r=max(5, rh // 2 - 2))
+
                 elif col == "best":
                     bc = (QColor(T.PURPLE) if e["is_best"]
                           else QColor(T.TEXT))
@@ -776,7 +792,7 @@ class StandingsWidget(BaseWidget):
                         txt = ""
                     elif e["laps_behind"] > 0:
                         txt = f"+{e['laps_behind']}L"
-                    elif e["is_outlap"] and not e["is_race"]:
+                    elif e["is_outlap"] and not e["is_race"] and e["gap"] < 0:
                         txt = "-"
                     else:
                         txt = _fmt_gap(e["gap"], e["is_race"], self._gap_decimals)
@@ -789,7 +805,7 @@ class StandingsWidget(BaseWidget):
                         txt = ""
                     elif e["interval_laps"] > 0:
                         txt = f"+{e['interval_laps']}L"
-                    elif e["is_outlap"] and not e["is_race"]:
+                    elif e["is_outlap"] and not e["is_race"] and e["interval"] < 0:
                         txt = "-"
                     else:
                         txt = _fmt_gap(e["interval"], e["is_race"], self._interval_decimals)
