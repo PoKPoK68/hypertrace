@@ -802,14 +802,14 @@ class StandingsWidget(BaseWidget):
                     fuel = e.get("fuel", 0.0)
                     if ve > 0.001:
                         vc = (QColor(T.CRIT) if ve < 0.10
-                              else QColor(T.WARN) if ve < 0.20
+                              else QColor(T.WARN) if ve < 0.25
                               else QColor(T.GOOD))
                         txt = f"{ve*100:.0f}%"
                     elif fuel > 0.01:
                         vc = (QColor(T.CRIT) if fuel < 10
-                              else QColor(T.WARN) if fuel < 20
+                              else QColor(T.WARN) if fuel < 25
                               else QColor(T.TEXT))
-                        txt = f"{fuel:.1f}L"
+                        txt = f"{fuel:.0f}L"
                     else:
                         txt, vc = "---", QColor(T.DIM)
                     p.setFont(num_font(fsd)); p.setPen(vc)

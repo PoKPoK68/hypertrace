@@ -4,6 +4,26 @@ All notable changes to LMU App are documented here.
 
 ---
 
+## [0.6.7] — Compound badges & sector color fixes
+
+### Broadcast overlays — compound badges
+- **Driver Card, Battle, Sectors**: tire compound badge added to each widget
+  - 4 identical compounds → large circle with letter (S / M / H / W) on colored background (red / yellow / grey / blue)
+  - Mixed compounds → 4 small colored dots (no letter), same footprint as the circle
+- Compound data sourced from `mWheels[i].mCompoundIndex` (shared memory, all vehicles) cross-referenced with the TireManagement REST endpoint polled every 30 s for the authoritative index→name mapping
+- **Driver Card, Battle, Sectors are mutually exclusive** — enabling one automatically disables the other two
+
+### Sector color convention (Broadcast Sectors)
+- **Purple**: session best in class (≤ leader's reference time)
+- **Green**: personal improvement (≤ own personal best)
+- **Yellow**: worse than personal best
+- Previously, green was shown when faster than the previous lap (not vs personal best) and all three bars turned yellow on lap completion
+
+### Live-timing standings
+- Sector color fix also applied to the "last lap" column: purple = session best, green = personal best, white otherwise
+
+---
+
 ## [0.6.6] — Overlay UX & settings polish
 
 ### Overlay positioning

@@ -369,6 +369,7 @@ class MainWindow(QWidget):
         self._bc_tower_toggle:   _OnOffBtn | None = None
         self._bc_battle_toggle:  _OnOffBtn | None = None
         self._bc_driver_toggle:  _OnOffBtn | None = None
+        self._bc_sectors_toggle: _OnOffBtn | None = None
         self._bc_count_ovr_spin: QSpinBox  | None = None
         self._bc_count_mc_spin:  QSpinBox  | None = None
         self._bc_count_cls_spin: QSpinBox  | None = None
@@ -1283,6 +1284,14 @@ QCheckBox::indicator:checked {{
         driver_tog.toggled.connect(self._on_bc_driver_toggle)
         vl.addWidget(driver_hdr)
 
+        vl.addWidget(_sep())
+
+        # ── SECTORS (QUALIFYING) ────────────────────────────────────────
+        sectors_hdr, sectors_tog = _section("Sectors", "_bc_sectors_toggle",
+                                            self._config.bc_sectors_enabled)
+        sectors_tog.toggled.connect(self._on_bc_sectors_toggle)
+        vl.addWidget(sectors_hdr)
+
         vl.addStretch()
         self._refresh_bc_ui()
         return w
@@ -1315,22 +1324,37 @@ QCheckBox::indicator:checked {{
             self._stream_manager.set_widget_enabled("bc_tower", checked)
 
     def _on_bc_battle_toggle(self, checked: bool) -> None:
-        # Let the signal cascade naturally — _on_bc_driver_toggle(False) won't loop back
-        # because its "if checked and …" guard is False when called with checked=False.
-        if checked and self._bc_driver_toggle and self._bc_driver_toggle.isChecked():
-            self._bc_driver_toggle.setChecked(False)
+        if checked:
+            if self._bc_driver_toggle  and self._bc_driver_toggle.isChecked():
+                self._bc_driver_toggle.setChecked(False)
+            if self._bc_sectors_toggle and self._bc_sectors_toggle.isChecked():
+                self._bc_sectors_toggle.setChecked(False)
         self._config.bc_battle_enabled = checked
         self._config.save()
         if self._stream_manager:
             self._stream_manager.set_widget_enabled("bc_battle", checked)
 
     def _on_bc_driver_toggle(self, checked: bool) -> None:
-        if checked and self._bc_battle_toggle and self._bc_battle_toggle.isChecked():
-            self._bc_battle_toggle.setChecked(False)
+        if checked:
+            if self._bc_battle_toggle  and self._bc_battle_toggle.isChecked():
+                self._bc_battle_toggle.setChecked(False)
+            if self._bc_sectors_toggle and self._bc_sectors_toggle.isChecked():
+                self._bc_sectors_toggle.setChecked(False)
         self._config.bc_driver_enabled = checked
         self._config.save()
         if self._stream_manager:
             self._stream_manager.set_widget_enabled("bc_driver", checked)
+
+    def _on_bc_sectors_toggle(self, checked: bool) -> None:
+        if checked:
+            if self._bc_battle_toggle and self._bc_battle_toggle.isChecked():
+                self._bc_battle_toggle.setChecked(False)
+            if self._bc_driver_toggle  and self._bc_driver_toggle.isChecked():
+                self._bc_driver_toggle.setChecked(False)
+        self._config.bc_sectors_enabled = checked
+        self._config.save()
+        if self._stream_manager:
+            self._stream_manager.set_widget_enabled("bc_sectors", checked)
 
     def _on_bc_tower_mode(self, idx: int) -> None:
         if self._bc_tower_mode_btns:

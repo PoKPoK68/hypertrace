@@ -17,7 +17,7 @@ from lmu_app.widgets.weather import WeatherWidget
 from lmu_app.widgets.delta import DeltaWidget
 from lmu_app.stream.server import StreamManager
 from lmu_app.ui.main_window import MainWindow
-from lmu_app.widgets.broadcast import BroadcastBattle, BroadcastDriverCard, BroadcastState, BroadcastTower
+from lmu_app.widgets.broadcast import BroadcastBattle, BroadcastDriverCard, BroadcastSectors, BroadcastState, BroadcastTower
 
 
 _FONTS = [
@@ -94,7 +94,7 @@ def main() -> int:
     app.setStyle("Fusion")        # consistent rendering
     app.setPalette(_dark_palette())  # makes arrows/indicators visible on dark bg
     app.setApplicationName("LMU App")
-    app.setApplicationVersion("0.6.6")
+    app.setApplicationVersion("0.6.7")
     app.setQuitOnLastWindowClosed(False)
 
     config = AppConfig()
@@ -177,16 +177,19 @@ def main() -> int:
     bc_state.tower_filter_class     = config.bc_tower_filter_class
     bc_state.show_team              = config.bc_tower_show_team
 
-    bc_tower  = BroadcastTower(bc_state)
-    bc_battle = BroadcastBattle(bc_state)
-    bc_driver = BroadcastDriverCard(bc_state)
+    bc_tower   = BroadcastTower(bc_state)
+    bc_battle  = BroadcastBattle(bc_state)
+    bc_driver  = BroadcastDriverCard(bc_state)
+    bc_sectors = BroadcastSectors(bc_state)
 
-    stream_manager.add_widget("bc_tower",  bc_tower)
-    stream_manager.add_widget("bc_battle", bc_battle)
-    stream_manager.add_widget("bc_driver", bc_driver)
-    stream_manager.set_widget_enabled("bc_tower",  config.bc_tower_enabled)
-    stream_manager.set_widget_enabled("bc_battle", config.bc_battle_enabled)
-    stream_manager.set_widget_enabled("bc_driver", config.bc_driver_enabled)
+    stream_manager.add_widget("bc_tower",   bc_tower)
+    stream_manager.add_widget("bc_battle",  bc_battle)
+    stream_manager.add_widget("bc_driver",  bc_driver)
+    stream_manager.add_widget("bc_sectors", bc_sectors)
+    stream_manager.set_widget_enabled("bc_tower",   config.bc_tower_enabled)
+    stream_manager.set_widget_enabled("bc_battle",  config.bc_battle_enabled)
+    stream_manager.set_widget_enabled("bc_driver",  config.bc_driver_enabled)
+    stream_manager.set_widget_enabled("bc_sectors", config.bc_sectors_enabled)
 
     if config.stream_active:
         stream_manager.start(config.stream_port)

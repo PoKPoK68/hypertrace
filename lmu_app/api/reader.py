@@ -92,6 +92,7 @@ class VehicleScoringEntry:
     best_sector1: float    = -1.0   # bestSectorTime1 (personal best S1)
     best_sector2: float    = -1.0   # bestSectorTime2 cumulative (personal best S1+S2)
     best_lap_sector2: float = -1.0  # bestLapSectorTime2 (S1+S2 from best lap, for S3 calc)
+    compounds: list[str] = field(default_factory=lambda: ["", "", "", ""])  # [FL, FR, RL, RR] compound names
 
 
 @dataclass
@@ -160,6 +161,7 @@ class LMUReader(BaseReader):
         self._rest_lock  = threading.Lock()
         self._rest_focus: int = -1   # slotID from REST API; -1 = unknown
         self._rest_data: dict[int, dict] = {}   # slot_id → REST standings entry
+        self._compound_names: list[str] = []    # indexed by compound index (from TireManagement)
 
     def start(self):
         if self._running: return
@@ -182,10 +184,11 @@ class LMUReader(BaseReader):
         logger.info("LMUReader stopped")
 
     def _rest_loop(self):
-        """Poll REST API: focus at 5 Hz, standings at 3 Hz."""
+        """Poll REST API: focus at 5 Hz, standings at 3 Hz, TireManagement every 30 s."""
         import urllib.request as _ur
         import json as _json
         _last_st = 0.0
+        _last_ct = 0.0
         while self._running:
             now = time.monotonic()
             try:
@@ -203,6 +206,21 @@ class LMUReader(BaseReader):
                     with self._rest_lock:
                         self._rest_data = new_data
                         _last_st = now
+                except Exception:
+                    pass
+            if now - _last_ct >= 30.0:
+                try:
+                    url = f"{_REST_BASE}/rest/garage/UIScreen/TireManagement"
+                    with _ur.urlopen(url, timeout=2) as r:
+                        tm = _json.loads(r.read())
+                    clist = [
+                        c.get("type", "")
+                        for c in tm.get("expectedUsage", {}).get("compoundsWearPerLap", [])
+                    ]
+                    if clist:
+                        with self._rest_lock:
+                            self._compound_names = clist
+                        _last_ct = now
                 except Exception:
                     pass
             time.sleep(_REST_FOCUS_INTERVAL)
@@ -306,7 +324,8 @@ class LMUReader(BaseReader):
 
             # Merge REST standings data (car number, team, class gap)
             with self._rest_lock:
-                rest_snapshot = dict(self._rest_data)
+                rest_snapshot  = dict(self._rest_data)
+                compound_names = list(self._compound_names)
             for entry in s.vehicles:
                 rd = rest_snapshot.get(entry.slot_id)
                 if rd:
@@ -322,15 +341,36 @@ class LMUReader(BaseReader):
                     entry.best_sector2     = float(rd.get("bestSectorTime2", -1.0))
                     entry.best_lap_sector2 = float(rd.get("bestLapSectorTime2", -1.0))
 
-            # --- VE et fuel pour tous les véhicules depuis telemInfo ---
-            ve_by_id:    dict[int, float] = {}
-            fuel_by_id:  dict[int, float] = {}
-            model_by_id: dict[int, str]   = {}
+            # --- VE, fuel et compounds pour tous les véhicules depuis telemInfo ---
+            ve_by_id:       dict[int, float]      = {}
+            fuel_by_id:     dict[int, float]      = {}
+            model_by_id:    dict[int, str]        = {}
+            compound_by_id: dict[int, list[str]]  = {}
             try:
                 for i in range(min(telem.activeVehicles, 104)):
                     t = telem.telemInfo[i]
                     ve_by_id[t.mID]   = float(t.mVirtualEnergy)
                     fuel_by_id[t.mID] = float(t.mFuel)
+                    try:
+                        front_name = t.mFrontTireCompoundName.decode(errors="replace").rstrip("\x00")
+                        rear_name  = t.mRearTireCompoundName.decode(errors="replace").rstrip("\x00")
+                        comps = []
+                        for wi in range(4):
+                            idx = int(t.mWheels[wi].mCompoundIndex)
+                            # Primary: global compound list from TireManagement (most reliable)
+                            if compound_names and 0 <= idx < len(compound_names) and compound_names[idx]:
+                                comps.append(compound_names[idx])
+                            # Fallback: per-axle name from shared memory
+                            elif wi < 2 and front_name:
+                                comps.append(front_name)
+                            elif wi >= 2 and rear_name:
+                                comps.append(rear_name)
+                            else:
+                                comps.append(str(idx))
+                        if any(comps):
+                            compound_by_id[t.mID] = comps
+                    except (AttributeError, IndexError, TypeError):
+                        pass
                     try:
                         m = t.mVehicleModel.decode(errors="replace").rstrip("\x00")
                         if m:
@@ -342,6 +382,8 @@ class LMUReader(BaseReader):
             for entry in s.vehicles:
                 entry.virtual_energy = ve_by_id.get(entry.slot_id, 0.0)
                 entry.fuel           = fuel_by_id.get(entry.slot_id, 0.0)
+                if entry.slot_id in compound_by_id:
+                    entry.compounds = compound_by_id[entry.slot_id]
                 if entry.slot_id in model_by_id:
                     entry.vehicle_name = model_by_id[entry.slot_id]
 

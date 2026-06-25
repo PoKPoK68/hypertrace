@@ -47,6 +47,71 @@ def _fmt_name(raw: str, is_team: bool) -> str:
     return raw if is_team else _name_short(raw)
 
 
+_VE_ABBREVS = ("HYP", "GTP", "LMH", "GT3")
+
+def _ve_label(abbrev: str) -> str:
+    """'VE' for Hypercar/GTP/LMH classes, 'FUEL' for all others."""
+    return "VE" if any(k in abbrev.upper() for k in _VE_ABBREVS) else "FUEL"
+
+
+# ---------------------------------------------------------------------------
+# Compound badge helpers
+# ---------------------------------------------------------------------------
+
+_COMP_COLORS: dict[str, tuple[str, str]] = {
+    "S": ("#CC2200", "#FFFFFF"),   # Soft  → rouge
+    "M": ("#F5C518", "#111111"),   # Medium → jaune
+    "H": ("#DDDDDD", "#111111"),   # Hard  → blanc
+    "W": ("#4488CC", "#FFFFFF"),   # Wet   → bleu
+}
+
+
+def _comp_letter(name: str) -> str:
+    n = name.strip().upper()
+    if "SOFT" in n:  return "S"
+    if "MED"  in n:  return "M"
+    if "HARD" in n:  return "H"
+    if "WET"  in n or "INTER" in n: return "W"
+    return n[:1] if n else ""
+
+
+def _draw_compound_badge(p: QPainter, cx: int, cy: int, comps: list[str], r: int = 11) -> None:
+    """Badge compound centré en (cx, cy). r=rayon du cercle unique."""
+    letters = [_comp_letter(c) for c in comps]
+    valid   = [l for l in letters if l]
+    if not valid:
+        return
+    all_same = len(set(valid)) == 1
+
+    p.setPen(Qt.PenStyle.NoPen)
+    if all_same:
+        L = valid[0]
+        bg, fg = _COMP_COLORS.get(L, ("#777777", "#FFFFFF"))
+        p.setBrush(QColor(bg))
+        p.drawEllipse(cx - r, cy - r, 2 * r, 2 * r)
+        p.setFont(label_font(8))
+        p.setPen(QColor(fg))
+        p.drawText(cx - r, cy - r, 2 * r, 2 * r, Qt.AlignmentFlag.AlignCenter, L)
+    else:
+        dot = max(6, r - 2)
+        gap = 2
+        # Centre la grille 2×2 autour de (cx, cy)
+        ox = cx - dot - gap // 2
+        oy = cy - dot - gap // 2
+        positions = [
+            (ox,             oy),
+            (ox + dot + gap, oy),
+            (ox,             oy + dot + gap),
+            (ox + dot + gap, oy + dot + gap),
+        ]
+        for i, (px_, py_) in enumerate(positions):
+            L = letters[i] if i < len(letters) else ""
+            bg, _ = _COMP_COLORS.get(L, ("#AAAAAA", "#FFFFFF"))
+            p.setBrush(QColor(bg))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawEllipse(QRectF(px_, py_, dot, dot))
+
+
 def _name_short(raw: str) -> str:
     """'Firstname Lastname' → 'F. LASTNAME'"""
     if not raw:
@@ -311,9 +376,11 @@ class BroadcastTower(_BcWidget):
                 if not vlist:
                     continue
                 leader = vlist[0]
+                ab = class_abbrev(cls_name)
                 entries.append({"hdr": True,
-                                "abbrev":  class_abbrev(cls_name),
-                                "cls_col": class_color(cls_name, {})})
+                                "abbrev":   ab,
+                                "cls_col":  class_color(cls_name, {}),
+                                "ve_label": _ve_label(ab)})
                 for i, v in enumerate(vlist[:n]):
                     prev_v = vlist[i - 1] if i else None
                     entries.append(self._row(v, prev_v, i + 1, is_race, leader))
@@ -333,13 +400,15 @@ class BroadcastTower(_BcWidget):
                     pool       = [v for v in s.vehicles if v.vehicle_class == vcls]
                     hdr_abbrev = class_abbrev(vcls) or "?"
                     hdr_color  = class_color(vcls, {})
-                entries.append({"hdr": True, "abbrev": hdr_abbrev, "cls_col": hdr_color})
+                entries.append({"hdr": True, "abbrev": hdr_abbrev, "cls_col": hdr_color,
+                                "ve_label": _ve_label(hdr_abbrev)})
             else:
                 pool = list(s.vehicles)
                 entries.append({
-                    "hdr":     True,
-                    "abbrev":  "OVERALL",
-                    "cls_col": QColor(50, 55, 65),
+                    "hdr":      True,
+                    "abbrev":   "OVERALL",
+                    "cls_col":  QColor(50, 55, 65),
+                    "ve_label": "VE/F",
                 })
 
             all_v = sorted(pool, key=_sort_place)
@@ -464,9 +533,13 @@ class BroadcastTower(_BcWidget):
                     info_txt, info_col = "—", T.DIM
             elif col_mode == 2:  # VE / FUEL
                 if v.virtual_energy > 0.001:
-                    info_txt, info_col = f"{v.virtual_energy * 100:.0f}%", T.GOOD
+                    ve = v.virtual_energy
+                    info_col = (T.CRIT if ve < 0.10 else T.WARN if ve < 0.25 else T.GOOD)
+                    info_txt = f"{ve * 100:.0f}%"
                 elif v.fuel > 0.01:
-                    info_txt, info_col = f"{v.fuel:.0f}L", T.TEXT
+                    fuel = v.fuel
+                    info_col = (T.CRIT if fuel < 10 else T.WARN if fuel < 25 else T.TEXT)
+                    info_txt = f"{fuel:.0f}L"
                 else:
                     info_txt, info_col = "—", T.DIM
             else:                # POS gained/lost
@@ -561,19 +634,16 @@ class BroadcastTower(_BcWidget):
                 p.drawText(4, y + 1, bw, _TCLSH - 2, Qt.AlignmentFlag.AlignCenter, ab)
                 # Column label on the same row, in the info column area
                 info_x = 4 + _TPOS_W + _TNUM_W + tnme_w
+                col_label = (e.get("ve_label", "VE") if self._col_mode == 2
+                             else _COL_LABELS[self._col_mode])
                 p.setFont(label_font(7))
                 p.setPen(QColor(T.DIM))
                 p.drawText(info_x, y, _TINFO_W - 6, _TCLSH,
                            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
-                           _COL_LABELS[self._col_mode])
+                           col_label)
                 y += _TCLSH
                 continue
 
-            # Featured highlight (camera view)
-            if e["featured"]:
-                fc = QColor(T.ACCENT); fc.setAlpha(40)
-                p.setBrush(fc); p.setPen(Qt.PenStyle.NoPen)
-                p.drawRoundedRect(1, y, W - 2, _TRH, 3, 3)
 
             # Pinned indicator — thin accent strip on left edge
             if e.get("pinned"):
@@ -611,7 +681,7 @@ class BroadcastTower(_BcWidget):
 
             # Driver / team name (already formatted)
             p.setFont(text_font(10))
-            p.setPen(QColor(T.ACCENT) if e["featured"] else QColor(T.TEXT))
+            p.setPen(QColor(T.TEXT))
             p.drawText(x + 2, y, tnme_w - 2, _TRH,
                        Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
                        e["name"])
@@ -665,16 +735,15 @@ class BroadcastTower(_BcWidget):
 # Broadcast Battle Card
 # ---------------------------------------------------------------------------
 
-_BW = 400   # battle width
+_BW = 480   # battle width  (= _BLW + _BCW + _BRW)
 _BH = 82    # battle height
 
-_BLW  = 175  # left driver section
-_BCW  = 50   # center gap section
-_BRW  = 175  # right driver section (= _BW - _BLW - _BCW)
-
-_BPOS_W = 48  # position number column within each side
-_BNAME_W = _BLW - _BPOS_W  # remaining for name + last
-_BRPAD = 8   # right section x offset from center
+_BLW     = 205  # left driver section
+_BCW     = 70   # center gap section
+_BRW     = 205  # right driver section
+_BPOS_W  = 48   # position number column
+_BLOGO_W = 36   # manufacturer logo column (between pos and name)
+_BRPAD   = 8
 
 
 class BroadcastBattle(_BcWidget):
@@ -752,6 +821,7 @@ class BroadcastBattle(_BcWidget):
                 "last_col":     _last_col(v),
                 "best":         bl,
                 "best_is_ses":  bl > 0 and bl <= sb + 0.002,
+                "compounds":    v.compounds,
             }
 
         if va and vb:
@@ -762,8 +832,12 @@ class BroadcastBattle(_BcWidget):
                 left, right = va, vb
             self._driver_a = _d(left)
             self._driver_b = _d(right)
-            self._gap_s    = (abs(va.time_behind_leader - vb.time_behind_leader)
-                              if is_race else -1.0)
+            if is_race:
+                self._gap_s = abs(va.time_behind_leader - vb.time_behind_leader)
+            elif va.best_lap > 0 and vb.best_lap > 0:
+                self._gap_s = abs(va.best_lap - vb.best_lap)
+            else:
+                self._gap_s = -1.0
         else:
             self._driver_a = None
             self._driver_b = None
@@ -790,8 +864,13 @@ class BroadcastBattle(_BcWidget):
             gap_txt = "—"
         p.setFont(label_font(7)); p.setPen(QColor(T.DIM))
         p.drawText(cx0, 10, _BCW, 16, Qt.AlignmentFlag.AlignCenter, "GAP")
-        p.setFont(num_font(11)); p.setPen(QColor(T.ACCENT))
-        p.drawText(cx0, 28, _BCW, H - 38, Qt.AlignmentFlag.AlignCenter, gap_txt)
+        p.setFont(num_font(11 if len(gap_txt) <= 6 else 9)); p.setPen(QColor(T.ACCENT))
+        p.drawText(cx0, 26, _BCW, 22, Qt.AlignmentFlag.AlignCenter, gap_txt)
+
+        # Compound badges — left driver left, right driver right, bottom of gap column
+        _bdg_cy = H - 16
+        _draw_compound_badge(p, cx0 + _BCW // 4,     _bdg_cy, self._driver_a.get("compounds", []), r=10)
+        _draw_compound_badge(p, cx0 + 3 * _BCW // 4, _bdg_cy, self._driver_b.get("compounds", []), r=10)
 
         # Draw driver panels
         for dx, driver, align_right in (
@@ -802,41 +881,47 @@ class BroadcastBattle(_BcWidget):
             pc  = (QColor(T.P1) if pos == 1 else QColor(T.P2) if pos == 2
                    else QColor(T.P3) if pos == 3 else QColor(T.TEXT))
 
+            pos_align = Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter
             if align_right:
-                # Right side: name on left, position on right
-                name_x    = dx + 10
-                name_w    = _BRW - _BPOS_W - 10
-                pos_x     = dx + _BRW - _BPOS_W
-                pos_align = Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter
+                # Right side: name | logo | pos  (+8 px left gap from centre divider)
+                name_x      = dx + 8
+                name_w      = _BRW - _BPOS_W - _BLOGO_W - 12  # for last/best rows
+                name_full_w = name_w + _BLOGO_W + 4            # for name row: no logo reservation
+                logo_x      = dx + 8 + name_w + 4
+                pos_x       = dx + _BRW - _BPOS_W
             else:
-                # Left side: position on left, name on right
-                pos_x     = dx
-                name_x    = dx + _BPOS_W + 4
-                name_w    = _BLW - _BPOS_W - 12
-                pos_align = Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter
+                # Left side: pos | logo | name
+                pos_x       = dx
+                logo_x      = dx + _BPOS_W
+                name_x      = dx + _BPOS_W + _BLOGO_W + 4
+                name_w      = _BLW - _BPOS_W - _BLOGO_W - 8
+                name_full_w = name_w
 
             lbl_font = label_font(7)
             lap_font = num_font(10)
             la = Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
 
-            # Position number (large) + car number below + logo
+            # Position number (large) + car number below
             p.setFont(num_font(24)); p.setPen(pc)
             p.drawText(pos_x, 6, _BPOS_W, 38, pos_align, str(pos))
             num_txt = driver.get("car_num", "")
             if num_txt:
                 p.setFont(label_font(10)); p.setPen(QColor(T.DIM))
                 p.drawText(pos_x, 46, _BPOS_W, 14, pos_align, f"#{num_txt}")
-            logo = _get_logo(driver.get("vehicle_name", ""), 22, 14)
-            if logo:
-                lx = pos_x + (_BPOS_W - logo.width()) // 2
-                p.drawPixmap(lx, 63, logo)
 
-            # Driver name
+            # Manufacturer logo — below the name row so it doesn't clip the name text
+            logo = _get_logo(driver.get("vehicle_name", ""), 32, 26)
+            if logo:
+                lx = logo_x + (_BLOGO_W - logo.width()) // 2
+                ly = 36 + (_BH - 36 - 8 - logo.height()) // 2
+                p.drawPixmap(lx, ly, logo)
+
+            # Driver name — uses full_w so the logo column doesn't restrict it
             name_align = (Qt.AlignmentFlag.AlignVCenter |
                           (Qt.AlignmentFlag.AlignLeft if align_right
                            else Qt.AlignmentFlag.AlignRight))
             p.setFont(text_font(11)); p.setPen(QColor(T.TEXT))
-            p.drawText(name_x, 6, name_w, 26, name_align, driver["name"])
+            p.drawText(name_x, 6, name_full_w, 26, name_align, driver["name"])
 
             # Last lap (coloured)
             last_txt = _fmt_lap(driver["last"], 3)
@@ -921,6 +1006,7 @@ class BroadcastDriverCard(_BcWidget):
                 "best":         v.best_lap,
                 "ve":           v.virtual_energy,
                 "fuel":         v.fuel,
+                "compounds":    v.compounds,
             }
         else:
             self._driver = None
@@ -1032,5 +1118,202 @@ class BroadcastDriverCard(_BcWidget):
         p.setPen(QColor(T.PURPLE) if driver["best"] > 0 else QColor(T.DIM))
         p.drawText(154, row2_y, 84, row2_h,
                    Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, best_txt)
+
+        # Compound badge — far right of row 2
+        _draw_compound_badge(p, W - 17, row2_y + row2_h // 2, driver.get("compounds", []))
+
+        p.end()
+
+
+# ---------------------------------------------------------------------------
+# Broadcast Sectors (Qualifying)
+# ---------------------------------------------------------------------------
+
+_QW   = 360                   # width (same as Driver Card)
+_QH   = 110                   # height
+_QSEC = (_QW - 16) // 3      # sector column width ≈ 114 px
+
+
+def _sector_col(t: float, pb: float, ses_best: float) -> str | None:
+    """Couleur de la barre de secteur.
+    ses_best = meilleur temps de la session dans la classe (ref leader).
+    pb       = meilleur temps personnel sur ce secteur.
+    Violet → session best  |  Vert → personal best  |  Jaune → moins bon que perso
+    """
+    if t <= 0:
+        return None
+    if ses_best > 0 and t <= ses_best + 0.001:
+        return T.PURPLE
+    if pb > 0 and t <= pb + 0.001:
+        return T.GOOD
+    return T.WARN
+
+
+class BroadcastSectors(_BcWidget):
+    WIDGET_NAME = "Broadcast Sectors (Practice / Quali)"
+
+    def __init__(self, state: BroadcastState) -> None:
+        super().__init__()
+        self._state = state
+        self._data: dict | None = None
+        self.setFixedSize(_QW, _QH)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+
+    def on_data(self, snap: LMUSnapshot) -> None:
+        vlist = snap.session.vehicles
+        raw_viewed = (self._state.pinned_slot_id if self._state.pinned_slot_id > 0
+                      else snap.viewed_slot_id)
+        v = next((vh for vh in vlist if vh.slot_id == raw_viewed), None)
+        if v is None:
+            v = next((vh for vh in vlist if vh.is_player), None)
+        if v is None:
+            self._data = None
+            self.update()
+            return
+
+        same_cls = sorted(
+            [vh for vh in vlist if vh.vehicle_class == v.vehicle_class],
+            key=lambda vh: vh.place if vh.place > 0 else 9999,
+        )
+        cls_pos = next((i + 1 for i, vh in enumerate(same_cls) if vh.slot_id == v.slot_id), v.place)
+        leader = same_cls[0] if same_cls else v
+
+        self._data = {
+            "pos":          cls_pos,
+            "car_num":      v.car_number,
+            "vehicle_name": v.vehicle_name or "",
+            "name":         _fmt_name(
+                                (v.team_name if self._state.show_team else v.driver_name)
+                                or v.vehicle_name or f"Car {v.slot_id}",
+                                self._state.show_team,
+                            ),
+            "best_lap":  v.best_lap,
+            "last_lap":  v.last_lap,
+            "compounds": v.compounds,
+            "cur_s1":    v.cur_sector1,
+            "cur_s2":    v.cur_sector2,
+            "last_s1":   v.last_sector1,
+            "last_s2":   v.last_sector2,
+            "best_s1":   v.best_sector1,
+            "best_s2":   v.best_sector2,
+            "ldr_s1":    leader.best_sector1,
+            "ldr_s2":    leader.best_sector2,
+            "ldr_lap":   leader.best_lap,
+        }
+        self.update()
+
+    def paintEvent(self, _) -> None:
+        if not self._data:
+            return
+        d    = self._data
+        W, H = _QW, _QH
+        p    = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        self._panel(p, W, H)
+
+        # ── Top row: pos | logo | car# | name | best lap ─────────────────
+        pos = d["pos"]
+        pc  = (QColor(T.P1) if pos == 1 else QColor(T.P2) if pos == 2
+               else QColor(T.P3) if pos == 3 else QColor(T.TEXT))
+
+        _qpos_w  = 46
+        _qlogo_w = 28
+        _qnum_w  = 32
+        top_y, top_h = 6, 40
+
+        p.setFont(num_font(24)); p.setPen(pc)
+        p.drawText(6, top_y, _qpos_w, top_h,
+                   Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter, str(pos))
+
+        logo = _get_logo(d["vehicle_name"])
+        if logo:
+            lx = 6 + _qpos_w + 4 + (_qlogo_w - logo.width()) // 2
+            ly = top_y + (top_h - logo.height()) // 2
+            p.drawPixmap(lx, ly, logo)
+
+        num_txt = d.get("car_num", "")
+        if num_txt:
+            p.setFont(label_font(9)); p.setPen(QColor(T.DIM))
+            p.drawText(6 + _qpos_w + 4 + _qlogo_w + 4, top_y, _qnum_w, top_h,
+                       Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter,
+                       f"#{num_txt}")
+
+        best_lap = d["best_lap"]
+        best_txt = _fmt_lap(best_lap, 3) if best_lap > 0 else "—"
+        best_blk_w = 72
+        _q_badge_space = 28   # 22px badge + 6px gap before BEST block
+        ldr_lap = d["ldr_lap"]
+        is_ses_best = best_lap > 0 and ldr_lap > 0 and best_lap <= ldr_lap + 0.001
+        p.setFont(num_font(10))
+        p.setPen(QColor(T.PURPLE if is_ses_best else T.TEXT if best_lap > 0 else T.DIM))
+        p.drawText(W - 6 - best_blk_w, top_y, best_blk_w, top_h,
+                   Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight, best_txt)
+
+        # Compound badge — between name and BEST block
+        _draw_compound_badge(p, W - 6 - best_blk_w - _q_badge_space // 2,
+                             top_y + top_h // 2, d.get("compounds", []))
+
+        name_x = 6 + _qpos_w + 4 + _qlogo_w + 4 + (_qnum_w + 4 if num_txt else 0)
+        name_w = W - name_x - best_blk_w - _q_badge_space - 12
+        p.setFont(text_font(11)); p.setPen(QColor(T.TEXT))
+        p.drawText(name_x, top_y, name_w, top_h,
+                   Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, d["name"])
+
+        # ── Separator ────────────────────────────────────────────────────
+        p.fillRect(QRectF(8, 50, W - 16, 1), T.FAINT)
+
+        # ── Sector bars ──────────────────────────────────────────────────
+        # Determine which sectors are complete in the current lap
+        cur_s1  = d["cur_s1"]
+        cur_s2  = d["cur_s2"]
+        s1_done = cur_s1 >= 0   # crossed S1 line → S1 complete, now in S2 or S3
+        s2_done = cur_s2 >= 0   # crossed S2 line → in S3
+
+        # (time, personal_best, last_for_color, leader_ref, in_progress)
+        if s1_done:
+            sec1 = (cur_s1,       d["best_s1"], d["last_s1"], d["ldr_s1"], False)
+        else:
+            sec1 = (d["last_s1"], d["best_s1"], -1.0,         d["ldr_s1"], False)
+
+        if s2_done:
+            sec2 = (cur_s2,       d["best_s2"], d["last_s2"], d["ldr_s2"], False)
+        elif s1_done:
+            sec2 = (-1.0,         d["best_s2"], d["last_s2"], d["ldr_s2"], True)
+        else:
+            sec2 = (d["last_s2"], d["best_s2"], -1.0,         d["ldr_s2"], False)
+
+        if s1_done or s2_done:
+            sec3 = (-1.0,          d["best_lap"], d["last_lap"], d["ldr_lap"], True)
+        else:
+            sec3 = (d["last_lap"], d["best_lap"], -1.0,          d["ldr_lap"], False)
+
+        lbl_y   = 55
+        delta_y = 67
+        bar_y   = 84
+        bar_h   = 14
+
+        x = 8
+        for label, (t, pb, la, ref, in_prog) in zip(("S1", "S2", "S3"), (sec1, sec2, sec3)):
+            sw = _QSEC
+
+            p.setFont(label_font(7)); p.setPen(QColor(T.DIM))
+            p.drawText(x, lbl_y, sw, 10, Qt.AlignmentFlag.AlignCenter, label)
+
+            if not in_prog and t > 0 and ref > 0:
+                delta = t - ref
+                delta_txt = f"+{delta:.3f}" if delta >= 0 else f"{delta:.3f}"
+                delta_col = QColor(T.TEXT)
+            else:
+                delta_txt = "—"
+                delta_col = QColor(T.DIM)
+            p.setFont(num_font(9)); p.setPen(delta_col)
+            p.drawText(x, delta_y, sw, 14, Qt.AlignmentFlag.AlignCenter, delta_txt)
+
+            bar_col_str = None if in_prog else _sector_col(t, pb, ref)
+            p.setBrush(QColor(bar_col_str) if bar_col_str else QColor(40, 40, 46))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawRoundedRect(x + 2, bar_y, sw - 4, bar_h, 3, 3)
+
+            x += sw
 
         p.end()

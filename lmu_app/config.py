@@ -233,6 +233,14 @@ class AppConfig:
         self._bc()["driver_enabled"] = bool(v)
 
     @property
+    def bc_sectors_enabled(self) -> bool:
+        return bool(self._bc().get("sectors_enabled", False))
+
+    @bc_sectors_enabled.setter
+    def bc_sectors_enabled(self, v: bool) -> None:
+        self._bc()["sectors_enabled"] = bool(v)
+
+    @property
     def bc_tower_count_overall(self) -> int:
         bc = self._bc()
         return int(bc.get("tower_count_overall", bc.get("tower_count", 10)))
