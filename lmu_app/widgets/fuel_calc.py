@@ -99,7 +99,7 @@ def _table_layout(refs: dict[str, str], show_usage: bool, show_laps: bool,
     """Return (widget_width, {key: (x, width)}) with each column sized to its
     own content — the widest of its header and its reference value — instead of
     splitting the width equally. Avoids dead space on short columns while
-    guaranteeing long values (e.g. "XX.X %") still fit.
+    guaranteeing long values (e.g. "XX.X%") still fit.
     """
     vis = [k for k, v in [("usage", show_usage), ("laps", show_laps),
                           ("refuel", show_refuel), ("finish", show_finish)] if v]
@@ -127,18 +127,18 @@ def _table_layout(refs: dict[str, str], show_usage: bool, show_laps: bool,
 
 def _fmt_fuel(v: float) -> str:
     """One decimal up to 99.9 L; none at 100 L (the tank max) to stay 3 digits."""
-    return f"{v:.0f} L" if v >= 100 else f"{v:.1f} L"
+    return f"{v:.0f}L" if v >= 100 else f"{v:.1f}L"
 
 
 def _fmt_ref_fuel(v: float) -> str:
-    return f"+{v:.0f} L" if v >= 100 else f"+{v:.1f} L"
+    return f"+{v:.0f}L" if v >= 100 else f"+{v:.1f}L"
 
 
 _HDR_NAMES = {"usage": "USAGE", "laps": "LAPS", "refuel": "REFUEL", "finish": "FINISH"}
 
 # Widest value each column must be able to render, used to size the columns.
-_FUEL_REFS = {"usage": "99.9 L", "laps": "99.9", "refuel": "+99.9 L", "finish": "99.9 L"}
-_VE_REFS   = {"usage": "99.9 %", "laps": "99.9", "refuel": "+99.9 %", "finish": "99.9 %"}
+_FUEL_REFS = {"usage": "99.9L", "laps": "99.9", "refuel": "+99.9L", "finish": "99.9L"}
+_VE_REFS   = {"usage": "99.9%", "laps": "99.9", "refuel": "+99.9%", "finish": "99.9%"}
 
 _VE_ENTRY_KEYS = {"HYPERCAR", "GT3"}
 

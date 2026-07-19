@@ -9,7 +9,7 @@ from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QSizePolicy
 
 from lmu_app.api.reader import DataReader, LMUSnapshot
-from lmu_app.utils.theme import T, label_font, num_font
+from lmu_app.utils.theme import T, draw_bold, label_font, num_font
 from lmu_app.widgets.base import BaseWidget, DEFAULT_SCALE
 
 logger = logging.getLogger(__name__)
@@ -154,10 +154,10 @@ class WeatherWidget(BaseWidget):
                     p.setFont(label_font(6))
                     p.setPen(QColor(T.DIM))
                     p.drawText(lbl_r, Qt.AlignmentFlag.AlignCenter, lbl)
-                p.setFont(num_font(10))
+                p.setFont(num_font(10, hint=False))
                 p.setPen(QColor(T.TEXT))
-                p.drawText(QRectF(x, y + _LBL_H + _GAP, half, _VAL_H),
-                           Qt.AlignmentFlag.AlignCenter, val)
+                draw_bold(p, lambda r=QRectF(x, y + _LBL_H + _GAP, half, _VAL_H), v=val:
+                          p.drawText(r, Qt.AlignmentFlag.AlignCenter, v))
 
         # Vertical divider
         p.fillRect(QRectF(half, _PAD_Y + 2, 1, _ROW_H * 2 - 4), T.FAINT)
@@ -206,7 +206,7 @@ class WeatherWidget(BaseWidget):
                 p.drawText(QRectF(slot_x, icon_y, slot_w, _IC_H),
                            Qt.AlignmentFlag.AlignCenter, f"?{sky}")
 
-            p.setFont(label_font(5))
+            p.setFont(label_font(5, hint=False))
             p.setPen(QColor(T.DIM))
-            p.drawText(QRectF(slot_x, label_y, slot_w, _NL_H - 1),
-                       Qt.AlignmentFlag.AlignCenter, _NODE_LABELS[i])
+            draw_bold(p, lambda r=QRectF(slot_x, label_y, slot_w, _NL_H - 1),
+                      t=_NODE_LABELS[i]: p.drawText(r, Qt.AlignmentFlag.AlignCenter, t))

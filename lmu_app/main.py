@@ -28,6 +28,40 @@ _FONTS = [
     "SairaSemiCondensed-Bold.ttf",
 ]
 
+_LOGO = "lmu_app_logo.svg"
+
+
+def _set_app_user_model_id() -> None:
+    """Windows: give the process its own taskbar identity.
+
+    Without this, a dev run is grouped under python.exe and shows the Python
+    icon in the taskbar regardless of the window icon. Must run before any
+    window is created. No-op on other platforms.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("LMUApp.Overlay")
+    except Exception as exc:
+        logging.debug("Could not set AppUserModelID: %s", exc)
+
+
+def _set_app_icon(app) -> None:
+    """Window icon (title bar) + taskbar icon for every window of the app."""
+    from pathlib import Path
+    from PySide6.QtGui import QIcon
+    path = Path(__file__).parent / "assets" / _LOGO
+    if not path.exists():
+        logging.warning("App logo not found: %s", path)
+        return
+    icon = QIcon(str(path))
+    if icon.isNull():
+        logging.warning("App logo could not be loaded: %s", path)
+        return
+    app.setWindowIcon(icon)
+
+
 def _load_fonts() -> None:
     from pathlib import Path
     from PySide6.QtGui import QFontDatabase
@@ -89,13 +123,15 @@ def main() -> int:
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     )
 
+    _set_app_user_model_id()
     app = QApplication(sys.argv)
     _load_fonts()
     app.setStyle("Fusion")        # consistent rendering
     app.setPalette(_dark_palette())  # makes arrows/indicators visible on dark bg
     app.setApplicationName("LMU App")
-    app.setApplicationVersion("0.6.9")
+    app.setApplicationVersion("0.6.10")
     app.setQuitOnLastWindowClosed(False)
+    _set_app_icon(app)
 
     config = AppConfig()
     reader = DataReader(update_hz=args.hz)

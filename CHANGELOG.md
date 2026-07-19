@@ -4,6 +4,25 @@ All notable changes to LMU App are documented here.
 
 ---
 
+## [0.6.10] — App icon & display fixes
+
+### App icon
+- The application logo is now used for the **window title bar** and the **taskbar**.
+- Windows: an explicit AppUserModelID is set so the app no longer inherits the Python icon and gets its own taskbar entry when run from source.
+- A `.ico` is generated from the logo and embedded in the executable, giving `LMUApp.exe` its own icon in Explorer and when pinned.
+
+### Fuel & VE calculators
+- Units are no longer separated from the value: `58.0%` and `58.0L` instead of `58.0 %` / `58.0 L`.
+- Since columns are sized to their content, the widget is **19 px narrower** as a result (233 → 214 px).
+
+### Weather
+- Fixed the **flattened `0`** on temperatures, RAIN/WET percentages and the forecast node labels — same hinting artefact already fixed elsewhere in 0.6.9.
+
+### Settings
+- **Column order (Standings)**: fixed rows painting on top of each other when toggling a column or reordering. Rows removed from the layout stayed children of the container and kept being drawn until the next event-loop pass.
+
+---
+
 ## [0.6.9] — Performance, text rendering & pit detection
 
 ### Performance

@@ -711,8 +711,13 @@ class _OrderedMultiSelectWidget(QWidget):
     def _rebuild(self):
         while self._vl.count():
             item = self._vl.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            w = item.widget()
+            if w is not None:
+                # Unparent immediately: deleteLater() only destroys the row on the
+                # next event-loop pass, until then it stays a child of self and
+                # keeps painting over the newly built rows.
+                w.setParent(None)
+                w.deleteLater()
         visible = [v for v in self._order if self._is_visible(v)]
         for i, v in enumerate(visible):
             self._add_row(v, i == 0, i == len(visible) - 1)

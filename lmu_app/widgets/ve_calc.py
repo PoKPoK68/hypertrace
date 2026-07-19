@@ -17,11 +17,11 @@ from lmu_app.widgets.fuel_calc import (
 
 def _fmt_ve(v: float) -> str:
     """One decimal up to 99.9 %; none at 100 % (the max) to stay 3 digits."""
-    return f"{v:.0f} %" if v >= 100 else f"{v:.1f} %"
+    return f"{v:.0f}%" if v >= 100 else f"{v:.1f}%"
 
 
 def _fmt_ref_ve(v: float) -> str:
-    return f"+{v:.0f} %" if v >= 100 else f"+{v:.1f} %"
+    return f"+{v:.0f}%" if v >= 100 else f"+{v:.1f}%"
 
 
 class VECalcWidget(BaseWidget):
