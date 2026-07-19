@@ -10,14 +10,14 @@ from collections import defaultdict
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QRectF
-from PySide6.QtGui import QColor, QIcon, QPainter
+from PySide6.QtGui import QColor, QFont, QIcon, QPainter
 from PySide6.QtWidgets import QSizePolicy
 
 from lmu_app.api.reader import DataReader, LMUSnapshot
 from lmu_app.utils.class_colors import class_abbrev, class_color
 from lmu_app.utils.compounds import draw_compound_badge as _draw_compound_badge
 from lmu_app.utils.logos import get_logo as _get_logo
-from lmu_app.utils.theme import T, label_font, num_font, text_font
+from lmu_app.utils.theme import T, draw_bold, label_font, num_font, text_font
 from lmu_app.widgets.base import BaseWidget, DEFAULT_SCALE
 
 _ASSETS = Path(__file__).resolve().parent.parent / "assets"
@@ -433,14 +433,15 @@ class StandingsWidget(BaseWidget):
         new_prev: dict[int, bool] = {}
         for v in s.vehicles:
             slot     = v.slot_id
-            was_pits = self._prev_in_pits.get(slot, v.in_pits)
-            new_prev[slot] = v.in_pits
+            in_pit   = v.in_pit_lane
+            was_pits = self._prev_in_pits.get(slot, in_pit)
+            new_prev[slot] = in_pit
             if v.in_garage:
                 self._outlap_tracking.pop(slot, None)
                 self._pit_lap_tracking.pop(slot, None)
-            elif not was_pits and v.in_pits:
+            elif not was_pits and in_pit:
                 self._pit_lap_tracking[slot] = v.total_laps
-            elif was_pits and not v.in_pits:
+            elif was_pits and not in_pit:
                 self._outlap_tracking[slot] = v.total_laps
             elif slot in self._outlap_tracking and v.total_laps > self._outlap_tracking[slot]:
                 del self._outlap_tracking[slot]
@@ -557,7 +558,7 @@ class StandingsWidget(BaseWidget):
 
         slot  = v.slot_id
         badge = ("GAR" if v.in_garage
-                 else "PIT" if v.in_pits
+                 else "PIT" if v.in_pit_lane
                  else "OUT" if slot in self._outlap_tracking
                  else f"L{self._pit_lap_tracking[slot]}" if slot in self._pit_lap_tracking
                  else "")
@@ -630,11 +631,14 @@ class StandingsWidget(BaseWidget):
                 baseline = 1 + (SESSION_BAR_H + fm.ascent() - fm.descent()) // 2
                 p.setPen(QColor(T.ACCENT))
                 p.drawText(6, baseline, lbl)
+                f_num = label_font(max(6, fsh), hint=False)
+                f_num.setCapitalization(QFont.Capitalization.MixedCase)
+                p.setFont(f_num)
                 p.setPen(QColor(T.TEXT))
-                p.drawText(6 + lbl_w + 6, baseline,
-                           _fmt_session_time(self._current_et, self._ses_remaining))
+                _st = _fmt_session_time(self._current_et, self._ses_remaining)
+                draw_bold(p, lambda: p.drawText(6 + lbl_w + 6, baseline, _st))
             elif hi == "temp":
-                p.setFont(num_font(fss))
+                p.setFont(num_font(fss, hint=False))
                 fm = p.fontMetrics()
                 trk_str = f"{self._track_temp:.0f}°"
                 air_str = f"{self._air_temp:.0f}°"
@@ -650,13 +654,15 @@ class StandingsWidget(BaseWidget):
                 icon_y = 1 + SESSION_BAR_H // 2 - icon_sz // 2
                 p.drawPixmap(x0, icon_y, self._temp_pm_trk)
                 p.setPen(QColor(T.DIM))
-                p.drawText(x0 + icon_sz + gap_px, 1, trk_w + 2, SESSION_BAR_H,
-                           Qt.AlignmentFlag.AlignVCenter, trk_str)
+                draw_bold(p, lambda: p.drawText(
+                    x0 + icon_sz + gap_px, 1, trk_w + 2, SESSION_BAR_H,
+                    Qt.AlignmentFlag.AlignVCenter, trk_str))
                 ax = x0 + icon_sz + gap_px + trk_w + sep_px
                 p.drawPixmap(ax, icon_y, self._temp_pm_air)
                 p.setPen(QColor(T.DIM))
-                p.drawText(ax + icon_sz + gap_px, 1, air_w + 2, SESSION_BAR_H,
-                           Qt.AlignmentFlag.AlignVCenter, air_str)
+                draw_bold(p, lambda: p.drawText(
+                    ax + icon_sz + gap_px, 1, air_w + 2, SESSION_BAR_H,
+                    Qt.AlignmentFlag.AlignVCenter, air_str))
 
         x_col = 2
         for col in self.columns:
@@ -752,9 +758,9 @@ class StandingsWidget(BaseWidget):
                         "OUT": (QColor(T.OUT_BG), QColor(T.OUT_FG)),
                     }
                     name_text = _apply_case(_fmt_name(e["name_raw"], self._name_format)[:self._max_name_chars], self._name_case)
-                    p.setFont(text_font(fs))
+                    p.setFont(text_font(fs, hint=False))
                     p.setPen(QColor(T.TEXT))
-                    p.drawText(x + 2, y, cw, rh, align, name_text)
+                    draw_bold(p, lambda: p.drawText(x + 2, y, cw, rh, align, name_text))
                     if raw_badge:
                         if raw_badge in _badge_map:
                             bg_c, fg_c = _badge_map[raw_badge]

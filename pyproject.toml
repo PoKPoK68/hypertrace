@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lmu-app"
-version = "0.6.8"
+version = "0.6.9"
 description = "A modern telemetry overlay for Le Mans Ultimate"
 requires-python = ">=3.11"
 dependencies = [
@@ -26,9 +26,6 @@ lmu-app = "lmu_app.main:main"
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
 
 [tool.setuptools.packages.find]
 where = ["."]

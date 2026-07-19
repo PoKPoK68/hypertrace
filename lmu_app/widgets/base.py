@@ -143,7 +143,10 @@ class BaseWidget(QWidget):
 
     def _snapped(self, x: int, y: int) -> QPoint:
         """Return position snapped to screen edges and peer overlays when within _SNAP_DIST."""
-        screen = QApplication.primaryScreen().geometry()
+        cx = x + self.width() // 2
+        cy = y + self.height() // 2
+        scr = QApplication.screenAt(QPoint(cx, cy)) or QApplication.primaryScreen()
+        screen = scr.geometry()
         w, h   = self.width(), self.height()
 
         snap_x: int | None = None

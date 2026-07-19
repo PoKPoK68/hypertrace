@@ -108,24 +108,49 @@ def accent_hairline(w: float, opacity_pct: int = 100) -> QLinearGradient:
     return g
 
 
-def label_font(size: float, weight: QFont.Weight = QFont.Weight.Bold) -> QFont:
+def label_font(size: float, weight: QFont.Weight = QFont.Weight.Bold,
+               hint: bool = True) -> QFont:
     f = QFont(T.F_TEXT, -1, weight)
     f.setPointSizeF(size)
+    if not hint:
+        f.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
     f.setCapitalization(QFont.Capitalization.AllUppercase)
     f.setLetterSpacing(QFont.SpacingType.PercentageSpacing, T.LABEL_TRACKING)
     return f
 
 
-def num_font(size: int, weight: QFont.Weight = QFont.Weight.Bold) -> QFont:
+def num_font(size: int, weight: QFont.Weight = QFont.Weight.Bold,
+             hint: bool = True) -> QFont:
     f = QFont(T.F_NUM, size, weight)
     f.setStyleHint(QFont.StyleHint.TypeWriter)
+    if not hint:
+        f.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
     return f
 
 
-def text_font(size: int, weight: QFont.Weight = QFont.Weight.Bold) -> QFont:
+def text_font(size: int, weight: QFont.Weight = QFont.Weight.Bold,
+              hint: bool = True) -> QFont:
     f = QFont(T.F_TEXT, size, weight)
     f.setStyleHint(QFont.StyleHint.TypeWriter)
+    if not hint:
+        f.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
     return f
+
+
+def draw_bold(p, draw, offset: float = 0.5) -> None:
+    """Synthetic bold for hint-disabled fonts.
+
+    Disabling hinting keeps round glyphs (the `0`) undistorted at small sizes,
+    but it also removes the stem-darkening that made hinted text look bold.
+    Re-draw the same text with a sub-pixel horizontal offset so vertical stems
+    accumulate coverage — restoring the perceived weight without re-flattening
+    the `0`. `draw` is a zero-arg callable that performs the actual p.drawText.
+    """
+    draw()
+    p.save()
+    p.translate(offset, 0.0)
+    draw()
+    p.restore()
 
 
 def rpm_seg_color(frac: float) -> QColor:

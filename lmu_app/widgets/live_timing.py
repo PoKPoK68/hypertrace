@@ -555,7 +555,7 @@ class LiveTimingPanel(QWidget):
                 st, st_col = "DQ", QColor("#8050A0")
             elif v.in_garage:
                 st, st_col = "GARAGE", QColor(T.DIM)
-            elif v.in_pits:
+            elif v.in_pit_lane:
                 st, st_col = "PIT", QColor("#E08030")
             else:
                 st, st_col = "—", QColor(T.DIM)

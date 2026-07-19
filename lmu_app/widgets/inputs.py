@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from collections import deque
 
-from PySide6.QtCore import Qt, QRectF, QPointF
+from PySide6.QtCore import Qt, QRectF, QPointF, QTimer
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QSizePolicy
 
@@ -65,10 +65,24 @@ class InputsWidget(BaseWidget):
         self._show_clutch     = True
         self._trace_buf: deque[tuple[float, float, float, float]] = deque()
         super().__init__(reader, update_hz=60, **kw)
+        # Steady 60 fps repaint, decoupled from the 50 Hz data feed: the trace
+        # scrolls by wall-clock time so motion stays smooth even when no new
+        # sample arrived this frame (avoids the 60/50 Hz beat stutter).
+        self._render_timer = QTimer(self)
+        self._render_timer.setInterval(16)
+        self._render_timer.timeout.connect(self.update)
         self._apply_size()
 
     def setup_ui(self):
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+
+    def start(self) -> None:
+        super().start()
+        self._render_timer.start()
+
+    def stop(self) -> None:
+        self._render_timer.stop()
+        super().stop()
 
     def _n_bars(self) -> int:
         return sum([self._show_throttle, self._show_brake, self._show_clutch])
@@ -148,19 +162,19 @@ class InputsWidget(BaseWidget):
         if len(self._trace_buf) < 2:
             return
 
-        now    = self._trace_buf[-1][0]
+        now    = time.monotonic()
         cutoff = now - self._trace_secs
         samples = [(ts, t, b, c) for ts, t, b, c in self._trace_buf if ts >= cutoff]
         if len(samples) < 2:
             return
 
         active_channels = []
+        if self._trace_clutch:
+            active_channels.append((2, _TRACE_COLORS[2]))
         if self._trace_throttle:
             active_channels.append((0, _TRACE_COLORS[0]))
         if self._trace_brake:
             active_channels.append((1, _TRACE_COLORS[1]))
-        if self._trace_clutch:
-            active_channels.append((2, _TRACE_COLORS[2]))
 
         p.setClipRect(QRectF(tx, ty, tw, th))
         for ch, color in active_channels:

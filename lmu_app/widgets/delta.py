@@ -121,7 +121,7 @@ class DeltaWidget(BaseWidget):
             p.drawText(QRectF(_PAD, y, lbl_w, _ROW_H),
                        Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, "LAST")
             if self._last_lap <= 0:
-                last_col = QColor(T.DIM)
+                last_col = QColor(T.TEXT)
             elif self._best_lap > 0 and self._last_lap < self._best_lap:
                 last_col = QColor(T.PURPLE if self._cls_ses_best > 0 and self._best_lap <= self._cls_ses_best else T.GOOD)
             else:
@@ -140,7 +140,7 @@ class DeltaWidget(BaseWidget):
             p.drawText(QRectF(_PAD, y, lbl_w, _ROW_H),
                        Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, "BEST")
             p.setFont(num_font(9))
-            p.setPen(QColor(T.PURPLE))
+            p.setPen(QColor(T.PURPLE if self._best_lap > 0 else T.TEXT))
             p.drawText(QRectF(_PAD + lbl_w, y, _BASE_W - _PAD - lbl_w - _PAD, _ROW_H),
                        Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
                        _fmt_lap(self._best_lap))
@@ -152,7 +152,7 @@ class DeltaWidget(BaseWidget):
                 y += 2
             if not self._has_ref:
                 p.setFont(num_font(13))
-                p.setPen(QColor(T.DIM))
+                p.setPen(QColor(T.TEXT))
                 p.drawText(QRectF(0, y, _BASE_W, _DELTA_H),
                            Qt.AlignmentFlag.AlignCenter, "—")
             else:

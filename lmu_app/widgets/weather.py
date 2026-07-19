@@ -1,13 +1,10 @@
 """Weather overlay — air/track temps, rain, wetness, session forecast."""
 from __future__ import annotations
 
-import json
 import logging
-import threading
-import urllib.request
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QRectF, QTimer
+from PySide6.QtCore import Qt, QRectF
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QSizePolicy
 
@@ -18,8 +15,6 @@ from lmu_app.widgets.base import BaseWidget, DEFAULT_SCALE
 logger = logging.getLogger(__name__)
 
 _ASSETS      = Path(__file__).parent.parent / "assets"
-_REST_URL    = "http://localhost:6397/rest/sessions/weather"
-_NODES       = ["START", "NODE_25", "NODE_50", "NODE_75", "FINISH"]
 _NODE_LABELS = ["S", "25", "50", "75", "F"]
 _SKY_FILES   = [
     "00_clear.svg",
@@ -50,38 +45,6 @@ _NL_H   = 9    # node label
 BASE_H  = _FC_TOP + _FC_HDR + _IC_H + _NL_H + _PAD_Y  # 98
 
 
-def _session_outer_key(session_type: int) -> str:
-    if session_type <= 4:
-        return "PRACTICE"
-    if session_type <= 8:
-        return "QUALIFY"
-    return "RACE"
-
-
-def _fetch_forecast(session_type: int = 0) -> list[int]:
-    """Return 5 sky_type ints (0-10). Empty list on failure."""
-    try:
-        req = urllib.request.Request(_REST_URL, headers={"Accept": "application/json"})
-        with urllib.request.urlopen(req, timeout=2) as resp:
-            raw = resp.read()
-        data = json.loads(raw)
-        # Response is wrapped by session type: {"PRACTICE": {nodes...}, "QUALIFY": ...}
-        outer = _session_outer_key(session_type)
-        sub = (data.get(outer)
-               or data.get("PRACTICE")
-               or data.get("QUALIFY")
-               or data.get("RACE")
-               or data)
-
-        result = [int(sub.get(n, {}).get("WNV_SKY", {}).get("currentValue", -1))
-                  for n in _NODES]
-        logger.debug("Forecast sky_types (%s): %s", outer, result)
-        return result
-    except Exception as exc:
-        logger.debug("Weather REST error: %s", exc)
-        return []
-
-
 class WeatherWidget(BaseWidget):
     WIDGET_NAME = "Weather"
     CONFIG_SCHEMA = [
@@ -99,20 +62,13 @@ class WeatherWidget(BaseWidget):
         self._raining    = 0.0
         self._wetness    = 0.0
         self._forecast: list[int] = []
-        self._fc_lock     = threading.Lock()
-        self._session_type: int = 0
+        self._sky_now: int = -1   # current sky type from shared memory (instant, no REST)
         self._svg_air    = None
         self._svg_trk    = None
         self._sky_svgs: list = []
         super().__init__(reader, update_hz=5, **kw)
         self._load_svgs()
         self.setFixedSize(int(BASE_W * self._scale), int(BASE_H * self._scale))
-
-        self._fc_timer = QTimer(self)
-        self._fc_timer.setInterval(30_000)
-        self._fc_timer.timeout.connect(self._refresh_forecast)
-        self._fc_timer.start()
-        self._refresh_forecast()
 
     def _load_svgs(self) -> None:
         try:
@@ -141,36 +97,20 @@ class WeatherWidget(BaseWidget):
     def setup_ui(self):
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
-    def start(self) -> None:
-        self._fc_timer.start()
-        super().start()
-
-    def stop(self) -> None:
-        self._fc_timer.stop()
-        super().stop()
-
     def apply_params(self, params: dict) -> None:
         self._scale   = int(params.get("scale",   DEFAULT_SCALE)) / 100.0
         self._opacity = max(0, min(100, int(params.get("opacity", 85))))
         self.setFixedSize(int(BASE_W * self._scale), int(BASE_H * self._scale))
         self.update()
 
-    def _refresh_forecast(self) -> None:
-        st = self._session_type
-        def _work():
-            nodes = _fetch_forecast(st)
-            with self._fc_lock:
-                self._forecast = nodes
-                self.update()
-        threading.Thread(target=_work, daemon=True).start()
-
     def on_data(self, snap: LMUSnapshot) -> None:
         s = snap.session
-        self._session_type = s.session_type
         self._air_temp     = s.ambient_temp
         self._track_temp   = s.track_temp
         self._raining      = s.raining
         self._wetness      = s.avg_path_wetness
+        self._forecast     = s.weather_forecast   # forecast via reader/REST (no REST here)
+        self._sky_now      = s.weather_sky        # current sky via shared memory (instant)
         self.update()
 
     def paintEvent(self, _):
@@ -234,14 +174,23 @@ class WeatherWidget(BaseWidget):
         label_y = icon_y + _IC_H + 1
         slot_w  = (BASE_W - _PAD_X * 2) / 5
 
-        with self._fc_lock:
-            nodes = list(self._forecast)
+        nodes = self._forecast
 
         if not nodes:
-            p.setFont(label_font(5))
-            p.setPen(QColor(T.DIM))
-            p.drawText(QRectF(_PAD_X, icon_y, BASE_W - _PAD_X * 2, _IC_H),
-                       Qt.AlignmentFlag.AlignCenter, "NO DATA")
+            # No forecast yet (REST not ready) — show current sky from shared
+            # memory instantly if we have it, else "NO DATA".
+            if 0 <= self._sky_now < len(self._sky_svgs) and self._sky_svgs[self._sky_now] is not None:
+                ic_x = _PAD_X + (BASE_W - _PAD_X * 2 - _IC_H) / 2
+                self._sky_svgs[self._sky_now].render(p, QRectF(ic_x, icon_y, _IC_H, _IC_H))
+                p.setFont(label_font(5))
+                p.setPen(QColor(T.DIM))
+                p.drawText(QRectF(_PAD_X, label_y, BASE_W - _PAD_X * 2, _NL_H - 1),
+                           Qt.AlignmentFlag.AlignCenter, "NOW")
+            else:
+                p.setFont(label_font(5))
+                p.setPen(QColor(T.DIM))
+                p.drawText(QRectF(_PAD_X, icon_y, BASE_W - _PAD_X * 2, _IC_H),
+                           Qt.AlignmentFlag.AlignCenter, "NO DATA")
             return
 
         for i, sky in enumerate(nodes):

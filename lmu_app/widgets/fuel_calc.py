@@ -2,7 +2,7 @@
 from __future__ import annotations
 from collections import deque
 from PySide6.QtCore import Qt, QRectF
-from PySide6.QtGui import QColor, QPainter
+from PySide6.QtGui import QColor, QFontMetrics, QPainter
 from PySide6.QtWidgets import QSizePolicy
 from lmu_app.api.reader import DataReader, LMUSnapshot
 from lmu_app.utils.class_colors import CLASS_ENTRIES
@@ -94,31 +94,51 @@ def _calc(rate: float, current: float, rem: float, safety: float):
     return laps_on, None, None
 
 
-def _col_layout(widget_w: int, show_usage: bool, show_laps: bool,
-                show_refuel: bool, show_finish: bool) -> dict[str, tuple[int, int]]:
-    """Return {key: (x, width)} for visible table columns (includes 'label')."""
+def _table_layout(refs: dict[str, str], show_usage: bool, show_laps: bool,
+                  show_refuel: bool, show_finish: bool) -> tuple[int, dict[str, tuple[int, int]]]:
+    """Return (widget_width, {key: (x, width)}) with each column sized to its
+    own content — the widest of its header and its reference value — instead of
+    splitting the width equally. Avoids dead space on short columns while
+    guaranteeing long values (e.g. "XX.X %") still fit.
+    """
     vis = [k for k, v in [("usage", show_usage), ("laps", show_laps),
-                            ("refuel", show_refuel), ("finish", show_finish)] if v]
-    avail = widget_w - 2 * _PAD - _LABEL_W - _CG
-    n = len(vis)
-    col_w = (avail - (n - 1) * _CG) // n if n > 0 else avail
+                          ("refuel", show_refuel), ("finish", show_finish)] if v]
+    if not vis:
+        return _MIN_W, {"label": (_PAD, _LABEL_W)}
+
+    fm_val = QFontMetrics(num_font(8))
+    fm_hdr = QFontMetrics(label_font(6))
+    widths = {
+        k: max(_MIN_COL_W,
+               max(fm_val.horizontalAdvance(refs.get(k, "")),
+                   fm_hdr.horizontalAdvance(_HDR_NAMES[k])) + 2 * _CG)
+        for k in vis
+    }
+
+    widget_w = max(_MIN_W,
+                   2 * _PAD + _LABEL_W + _CG + sum(widths.values()) + (len(vis) - 1) * _CG)
     result: dict[str, tuple[int, int]] = {"label": (_PAD, _LABEL_W)}
     x = _PAD + _LABEL_W + _CG
     for k in vis:
-        result[k] = (x, col_w)
-        x += col_w + _CG
-    return result
+        result[k] = (x, widths[k])
+        x += widths[k] + _CG
+    return widget_w, result
 
 
 def _fmt_fuel(v: float) -> str:
-    return f"{v:.0f} L" if v >= 10 else f"{v:.1f} L"
+    """One decimal up to 99.9 L; none at 100 L (the tank max) to stay 3 digits."""
+    return f"{v:.0f} L" if v >= 100 else f"{v:.1f} L"
 
 
 def _fmt_ref_fuel(v: float) -> str:
-    return f"+{v:.0f} L" if v >= 10 else f"+{v:.1f} L"
+    return f"+{v:.0f} L" if v >= 100 else f"+{v:.1f} L"
 
 
 _HDR_NAMES = {"usage": "USAGE", "laps": "LAPS", "refuel": "REFUEL", "finish": "FINISH"}
+
+# Widest value each column must be able to render, used to size the columns.
+_FUEL_REFS = {"usage": "99.9 L", "laps": "99.9", "refuel": "+99.9 L", "finish": "99.9 L"}
+_VE_REFS   = {"usage": "99.9 %", "laps": "99.9", "refuel": "+99.9 %", "finish": "99.9 %"}
 
 _VE_ENTRY_KEYS = {"HYPERCAR", "GT3"}
 
@@ -176,6 +196,7 @@ class FuelCalcWidget(BaseWidget):
         self._fuel_prev_tick    = -1.0
         self._fuel_history: deque[float] = deque(maxlen=5)
         self._last_lap_fuel     = 0.0
+        self._last_session_id   = -1
 
         self._current_fuel   = 0.0
         self._fuel_cap       = 100.0
@@ -232,15 +253,18 @@ class FuelCalcWidget(BaseWidget):
         sep_h = 10 if fuel_h > 0 and has_table else 0
         hdr_h = _HDR if has_table else 0
 
-        self._w          = _widget_w(len(vis_data)) if has_table else _widget_w(0)
+        if has_table:
+            self._w, self._col_pos = _table_layout(
+                _FUEL_REFS, self._show_usage, self._show_laps,
+                self._show_refuel, self._show_finish)
+        else:
+            self._w, self._col_pos = _widget_w(0), {"label": (_PAD, _LABEL_W)}
         self._bw         = self._w - 2 * _PAD
         self._fuel_sec_h = fuel_h
         self._sep_h      = sep_h
         self._vis_rows   = vis_rows
         self._has_table  = has_table
         self._layout_h   = max(_PAD + fuel_h + sep_h + hdr_h + vis_rows * _RH + _PAD, _PAD * 2)
-        self._col_pos    = _col_layout(self._w, self._show_usage, self._show_laps,
-                                       self._show_refuel, self._show_finish)
         self.setFixedSize(int(self._w * self._scale), int(self._layout_h * self._scale))
 
     def apply_params(self, params: dict) -> None:
@@ -265,17 +289,18 @@ class FuelCalcWidget(BaseWidget):
         s = snap.session
         player = next((x for x in s.vehicles if x.is_player), None)
 
+        # New session / restart (reader bumps session_id) → clear fuel history
+        if s.session_id != self._last_session_id:
+            self._last_session_id   = s.session_id
+            self._last_total_laps   = -1
+            self._fuel_history.clear()
+            self._last_lap_fuel     = 0.0
+            self._fuel_at_lap_start = -1.0
+
         self._current_fuel = v.fuel
         self._fuel_cap     = max(1.0, v.fuel_capacity)
 
         if player:
-            # New session detected: lap counter went backwards → clear history
-            if self._last_total_laps >= 0 and player.total_laps < self._last_total_laps:
-                self._last_total_laps   = -1
-                self._fuel_history.clear()
-                self._last_lap_fuel     = 0.0
-                self._fuel_at_lap_start = -1.0
-
             if self._fuel_prev_tick >= 0 and (v.fuel - self._fuel_prev_tick) > 2.0:
                 self._fuel_at_lap_start = v.fuel
 
@@ -314,12 +339,12 @@ class FuelCalcWidget(BaseWidget):
             _draw_bar(p, _PAD, y, self._bw, _BH,
                       self._current_fuel / self._fuel_cap,
                       fuel_col[0], fuel_col[1],
-                      "FUEL", f"{self._current_fuel:.1f} L",
+                      "FUEL", _fmt_fuel(self._current_fuel),
                       show_val=self._show_fuel_level)
             y += _BH
         elif self._show_fuel_level:
             _draw_level(p, _PAD, y, self._bw, _LVL_H,
-                        "FUEL", f"{self._current_fuel:.1f} L", fuel_col[0])
+                        "FUEL", _fmt_fuel(self._current_fuel), fuel_col[0])
             y += _LVL_H
 
         if not self._has_table:
@@ -361,20 +386,20 @@ class FuelCalcWidget(BaseWidget):
                 p.setFont(num_font(8)); p.setPen(QColor(T.TEXT))
                 p.drawText(cx, y, cw, _RH,
                            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
-                           _fmt_fuel(rate) if rate > 0 else "---")
+                           _fmt_fuel(rate) if rate > 0 else "-")
 
             if "laps" in self._col_pos:
                 cx, cw = self._col_pos["laps"]
                 p.setFont(num_font(8)); p.setPen(QColor(T.TEXT))
                 p.drawText(cx, y, cw, _RH,
                            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
-                           f"{laps_on:.1f}" if laps_on is not None else "---")
+                           f"{laps_on:.1f}" if laps_on is not None else "-")
 
             if "refuel" in self._col_pos:
                 cx, cw = self._col_pos["refuel"]
                 p.setFont(num_font(8))
                 if refuel is None:
-                    p.setPen(QColor(T.TEXT)); ref_str = "---"
+                    p.setPen(QColor(T.TEXT)); ref_str = "-"
                 elif refuel < 0.005:
                     p.setPen(QColor(T.GOOD)); ref_str = "OK"
                 else:
@@ -386,7 +411,7 @@ class FuelCalcWidget(BaseWidget):
                 cx, cw = self._col_pos["finish"]
                 p.setFont(num_font(8))
                 if finish is None:
-                    p.setPen(QColor(T.TEXT)); fin_str = "---"
+                    p.setPen(QColor(T.TEXT)); fin_str = "-"
                 else:
                     p.setPen(QColor(T.TEXT)); fin_str = _fmt_fuel(finish)
                 p.drawText(cx, y, cw, _RH,

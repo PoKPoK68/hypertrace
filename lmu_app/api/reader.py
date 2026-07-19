@@ -14,12 +14,28 @@ Structure LMU (d'après lmu_data.py) :
 from __future__ import annotations
 
 import logging
+import math
 import threading
 import time
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Callable
 
 logger = logging.getLogger(__name__)
+
+# Compound type → name (module constant; do not rebuild per vehicle per tick)
+_COMPOUND_TYPES = {0: "Soft", 1: "Medium", 2: "Hard", 3: "Wet"}
+
+
+@lru_cache(maxsize=1024)
+def _decode(raw: bytes) -> str:
+    """Decode a ctypes char buffer to str, memoized.
+
+    Driver/team/class/model names are stable but were decoded for every car on
+    every 50 Hz tick. Identical bytes → cache hit, so the decode+strip only runs
+    once per distinct string instead of thousands of times per second.
+    """
+    return raw.decode(errors="replace").rstrip("\x00")
 
 
 # ---------------------------------------------------------------------------
@@ -55,6 +71,7 @@ class TyreData:
     wear: list[float]          = field(default_factory=lambda: [1.0]*4)   # 0-1 (1=neuf)
     pressure: list[float]      = field(default_factory=lambda: [0.0]*4)   # kPa
     brake_temp: list[float]    = field(default_factory=lambda: [0.0]*4)   # °C
+    optimal_temp: list[float]  = field(default_factory=lambda: [0.0]*4)   # °C (mOptimalTemp)
 
 
 @dataclass
@@ -74,12 +91,15 @@ class VehicleScoringEntry:
     estimated_lap_time: float = 0.0   # estimated lap time used for relative gap
     is_player: bool       = False
     in_pits: bool         = False
+    pit_state: int        = 0     # 0=none, 1=request, 2=entering, 3=stopped, 4=exiting,
+                                  # 5=undocumented (observed when leaving the garage box)
+    pitlane: bool         = False # physically in the pit lane (mCurrentSector sign bit)
     control: int          = 0
     in_garage: bool       = False
     vehicle_class: str    = ""
     virtual_energy: float = 0.0   # 0-1 fraction; 0 if car has no VE
     fuel: float           = 0.0   # litres
-    finish_status: int    = 0     # 0=none, 1=finished, 2=DNF, 3=DNQ, 4=DQ
+    finish_status: int    = 0     # 0=none, 1=finished, 2=DNF, 3=DQ (per InternalsPlugin.hpp)
     car_number: str   = ""
     team_name:  str   = ""
     time_behind_class_leader: float = 0.0
@@ -93,6 +113,22 @@ class VehicleScoringEntry:
     best_sector2: float    = -1.0   # bestSectorTime2 cumulative (personal best S1+S2)
     best_lap_sector2: float = -1.0  # bestLapSectorTime2 (S1+S2 from best lap, for S3 calc)
     compounds: list[str] = field(default_factory=lambda: ["", "", "", ""])  # [FL, FR, RL, RR] compound names
+
+    @property
+    def in_pit_lane(self) -> bool:
+        """True while physically in the pit lane.
+
+        Combines all three signals — none alone is sufficient, and they must be
+        OR'ed (an early return on pit_state alone hid the pit lane when leaving
+        the garage, where pit_state is the undocumented value 5):
+          - `pitlane`   : mCurrentSector sign bit; observed 0x80000000 leaving
+                          the garage and 0x80000002 entering from the track.
+          - `pit_state` : >= 2 rather than a whitelist, so undocumented states
+                          (5) still count. 1 = request is still on track.
+          - `in_pits`   : "between pit entrance and pit exit"; the header warns
+                          it is unreliable for remote vehicles.
+        """
+        return self.pitlane or self.pit_state >= 2 or self.in_pits
 
 
 @dataclass
@@ -111,6 +147,9 @@ class SessionData:
     avg_path_wetness: float  = 0.0  # 0-1
     player_name: str      = ""
     vehicles: list[VehicleScoringEntry] = field(default_factory=list)
+    weather_forecast: list[int] = field(default_factory=list)  # 5 sky types (0-10), [] if none
+    weather_sky: int      = -1   # current sky type (mCloudCoverage, 0-10); -1 unknown
+    session_id: int       = 0    # bumps on session change / restart (for per-session resets)
 
 
 @dataclass
@@ -144,6 +183,39 @@ class BaseReader:
 
 _REST_BASE = "http://localhost:6397"
 _REST_FOCUS_INTERVAL = 0.2   # poll focus every 200 ms (5 Hz)
+_SCORING_EVERY = 5           # full field scan every Nth tick (~10 Hz at 50 Hz base)
+_WEATHER_URL = f"{_REST_BASE}/rest/sessions/weather"
+_WEATHER_INTERVAL = 30.0     # weather forecast changes slowly — poll every 30 s
+_WEATHER_NODES = ["START", "NODE_25", "NODE_50", "NODE_75", "FINISH"]
+
+
+def _weather_outer_key(session_type: int) -> str:
+    if session_type <= 4:
+        return "PRACTICE"
+    if session_type <= 8:
+        return "QUALIFY"
+    return "RACE"
+
+
+def _fetch_weather_forecast(session_type: int) -> list[int]:
+    """GET the weather forecast → 5 sky_type ints (0-10). [] on failure.
+
+    Lives in the reader (not the widget) so overlays never touch the REST API.
+    """
+    import urllib.request as _ur
+    import json as _json
+    try:
+        req = _ur.Request(_WEATHER_URL, headers={"Accept": "application/json"})
+        with _ur.urlopen(req, timeout=2) as resp:
+            data = _json.loads(resp.read())
+        # Response is wrapped by session type: {"PRACTICE": {nodes...}, "QUALIFY": ...}
+        outer = _weather_outer_key(session_type)
+        sub = (data.get(outer) or data.get("PRACTICE") or data.get("QUALIFY")
+               or data.get("RACE") or data)
+        return [int(sub.get(n, {}).get("WNV_SKY", {}).get("currentValue", -1))
+                for n in _WEATHER_NODES]
+    except Exception:
+        return []
 
 
 class LMUReader(BaseReader):
@@ -161,6 +233,17 @@ class LMUReader(BaseReader):
         self._rest_lock  = threading.Lock()
         self._rest_focus: int = -1   # slotID from REST API; -1 = unknown
         self._rest_data: dict[int, dict] = {}   # slot_id → REST standings entry
+        self._rest_weather: list[int] = []      # 5 sky types from REST weather endpoint
+        # Two-tier cadence: the heavy full-field scan runs at ~10 Hz, its result
+        # is cached and reused on the fast (50 Hz) ticks that only refresh the
+        # light player telemetry. Touched only by the reader thread.
+        self._veh_cache: list[VehicleScoringEntry] = []
+        self._scoring_counter: int = 0
+        self._scan_session: int = -1   # mSession value at last full scan
+        # Session identity: bumped on session type change or clock reset (restart)
+        self._session_id: int = 0
+        self._prev_session_type: int | None = None
+        self._prev_current_et: float = 0.0
 
     def start(self):
         if self._running: return
@@ -183,10 +266,12 @@ class LMUReader(BaseReader):
         logger.info("LMUReader stopped")
 
     def _rest_loop(self):
-        """Poll REST API: focus at 5 Hz, standings at 3 Hz."""
+        """Poll REST API: focus at 5 Hz, standings at 3 Hz, weather every 30 s."""
         import urllib.request as _ur
         import json as _json
         _last_st = 0.0
+        _last_weather = 0.0
+        _wx_last_session: int | None = None   # session_type of last weather fetch
         while self._running:
             now = time.monotonic()
             try:
@@ -206,6 +291,20 @@ class LMUReader(BaseReader):
                         _last_st = now
                 except Exception:
                     pass
+            # Weather: fetch immediately at launch and on every session change
+            # (the forecast is per-session). Retry fast until we have data for
+            # the current session (REST may not be ready yet), then poll slowly.
+            with self._lock:
+                st = self._snapshot.session.session_type
+            session_changed = (st != _wx_last_session)
+            wx_interval = 2.0 if (not self._rest_weather or session_changed) else _WEATHER_INTERVAL
+            if now - _last_weather >= wx_interval:
+                fc = _fetch_weather_forecast(st)
+                if fc:
+                    with self._rest_lock:
+                        self._rest_weather = fc
+                    _wx_last_session = st
+                _last_weather = now
             time.sleep(_REST_FOCUS_INTERVAL)
 
     def get(self) -> LMUSnapshot:
@@ -243,6 +342,99 @@ class LMUReader(BaseReader):
             self._connected = False
             self._sim = None
 
+    def _scan_vehicles(self, data, sc_info, telem) -> list[VehicleScoringEntry]:
+        """Heavy full-field scan: scoring entries + REST merge + telemInfo
+        (VE / fuel / compounds / model). Throttled to ~10 Hz by the caller —
+        standings/relative overlays sample at 5-10 Hz so this is imperceptible.
+        Always returns a fresh list (never mutates a previously published one)."""
+        vehicles: list[VehicleScoringEntry] = []
+        for i in range(min(sc_info.mNumVehicles, 104)):
+            v = data.scoring.vehScoringInfo[i]
+            try:
+                vclass = _decode(v.mVehicleClass)
+            except AttributeError:
+                vclass = ""
+            vehicles.append(VehicleScoringEntry(
+                slot_id            = v.mID,
+                driver_name        = _decode(v.mDriverName),
+                vehicle_name       = _decode(v.mVehicleName),
+                place              = v.mPlace,
+                total_laps         = v.mTotalLaps,
+                lap_dist           = v.mLapDist,
+                best_lap           = v.mBestLapTime,
+                last_lap           = v.mLastLapTime,
+                time_behind_leader = v.mTimeBehindLeader,
+                time_behind_next   = v.mTimeBehindNext,
+                time_into_lap      = v.mTimeIntoLap,
+                estimated_lap_time = v.mEstimatedLapTime,
+                is_player          = bool(v.mIsPlayer),
+                in_pits            = bool(v.mInPits),
+                pit_state          = int(getattr(v, 'mPitState', 0)),
+                in_garage          = bool(v.mInGarageStall),
+                control            = v.mControl,
+                vehicle_class      = vclass,
+                finish_status      = getattr(v, 'mFinishStatus', 0),
+            ))
+
+        # Merge REST standings data (car number, team, class gap)
+        with self._rest_lock:
+            rest_snapshot = dict(self._rest_data)
+        for entry in vehicles:
+            rd = rest_snapshot.get(entry.slot_id)
+            if rd:
+                entry.car_number = str(rd.get("carNumber", ""))
+                entry.team_name  = rd.get("fullTeamName", "")
+                entry.time_behind_class_leader = float(rd.get("timeBehindClassLeader", 0.0))
+                entry.laps_behind_class_leader = int(rd.get("lapsBehindClassLeader", 0))
+                entry.cur_sector1      = float(rd.get("currentSectorTime1", -1.0))
+                entry.cur_sector2      = float(rd.get("currentSectorTime2", -1.0))
+                entry.last_sector1     = float(rd.get("lastSectorTime1", -1.0))
+                entry.last_sector2     = float(rd.get("lastSectorTime2", -1.0))
+                entry.best_sector1     = float(rd.get("bestSectorTime1", -1.0))
+                entry.best_sector2     = float(rd.get("bestSectorTime2", -1.0))
+                entry.best_lap_sector2 = float(rd.get("bestLapSectorTime2", -1.0))
+
+        # --- VE, fuel et compounds pour tous les véhicules depuis telemInfo ---
+        ve_by_id:       dict[int, float]      = {}
+        fuel_by_id:     dict[int, float]      = {}
+        model_by_id:    dict[int, str]        = {}
+        compound_by_id: dict[int, list[str]]  = {}
+        pitlane_by_id:  dict[int, bool]       = {}
+        try:
+            for i in range(min(telem.activeVehicles, 104)):
+                t = telem.telemInfo[i]
+                sid = t.mID
+                ve_by_id[sid]   = float(t.mVirtualEnergy)
+                fuel_by_id[sid] = float(t.mFuel)
+                # Pit lane is encoded in mCurrentSector's sign bit (e.g. 0x80000002)
+                pitlane_by_id[sid] = int(t.mCurrentSector) < 0
+                try:
+                    # mCompoundType: 0=Soft 1=Medium 2=Hard 3=Wet, per wheel, all vehicles
+                    comps = [_COMPOUND_TYPES.get(int(t.mWheels[wi].mCompoundType), "")
+                             for wi in range(4)]
+                    if any(comps):
+                        compound_by_id[t.mID] = comps
+                except (AttributeError, IndexError, TypeError):
+                    pass
+                try:
+                    m = _decode(t.mVehicleModel)
+                    if m:
+                        model_by_id[t.mID] = m
+                except AttributeError:
+                    pass
+        except (AttributeError, IndexError):
+            pass
+        for entry in vehicles:
+            entry.virtual_energy = ve_by_id.get(entry.slot_id, 0.0)
+            entry.fuel           = fuel_by_id.get(entry.slot_id, 0.0)
+            entry.pitlane        = pitlane_by_id.get(entry.slot_id, False)
+            if entry.slot_id in compound_by_id:
+                entry.compounds = compound_by_id[entry.slot_id]
+            if entry.slot_id in model_by_id:
+                entry.vehicle_name = model_by_id[entry.slot_id]
+
+        return vehicles
+
     def _tick(self):
         try:
             data = self._sim.LMUData
@@ -262,7 +454,7 @@ class LMUReader(BaseReader):
 
             # --- Session ---
             s = snap.session
-            s.track_name              = sc_info.mTrackName.decode(errors="replace").rstrip("\x00")
+            s.track_name              = _decode(sc_info.mTrackName)
             s.session_type            = sc_info.mSession
             s.game_phase              = sc_info.mGamePhase
             s.max_laps                = sc_info.mMaxLaps
@@ -274,89 +466,34 @@ class LMUReader(BaseReader):
             s.track_temp              = sc_info.mTrackTemp
             s.raining                 = sc_info.mRaining
             s.avg_path_wetness        = sc_info.mAvgPathWetness
-            s.player_name             = sc_info.mPlayerName.decode(errors="replace").rstrip("\x00")
-
-            # --- Véhicules scoring ---
-            s.vehicles = []
-            for i in range(min(sc_info.mNumVehicles, 104)):
-                v = data.scoring.vehScoringInfo[i]
-                try:
-                    vclass = v.mVehicleClass.decode(errors="replace").rstrip("\x00")
-                except AttributeError:
-                    vclass = ""
-                s.vehicles.append(VehicleScoringEntry(
-                    slot_id            = v.mID,
-                    driver_name        = v.mDriverName.decode(errors="replace").rstrip("\x00"),
-                    vehicle_name       = v.mVehicleName.decode(errors="replace").rstrip("\x00"),
-                    place              = v.mPlace,
-                    total_laps         = v.mTotalLaps,
-                    lap_dist           = v.mLapDist,
-                    best_lap           = v.mBestLapTime,
-                    last_lap           = v.mLastLapTime,
-                    time_behind_leader = v.mTimeBehindLeader,
-                    time_behind_next   = v.mTimeBehindNext,
-                    time_into_lap      = v.mTimeIntoLap,
-                    estimated_lap_time = v.mEstimatedLapTime,
-                    is_player          = bool(v.mIsPlayer),
-                    in_pits            = bool(v.mInPits),
-                    in_garage          = bool(v.mInGarageStall),
-                    control            = v.mControl,
-                    vehicle_class      = vclass,
-                    finish_status      = getattr(v, 'mFinishStatus', 0),
-                ))
-
-            # Merge REST standings data (car number, team, class gap)
+            s.player_name             = _decode(sc_info.mPlayerName)
+            s.weather_sky             = int(sc_info.mCloudCoverage)   # current sky (0-10), from SM
             with self._rest_lock:
-                rest_snapshot = dict(self._rest_data)
-            for entry in s.vehicles:
-                rd = rest_snapshot.get(entry.slot_id)
-                if rd:
-                    entry.car_number = str(rd.get("carNumber", ""))
-                    entry.team_name  = rd.get("fullTeamName", "")
-                    entry.time_behind_class_leader = float(rd.get("timeBehindClassLeader", 0.0))
-                    entry.laps_behind_class_leader = int(rd.get("lapsBehindClassLeader", 0))
-                    entry.cur_sector1      = float(rd.get("currentSectorTime1", -1.0))
-                    entry.cur_sector2      = float(rd.get("currentSectorTime2", -1.0))
-                    entry.last_sector1     = float(rd.get("lastSectorTime1", -1.0))
-                    entry.last_sector2     = float(rd.get("lastSectorTime2", -1.0))
-                    entry.best_sector1     = float(rd.get("bestSectorTime1", -1.0))
-                    entry.best_sector2     = float(rd.get("bestSectorTime2", -1.0))
-                    entry.best_lap_sector2 = float(rd.get("bestLapSectorTime2", -1.0))
+                s.weather_forecast    = list(self._rest_weather)
 
-            # --- VE, fuel et compounds pour tous les véhicules depuis telemInfo ---
-            ve_by_id:       dict[int, float]      = {}
-            fuel_by_id:     dict[int, float]      = {}
-            model_by_id:    dict[int, str]        = {}
-            compound_by_id: dict[int, list[str]]  = {}
-            try:
-                for i in range(min(telem.activeVehicles, 104)):
-                    t = telem.telemInfo[i]
-                    ve_by_id[t.mID]   = float(t.mVirtualEnergy)
-                    fuel_by_id[t.mID] = float(t.mFuel)
-                    try:
-                        # mCompoundType: 0=Soft 1=Medium 2=Hard 3=Wet, per wheel, all vehicles
-                        _CT = {0: "Soft", 1: "Medium", 2: "Hard", 3: "Wet"}
-                        comps = [_CT.get(int(t.mWheels[wi].mCompoundType), "")
-                                 for wi in range(4)]
-                        if any(comps):
-                            compound_by_id[t.mID] = comps
-                    except (AttributeError, IndexError, TypeError):
-                        pass
-                    try:
-                        m = t.mVehicleModel.decode(errors="replace").rstrip("\x00")
-                        if m:
-                            model_by_id[t.mID] = m
-                    except AttributeError:
-                        pass
-            except (AttributeError, IndexError):
-                pass
-            for entry in s.vehicles:
-                entry.virtual_energy = ve_by_id.get(entry.slot_id, 0.0)
-                entry.fuel           = fuel_by_id.get(entry.slot_id, 0.0)
-                if entry.slot_id in compound_by_id:
-                    entry.compounds = compound_by_id[entry.slot_id]
-                if entry.slot_id in model_by_id:
-                    entry.vehicle_name = model_by_id[entry.slot_id]
+            # Session identity: bump on session-type change or a clock reset
+            # (session restart drops mCurrentET back to ~0). Widgets compare
+            # snap.session.session_id to reset per-session state reliably.
+            if (self._prev_session_type is not None
+                    and (sc_info.mSession != self._prev_session_type
+                         or s.current_et + 2.0 < self._prev_current_et)):
+                self._session_id += 1
+            self._prev_session_type = sc_info.mSession
+            self._prev_current_et   = s.current_et
+            s.session_id = self._session_id
+
+            # --- Véhicules scoring (scan complet lourd throttlé à ~10 Hz) ---
+            # Sur les ticks rapides on réutilise la liste mise en cache : elle
+            # n'est jamais mutée en place (chaque scan crée une liste neuve),
+            # donc les snapshots déjà publiés restent cohérents.
+            if (not self._veh_cache
+                    or self._scoring_counter % _SCORING_EVERY == 0
+                    or sc_info.mNumVehicles != len(self._veh_cache)
+                    or sc_info.mSession != self._scan_session):
+                self._veh_cache = self._scan_vehicles(data, sc_info, telem)
+                self._scan_session = sc_info.mSession
+            self._scoring_counter += 1
+            s.vehicles = self._veh_cache
 
             # --- Session active + viewed vehicle ---
             player_sc = next((e for e in s.vehicles if e.is_player), None)
@@ -385,7 +522,6 @@ class LMUReader(BaseReader):
             tel  = telem.telemInfo[idx]
 
             # Vitesse locale (norme du vecteur mLocalVel)
-            import math
             lv = tel.mLocalVel
             speed_ms  = math.sqrt(lv.x**2 + lv.y**2 + lv.z**2)
 
@@ -420,6 +556,10 @@ class LMUReader(BaseReader):
                 t.wear[i]          = max(0., min(1., w.mWear))
                 t.pressure[i]      = w.mPressure
                 t.brake_temp[i]    = w.mBrakeTemp
+                # mOptimalTemp is documented as Celsius; guard in case a build
+                # reports Kelvin so the tyre colours never break.
+                _ot = float(w.mOptimalTemp)
+                t.optimal_temp[i]  = _ot - 273.15 if _ot > 200.0 else _ot
 
             with self._lock:
                 self._snapshot = snap
@@ -440,127 +580,13 @@ def lmu_rest_put(path: str, rest_base: str = _REST_BASE) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# MockReader — données factices pour tester visuellement sans LMU
-# ---------------------------------------------------------------------------
-
-class MockReader(BaseReader):
-    """Fake reader for visual testing — no LMU required.
-
-    Hamilton (slot 4) cycles through badge states every few seconds:
-      Phase 0: normal on track
-      Phase 1: enters pits  → PIT badge
-      Phase 2: exits pits   → OUT badge (widget detects transition)
-      Phase 3: lap complete → L5 badge (OUT cleared)
-    then wraps back to 0.
-    """
-
-    _CYCLE_S = 6.0
-    _LAP     = 90.0
-
-    def __init__(self):
-        self._phase   = 0
-        self._running = False
-        self._lock    = threading.Lock()
-        self._snapshot = self._build(0)
-        self._thread: threading.Thread | None = None
-
-    def start(self):
-        self._running = True
-        self._thread = threading.Thread(target=self._loop, name="MockReader", daemon=True)
-        self._thread.start()
-        logger.info("MockReader started — cycling HAMILTON every %.0fs", self._CYCLE_S)
-
-    def stop(self):
-        self._running = False
-        if self._thread:
-            self._thread.join(timeout=1.0)
-        logger.info("MockReader stopped")
-
-    @property
-    def is_connected(self) -> bool:
-        return True
-
-    def get(self) -> LMUSnapshot:
-        with self._lock:
-            return self._snapshot
-
-    def _loop(self):
-        _names = ["normal", "PIT (enters pits)", "OUT (outlap)", "L5 (lap done)"]
-        while self._running:
-            time.sleep(self._CYCLE_S)
-            self._phase = (self._phase + 1) % 4
-            snap = self._build(self._phase)
-            logger.info("MockReader → phase %d: %s", self._phase, _names[self._phase])
-            with self._lock:
-                self._snapshot = snap
-
-    def _build(self, phase: int) -> LMUSnapshot:
-        LAP = self._LAP
-        ham_in_pits = (phase == 1)
-        ham_laps    = 7 if phase <= 2 else 8   # 8 on phase 3 → clears OUT → L7 badge
-
-        P = 45.0  # player time_into_lap
-        # (slot, place, name, cls, til, is_player, in_pits, in_garage, laps, best_lap, gap)
-        _drivers = [
-            (0,  1,  "Max VERSTAPPEN",  "HYPERCAR", P+9.1,  False, False,       False, 7, LAP+0.00, 0.000),
-            (1,  2,  "Charles LECLERC", "HYPERCAR", P+5.8,  False, False,       False, 7, LAP+0.21, 1.823),
-            (2,  3,  "Lando NORRIS",    "HYPERCAR", P,      True,  False,       False, 7, LAP+0.45, 3.451),
-            (3,  4,  "Carlos SAINZ",    "HYPERCAR", P+3.2,  False, False,       False, 7, LAP+0.81, 5.102),
-            (4,  5,  "Lewis HAMILTON",  "HYPERCAR", P-1.8,  False, ham_in_pits, False, ham_laps,   LAP+1.05, 123.456),
-            (5,  6,  "George RUSSELL",  "HYPERCAR", P+1.5,  False, False,       False, 6, LAP+1.40, 8.234),
-            (6,  7,  "Fernando ALONSO", "HYPERCAR", P-4.3,  False, False,       False, 6, LAP+1.72, 10.560),  # -1L
-            (7,  8,  "Oscar PIASTRI",   "HYPERCAR", P-8.0,  False, False,       False, 6, LAP+2.10, 12.100),  # -1L
-            (8,  9,  "Sergio PEREZ",    "HYPERCAR", P-12.5, False, False,       False, 5, LAP+2.50, 14.220),  # -2L
-            (9,  10, "Zhou GUANYU",     "HYPERCAR", 0.0,    False, False,       True,  5, LAP+3.10, 18.400),  # garage
-        ]
-
-        vehicles = [
-            VehicleScoringEntry(
-                slot_id=slot, driver_name=name, place=place, total_laps=laps,
-                lap_dist=til * 13626.0 / LAP if til > 0 else 0.0,
-                best_lap=best, last_lap=best + 0.12,
-                time_behind_leader=gap, time_behind_next=1.8 if place > 1 else 0.0,
-                time_into_lap=til, estimated_lap_time=LAP,
-                is_player=is_p, in_pits=in_pits, in_garage=in_gar,
-                vehicle_class=cls, fuel=50.0 - gap * 0.5, virtual_energy=0.0,
-            )
-            for slot, place, name, cls, til, is_p, in_pits, in_gar, laps, best, gap in _drivers
-        ]
-
-        session = SessionData(
-            track_name="Le Mans", session_type=10, game_phase=5,
-            max_laps=0, track_length=13626.0, num_vehicles=len(vehicles),
-            current_et=3600.0 + phase * self._CYCLE_S,
-            session_time_remaining=10800.0 - phase * self._CYCLE_S,
-            ambient_temp=24.0, track_temp=38.0,
-            vehicles=vehicles,
-        )
-
-        player = next((v for v in vehicles if v.is_player), None)
-        return LMUSnapshot(
-            vehicle=VehicleData(
-                speed_kmh=285.0, rpm=9200.0, rpm_max=10500.0,
-                gear=7, throttle=0.95, fuel=50.0,
-            ),
-            session=session,
-            is_on_track=True, game_running=True, session_active=True,
-            viewed_slot_id=player.slot_id if player else -1,
-            timestamp=time.time(),
-        )
-
-
-# ---------------------------------------------------------------------------
 # DataReader — façade publique
 # ---------------------------------------------------------------------------
 
 class DataReader:
-    def __init__(self, update_hz: int = 50, mock: bool = False):
-        if mock:
-            self._reader: BaseReader = MockReader()
-            logger.info("DataReader: Mock")
-        else:
-            self._reader = LMUReader(update_hz)
-            logger.info("DataReader: LMU")
+    def __init__(self, update_hz: int = 50):
+        self._reader: BaseReader = LMUReader(update_hz)
+        logger.info("DataReader: LMU")
 
     def start(self):  self._reader.start()
     def stop(self):   self._reader.stop()

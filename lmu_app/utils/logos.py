@@ -3,55 +3,103 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import QRectF, Qt
+from PySide6.QtGui import QPainter, QPixmap
 
-_LOGOS_DIR = Path(__file__).resolve().parent.parent.parent / "assets" / "brandlogo"
-_raw_cache:    dict[str, QPixmap | None]   = {}   # vehicle_name → raw full-res pixmap
-_scaled_cache: dict[tuple, QPixmap | None] = {}   # (name, max_w, max_h) → scaled pixmap
+_LOGOS_DIR = Path(__file__).resolve().parent.parent / "assets" / "manufacturers"
+
+_index_cache:  dict[str, Path] | None       = None   # brand (lower) → svg path
+_scaled_cache: dict[tuple, QPixmap | None]  = {}     # (name, max_w, max_h) → pixmap
 
 
-def _load_raw(vehicle_name: str) -> QPixmap | None:
-    """Load and cache the full-resolution source PNG for a vehicle."""
-    if vehicle_name in _raw_cache:
-        return _raw_cache[vehicle_name]
-    vn_lower  = vehicle_name.lower()
-    best_path = None
-    best_len  = 0
-    for path in _LOGOS_DIR.glob("*.png"):
-        brand = path.stem.lower()
-        if brand in vn_lower and len(brand) > best_len:
-            best_path = path
-            best_len  = len(brand)
-    raw = QPixmap(best_path.as_posix()) if best_path else None
-    if raw is not None and raw.isNull():
-        raw = None
-    _raw_cache[vehicle_name] = raw
-    return raw
+def _index() -> dict[str, Path]:
+    """Build brand → file map once. Filenames follow 'Brand=<Name>.<ext>'.
+
+    Vector is preferred, but PNG is supported too: some 'SVG' logos are really a
+    raster image wrapped in an SVG (pattern + embedded base64), which Qt's
+    SVG 1.2 Tiny renderer cannot draw — those are shipped as plain PNG instead.
+    """
+    global _index_cache
+    if _index_cache is None:
+        idx: dict[str, Path] = {}
+        if _LOGOS_DIR.is_dir():
+            for pattern in ("*.png", "*.svg"):      # svg last → wins if both exist
+                for path in _LOGOS_DIR.glob(pattern):
+                    brand = path.stem.split("=", 1)[-1].strip().lower()
+                    if brand:
+                        idx[brand] = path
+        _index_cache = idx
+    return _index_cache
+
+
+def _match(vehicle_name: str) -> Path | None:
+    """Longest brand name contained in the vehicle name wins (e.g. so
+    'Mercedes-AMG' is preferred over a hypothetical 'Mercedes')."""
+    vn = vehicle_name.lower()
+    best: Path | None = None
+    best_len = 0
+    for brand, path in _index().items():
+        if brand in vn and len(brand) > best_len:
+            best, best_len = path, len(brand)
+    return best
+
+
+def _render(path: Path, max_w: int, max_h: int) -> QPixmap | None:
+    """Rasterise the SVG *at* the requested size, preserving aspect ratio.
+
+    Drawing from vector straight to the target resolution keeps logos sharp at
+    any size. The previous loader rasterised at the source size and then scaled
+    down, which is what made them look blurry.
+    """
+    if path.suffix.lower() != ".svg":
+        # Raster source: only ever scale DOWN, upscaling would just blur it.
+        raw = QPixmap(str(path))
+        if raw.isNull():
+            return None
+        if raw.width() <= max_w and raw.height() <= max_h:
+            return raw
+        return raw.scaled(max_w, max_h,
+                          Qt.AspectRatioMode.KeepAspectRatio,
+                          Qt.TransformationMode.SmoothTransformation)
+
+    try:
+        from PySide6.QtSvg import QSvgRenderer
+    except ImportError:
+        return None
+
+    renderer = QSvgRenderer(str(path))
+    if not renderer.isValid():
+        return None
+
+    box = renderer.viewBoxF()
+    vw, vh = box.width(), box.height()
+    if vw <= 0 or vh <= 0:                      # no viewBox → fall back
+        size = renderer.defaultSize()
+        vw, vh = size.width(), size.height()
+    if vw <= 0 or vh <= 0:
+        return None
+
+    scale = min(max_w / vw, max_h / vh)
+    w = max(1, round(vw * scale))
+    h = max(1, round(vh * scale))
+
+    px = QPixmap(w, h)
+    px.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(px)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    renderer.render(painter, QRectF(0, 0, w, h))
+    painter.end()
+    return px
 
 
 def get_logo(vehicle_name: str, max_w: int = 24, max_h: int = 20) -> QPixmap | None:
-    """Return a manufacturer logo pixmap that fits within max_w × max_h.
-
-    Only scales DOWN from the source resolution — never upscales, which would
-    introduce blur. The caller is responsible for enabling SmoothPixmapTransform
-    on the QPainter when drawing the returned pixmap at a different size.
-    """
+    """Return a manufacturer logo pixmap fitting within max_w × max_h, or None."""
     if not vehicle_name:
         return None
     key = (vehicle_name, max_w, max_h)
     if key in _scaled_cache:
         return _scaled_cache[key]
-    raw = _load_raw(vehicle_name)
-    if raw is None:
-        _scaled_cache[key] = None
-        return None
-    # If the source already fits within the target box, use it as-is (no upscale).
-    if raw.width() <= max_w and raw.height() <= max_h:
-        px = raw
-    else:
-        px = raw.scaled(max_w, max_h,
-                        Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation)
+    path = _match(vehicle_name)
+    px = _render(path, max_w, max_h) if path is not None else None
     _scaled_cache[key] = px
     return px

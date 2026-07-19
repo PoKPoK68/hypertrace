@@ -6,7 +6,7 @@ from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QSizePolicy
 
 from lmu_app.api.reader import DataReader, LMUSnapshot
-from lmu_app.utils.theme import T, label_font, num_font
+from lmu_app.utils.theme import T, draw_bold, label_font, num_font
 from lmu_app.widgets.base import BaseWidget, DEFAULT_SCALE
 
 _BAR_W = 33
@@ -17,6 +17,13 @@ WIDGET_W = _G * 2 + _BAR_W * 2 + _G   # = 3*G + 2*BAR_W
 WIDGET_H = _G * 2 + _BAR_H * 2 + _G
 
 _LABELS = ["FL", "FR", "RL", "RR"]
+
+# Colour bands expressed as an offset (°C) from the tyre's own optimal temp.
+_COLD_D      = -25.0   # at/below → fully cold (blue)
+_OPT_LO_D    = -8.0    # start of the optimal window (green)
+_OPT_HI_D    =  8.0    # end of the optimal window
+_HOT_D       =  25.0   # at/above → fully hot (red)
+_FALLBACK_OPT = 85.0   # used only if the game reports no optimal temp
 
 _POSITIONS = [
     (_G,              _G),
@@ -37,32 +44,18 @@ class TyresWidget(BaseWidget):
         {"type": "separator", "label": "Display"},
         {"key": "show_temp",     "label": "Show temperature (°C)", "type": "bool", "default": True},
         {"key": "show_wear_pct", "label": "Show wear %",           "type": "bool", "default": True},
-        {"type": "separator", "label": "Temperature range (°C)"},
-        {"key": "temp_cold",   "label": "Cold below",   "type": "int",
-         "min": 20, "max": 100, "step": 5, "default": 60},
-        {"key": "temp_opt_lo", "label": "Optimal from", "type": "int",
-         "min": 40, "max": 120, "step": 5, "default": 80},
-        {"key": "temp_opt_hi", "label": "Optimal to",   "type": "int",
-         "min": 60, "max": 150, "step": 5, "default": 100},
-        {"key": "temp_hot",    "label": "Hot above",    "type": "int",
-         "min": 80, "max": 200, "step": 5, "default": 120},
     ]
 
     def __init__(self, reader: DataReader,
                  show_temp: bool = True, show_wear_pct: bool = True,
-                 temp_cold: int = 60, temp_opt_lo: int = 80,
-                 temp_opt_hi: int = 100, temp_hot: int = 120,
                  **kw):
         self._show_temp     = show_temp
         self._show_wear_pct = show_wear_pct
         self._scale         = DEFAULT_SCALE / 100.0
         self._opacity       = 85
-        self._t_cold        = temp_cold
-        self._t_opt_lo      = temp_opt_lo
-        self._t_opt_hi      = temp_opt_hi
-        self._t_hot         = temp_hot
         self._temps:  list[float] = [0.0] * 4
         self._wears:  list[float] = [1.0] * 4
+        self._opts:   list[float] = [0.0] * 4
         super().__init__(reader, update_hz=10, **kw)
         self.setFixedSize(int(WIDGET_W * self._scale), int(WIDGET_H * self._scale))
 
@@ -74,29 +67,32 @@ class TyresWidget(BaseWidget):
         self._show_wear_pct = bool(params.get("show_wear_pct", True))
         self._scale         = int(params.get("scale", DEFAULT_SCALE)) / 100.0
         self._opacity       = max(0, min(100, int(params.get("opacity", 85))))
-        self._t_cold        = int(params.get("temp_cold",   60))
-        self._t_opt_lo      = int(params.get("temp_opt_lo", 80))
-        self._t_opt_hi      = int(params.get("temp_opt_hi", 100))
-        self._t_hot         = int(params.get("temp_hot",    120))
         self.setFixedSize(int(WIDGET_W * self._scale), int(WIDGET_H * self._scale))
         self.update()
 
     def on_data(self, snap: LMUSnapshot) -> None:
         self._temps = list(snap.tyres.temp_carcass)
         self._wears = list(snap.tyres.wear)
+        self._opts  = list(snap.tyres.optimal_temp)
         self.update()
 
-    def _temp_color(self, t: float) -> QColor:
-        if t <= 0: return QColor(T.DIM)
-        if t < self._t_cold:
+    def _temp_color(self, t: float, opt: float) -> QColor:
+        """Colour relative to this tyre's own optimal temperature (mOptimalTemp),
+        so it adapts per car and compound instead of fixed thresholds."""
+        if t <= 0:
+            return QColor(T.DIM)
+        if opt <= 0:
+            opt = _FALLBACK_OPT      # game gave no optimal → sane default
+        d = t - opt
+        if d <= _COLD_D:
             return QColor(80, 140, 255)
-        if t < self._t_opt_lo:
-            f = (t - self._t_cold) / max(1, self._t_opt_lo - self._t_cold)
+        if d < _OPT_LO_D:
+            f = (d - _COLD_D) / (_OPT_LO_D - _COLD_D)
             return QColor(int(80 - 80*f), int(140 + 80*f), int(255 - 175*f))
-        if t <= self._t_opt_hi:
+        if d <= _OPT_HI_D:
             return QColor(60, 220, 80)
-        if t < self._t_hot:
-            f = (t - self._t_opt_hi) / max(1, self._t_hot - self._t_opt_hi)
+        if d < _HOT_D:
+            f = (d - _OPT_HI_D) / (_HOT_D - _OPT_HI_D)
             return QColor(int(60 + 195*f), int(220 - 160*f), int(80 - 60*f))
         return QColor(255, 60, 60)
 
@@ -112,6 +108,7 @@ class TyresWidget(BaseWidget):
     def _draw_tyre(self, p: QPainter, x: int, y: int, idx: int) -> None:
         wear  = max(0.0, min(1.0, self._wears[idx] if idx < 4 else 1.0))
         temp  =                   self._temps[idx]  if idx < 4 else 0.0
+        opt   =                   self._opts[idx]   if idx < 4 else 0.0
         label = _LABELS[idx] if idx < 4 else ""
 
         # Track background
@@ -122,28 +119,30 @@ class TyresWidget(BaseWidget):
         # Wear fill rising from bottom, colored by temperature
         fill_h = max(0, int(_BAR_H * wear))
         if fill_h > 0:
-            p.setBrush(self._temp_color(temp))
+            p.setBrush(self._temp_color(temp, opt))
             p.drawRoundedRect(x, y + _BAR_H - fill_h, _BAR_W, fill_h, 4, 4)
 
         txt_col = QColor(T.TEXT)
 
         # Temperature — top center
         if self._show_temp and temp > 0:
-            p.setFont(num_font(7))
+            p.setFont(num_font(7, hint=False))
             p.setPen(txt_col)
-            p.drawText(QRectF(x, y + 1, _BAR_W, 13),
-                       Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter,
-                       f"{temp:.0f}°")
+            draw_bold(p, lambda: p.drawText(
+                QRectF(x, y + 1, _BAR_W, 13),
+                Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter,
+                f"{temp:.0f}°"))
 
-        # Corner label (FL/FR/RL/RR) — centered
+        # Wear % — bottom center
+        if self._show_wear_pct:
+            p.setFont(num_font(7, hint=False))
+            p.setPen(txt_col)
+            draw_bold(p, lambda: p.drawText(
+                QRectF(x, y + _BAR_H - 13, _BAR_W, 13),
+                Qt.AlignmentFlag.AlignCenter, f"{wear * 100:.0f}%"))
+
+        # Corner label (FL/FR/RL/RR) — centered, drawn last to avoid font state leaking into num draws
         p.setFont(label_font(6))
         p.setPen(QColor(255, 255, 255, 140))
         p.drawText(QRectF(x, y, _BAR_W, _BAR_H),
                    Qt.AlignmentFlag.AlignCenter, label)
-
-        # Wear % — bottom center
-        if self._show_wear_pct:
-            p.setFont(num_font(7))
-            p.setPen(txt_col)
-            p.drawText(QRectF(x, y + _BAR_H - 13, _BAR_W, 13),
-                       Qt.AlignmentFlag.AlignCenter, f"{wear * 100:.0f}%")

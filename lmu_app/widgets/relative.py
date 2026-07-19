@@ -9,12 +9,12 @@ import math as _math
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QRectF
-from PySide6.QtGui import QColor, QIcon, QPainter
+from PySide6.QtGui import QColor, QFont, QIcon, QPainter
 from PySide6.QtWidgets import QSizePolicy
 
 from lmu_app.api.reader import DataReader, LMUSnapshot
 from lmu_app.utils.class_colors import class_color
-from lmu_app.utils.theme import T, label_font, num_font, text_font
+from lmu_app.utils.theme import T, draw_bold, label_font, num_font, text_font
 from lmu_app.widgets.base import BaseWidget, DEFAULT_SCALE
 
 _ASSETS = Path(__file__).resolve().parent.parent / "assets"
@@ -173,7 +173,7 @@ class RelativeWidget(BaseWidget):
         self._outlap_tracking:  dict[int, int]  = {}
         self._pit_lap_tracking: dict[int, int]  = {}
         self._prev_in_pits:     dict[int, bool] = {}
-        self._last_session_player_laps: int = -1
+        self._last_session_id:  int = -1
         self._class_colors:   dict[str, str]  = {}
         self._player_color = QColor(0xEC, 0xAA, 0x43, 51)
         self._temp_pm_trk = None
@@ -218,30 +218,32 @@ class RelativeWidget(BaseWidget):
         self._ses_remaining = snap.session.session_time_remaining
         self._track_temp    = snap.session.track_temp
         self._air_temp      = snap.session.ambient_temp
+
+        # New session / restart (reader bumps session_id) → clear badge state
+        if snap.session.session_id != self._last_session_id:
+            self._last_session_id = snap.session.session_id
+            self._outlap_tracking.clear()
+            self._pit_lap_tracking.clear()
+            self._prev_in_pits.clear()
+
         vehicles = snap.session.vehicles
         player   = next((v for v in vehicles if v.is_player), None)
         if not player:
             return
 
-        # New session: lap counter went backwards → clear all badge state
-        if self._last_session_player_laps >= 0 and player.total_laps < self._last_session_player_laps:
-            self._outlap_tracking.clear()
-            self._pit_lap_tracking.clear()
-            self._prev_in_pits.clear()
-        self._last_session_player_laps = player.total_laps
-
         # Outlap / pit-lap tracking
         new_prev: dict[int, bool] = {}
         for v in vehicles:
             slot     = v.slot_id
-            was_pits = self._prev_in_pits.get(slot, v.in_pits)
-            new_prev[slot] = v.in_pits
+            in_pit   = v.in_pit_lane
+            was_pits = self._prev_in_pits.get(slot, in_pit)
+            new_prev[slot] = in_pit
             if v.in_garage:
                 self._outlap_tracking.pop(slot, None)
                 self._pit_lap_tracking.pop(slot, None)
-            elif not was_pits and v.in_pits:
+            elif not was_pits and in_pit:
                 self._pit_lap_tracking[slot] = v.total_laps
-            elif was_pits and not v.in_pits:
+            elif was_pits and not in_pit:
                 self._outlap_tracking[slot] = v.total_laps
             elif slot in self._outlap_tracking and v.total_laps > self._outlap_tracking[slot]:
                 del self._outlap_tracking[slot]
@@ -279,7 +281,7 @@ class RelativeWidget(BaseWidget):
             gap_behind = gap - laptime_est if gap > 0 else gap
 
             slot  = v.slot_id
-            badge = ("PIT" if v.in_pits
+            badge = ("PIT" if v.in_pit_lane
                      else "OUT" if slot in self._outlap_tracking
                      else f"L{self._pit_lap_tracking[slot]}" if slot in self._pit_lap_tracking
                      else "")
@@ -301,7 +303,10 @@ class RelativeWidget(BaseWidget):
         behind_entries = [e for _, e in behind_list[:self._behind]]
 
         p_slot  = player.slot_id
-        p_badge = ("PIT" if player.in_pits
+        # GAR only ever applies to the player: other drivers in the garage are
+        # filtered out of the relative list above.
+        p_badge = ("GAR" if player.in_garage
+                   else "PIT" if player.in_pit_lane
                    else "OUT" if p_slot in self._outlap_tracking
                    else f"L{self._pit_lap_tracking[p_slot]}" if p_slot in self._pit_lap_tracking
                    else "")
@@ -353,11 +358,14 @@ class RelativeWidget(BaseWidget):
                 baseline = 1 + (_sbh + fm.ascent() - fm.descent()) // 2
                 p.setPen(QColor(T.ACCENT))
                 p.drawText(6, baseline, lbl)
+                f_num = label_font(max(6, fsh), hint=False)
+                f_num.setCapitalization(QFont.Capitalization.MixedCase)
+                p.setFont(f_num)
                 p.setPen(QColor(T.TEXT))
-                p.drawText(6 + lbl_w + 6, baseline,
-                           _fmt_session_time(self._current_et, self._ses_remaining))
+                _st = _fmt_session_time(self._current_et, self._ses_remaining)
+                draw_bold(p, lambda: p.drawText(6 + lbl_w + 6, baseline, _st))
             elif hi == "temp":
-                p.setFont(num_font(fsh))
+                p.setFont(num_font(fsh, hint=False))
                 fm = p.fontMetrics()
                 trk_str = f"{self._track_temp:.0f}°"
                 air_str = f"{self._air_temp:.0f}°"
@@ -374,16 +382,19 @@ class RelativeWidget(BaseWidget):
                 icon_y = 1 + _sbh // 2 - icon_sz // 2
                 p.drawPixmap(x0, icon_y, self._temp_pm_trk)
                 p.setPen(QColor(T.DIM))
-                p.drawText(x0 + icon_sz + gap_px, 1, trk_w + 2, _sbh,
-                           Qt.AlignmentFlag.AlignVCenter, trk_str)
+                draw_bold(p, lambda: p.drawText(
+                    x0 + icon_sz + gap_px, 1, trk_w + 2, _sbh,
+                    Qt.AlignmentFlag.AlignVCenter, trk_str))
                 ax = x0 + icon_sz + gap_px + trk_w + sep_px
                 p.drawPixmap(ax, icon_y, self._temp_pm_air)
                 p.setPen(QColor(T.DIM))
-                p.drawText(ax + icon_sz + gap_px, 1, air_w + 2, _sbh,
-                           Qt.AlignmentFlag.AlignVCenter, air_str)
+                draw_bold(p, lambda: p.drawText(
+                    ax + icon_sz + gap_px, 1, air_w + 2, _sbh,
+                    Qt.AlignmentFlag.AlignVCenter, air_str))
             p.fillRect(QRectF(2, _sbh, W - 4, 1), T.FAINT)
 
         _badge_map = {
+            "GAR": (QColor(T.GAR_BG), QColor(T.GAR_FG)),
             "PIT": (QColor(T.PIT_BG), QColor(T.PIT_FG)),
             "OUT": (QColor(T.OUT_BG), QColor(T.OUT_FG)),
         }
@@ -417,9 +428,10 @@ class RelativeWidget(BaseWidget):
 
             # Driver name
             name_col = QColor(T.TEXT)
-            p.setFont(text_font(fs))
+            p.setFont(text_font(fs, hint=False))
             p.setPen(name_col)
-            p.drawText(28, y, ncw, rh, Qt.AlignmentFlag.AlignVCenter, name)
+            draw_bold(p, lambda: p.drawText(28, y, ncw, rh,
+                                            Qt.AlignmentFlag.AlignVCenter, name))
 
             # Badge overlaid at right edge of name zone
             if badge:

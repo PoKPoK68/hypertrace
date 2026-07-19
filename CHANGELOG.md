@@ -4,6 +4,53 @@ All notable changes to LMU App are documented here.
 
 ---
 
+## [0.6.9] — Performance, text rendering & pit detection
+
+### Performance
+- **Stream mode no longer stutters the on-screen overlays** — PNG encoding moved off the Qt GUI thread onto a dedicated encoder thread with a latest-wins queue. The GUI thread now only rasterises the widget; the zlib compression runs on another core.
+- **Reader split into two cadences** — the heavy full-field scan (all vehicles, REST merge, telemetry loop) is throttled to ~10 Hz while player telemetry stays at full rate, cutting allocations and GC churn by ~5×. Standings/relative already sampled at 5-10 Hz, so there is no visible difference.
+- Full-field rescan forced immediately on session change or when the car count changes, so the field is never stale.
+- Reader micro-optimisations: memoized string decoding (driver/team/class/model names were decoded for every car on every tick), compound-type map hoisted to a module constant, `import math` moved out of the hot path.
+- **Pedals overlay** — dedicated 60 fps render timer and wall-clock trace scrolling, decoupled from the 50 Hz data feed (removes the 60/50 Hz beat stutter).
+
+### Text rendering
+- Fixed the **flattened `0`** and the **asymmetric capital `M`** at small sizes: font hinting snapped round glyphs to the pixel grid. Hinting is now disabled on the affected text, with synthetic bold (`draw_bold`) restoring the weight that hinting used to provide.
+- Applied to session headers (relative, standings), tyre temperatures and wear %, the compound badge letter, the `KM/H` unit and driver names in standings, relative and broadcast.
+- Compound badge letter is now correctly centred — the label letter-spacing added a trailing gap that pushed a lone glyph off-centre.
+
+### Pit detection
+- **PIT badge now appears after leaving the garage.** No single field covers every case: `mPitState` only tracks a pit *stop* sequence, and `mInPits` stays false when driving out of the box. `in_pit_lane` now combines `mCurrentSector`'s pit-lane sign bit, `mPitState >= 2` and `mInPits`.
+- Handles the undocumented `mPitState = 5` observed when leaving the garage (the header only documents 0-4).
+- Pit state is centralised in the reader instead of being re-derived in each widget, and is used by standings, relative, broadcast and live timing.
+- **Relative**: `GAR` badge added for the player — other drivers in the garage are filtered out of the list, so the case was never handled and showed `PIT` instead.
+
+### Session handling
+- New `session_id`, bumped on session change **or restart**, giving widgets a reliable per-session reset signal. Fuel calculator, VE calculator and relative badges now use it instead of the fragile "lap counter went backwards" heuristic.
+
+### Tyres
+- Tyre colours are now derived from each tyre's **own optimal temperature** (`mOptimalTemp`, read per wheel) instead of fixed thresholds, so they adapt per car and per compound.
+- The four temperature-range settings (Cold below / Optimal from / Optimal to / Hot above) have been removed — they no longer have any meaning.
+
+### Weather
+- The forecast is now fetched by the reader; **the weather widget no longer performs any REST call**.
+- Current sky type is read from shared memory (`mCloudCoverage`) and shown immediately while the forecast loads, instead of "NO DATA".
+- Forecast fetched at launch and refreshed on every session change.
+
+### Manufacturer logos
+- **Logos were never displayed** — the loader pointed at a non-existent folder, searched for `.png` while the files are `.svg`, and used a matching rule that could never succeed.
+- SVGs are now rendered at the target size via `QSvgRenderer` (sharp at any scale) rather than rasterised at source size and downscaled.
+- PNG sources are supported too: the Porsche "SVG" was a raster image wrapped in an SVG (`pattern` + embedded base64), which Qt's SVG 1.2 Tiny renderer cannot draw.
+
+### Fuel & VE calculators
+- Table columns are now sized to their content instead of being split equally — `REFUEL` was truncated (`+99.9 %` needs 52 px but only had 35).
+- Values keep one decimal up to 99.9 and drop it at 100 (`100 %` / `100 L`, never `100.0 %`).
+- Missing values display a single `-`.
+
+### Removed
+- Offline/mock mode fully removed: `MockReader`, the `mock` parameter of `DataReader`, the `tests/` directory and the pytest configuration.
+
+---
+
 ## [0.6.8] — Broadcast polish & lap time color fixes
 
 ### Broadcast Tower

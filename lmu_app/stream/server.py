@@ -6,7 +6,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from PySide6.QtCore import QBuffer, QObject, QPoint, Qt, QTimer
-from PySide6.QtGui import QPixmap, QRegion
+from PySide6.QtGui import QImage, QPixmap, QRegion
 from PySide6.QtWidgets import QWidget
 
 logger = logging.getLogger(__name__)
@@ -206,22 +206,36 @@ class StreamServer(HTTPServer):
 # Render-to-PNG helper
 # ---------------------------------------------------------------------------
 
-def render_widget_png(widget: QWidget) -> bytes:
-    """Render a (possibly hidden) Qt widget to a transparent PNG in memory."""
+def render_widget_qimage(widget: QWidget) -> QImage:
+    """Render a (possibly hidden) Qt widget to a transparent QImage.
+
+    MUST be called on the GUI thread (it paints the widget). The returned
+    QImage can then be PNG-encoded on a worker thread — see encode_png() —
+    so the expensive zlib compression never blocks the GUI event loop.
+    """
     w = widget.width() or widget.sizeHint().width() or 1
     h = widget.height() or widget.sizeHint().height() or 1
     widget.ensurePolished()
-    px = QPixmap(w, h)
-    px.fill(Qt.GlobalColor.transparent)
+    img = QImage(w, h, QImage.Format.Format_ARGB32)
+    img.fill(Qt.GlobalColor.transparent)
     # Use positional args — PySide6 keyword is 'renderFlags', not 'flags'
-    widget.render(px, QPoint(0, 0), QRegion(), QWidget.RenderFlag.DrawChildren)
+    widget.render(img, QPoint(0, 0), QRegion(), QWidget.RenderFlag.DrawChildren)
+    return img
+
+
+def encode_png(img: QImage) -> bytes:
+    """PNG-encode a QImage to bytes. Thread-safe — safe to call off the GUI thread."""
     buf = QBuffer()
     buf.open(QBuffer.OpenModeFlag.WriteOnly)
-    px.save(buf, "PNG")
+    img.save(buf, "PNG")
     data = bytes(buf.data())
     buf.close()
-    logger.debug("render_widget_png %s: %dx%d → %d bytes", widget.__class__.__name__, w, h, len(data))
     return data
+
+
+def render_widget_png(widget: QWidget) -> bytes:
+    """Render a widget straight to PNG bytes (GUI thread only). Convenience wrapper."""
+    return encode_png(render_widget_qimage(widget))
 
 
 # ---------------------------------------------------------------------------
@@ -243,6 +257,15 @@ class StreamManager(QObject):
         self._hide_in_garage: bool        = False
         self._placeholder: bytes          = b""
         self._last_render: dict[str, float] = {}   # key → monotonic time of last render
+
+        # PNG encoding runs on a dedicated worker thread so the heavy zlib
+        # compression never blocks the GUI thread (which would stutter the
+        # on-screen overlays). GUI thread only does widget.render() → QImage.
+        self._enc_lock    = threading.Lock()
+        self._enc_pending: dict[str, QImage] = {}   # key → latest QImage (latest-wins)
+        self._enc_event   = threading.Event()
+        self._enc_thread: threading.Thread | None = None
+        self._enc_running = False
 
         self._timer = QTimer(self)
         self._timer.setInterval(16)   # ~60 fps tick — per-widget throttling handles actual rate
@@ -267,11 +290,38 @@ class StreamManager(QObject):
             self._server = srv
             for name in self._widgets:
                 srv.add_name(name)
+            self._enc_running = True
+            self._enc_thread = threading.Thread(
+                target=self._encoder_loop, name="StreamEncoder", daemon=True)
+            self._enc_thread.start()
             self._timer.start()
         return ok
 
+    def _encoder_loop(self) -> None:
+        """Worker: drains pending QImages, PNG-encodes them, pushes to server."""
+        while self._enc_running:
+            self._enc_event.wait(0.5)
+            self._enc_event.clear()
+            with self._enc_lock:
+                batch = self._enc_pending
+                self._enc_pending = {}
+            for key, img in batch.items():
+                try:
+                    png = encode_png(img)
+                    if self._server is not None:
+                        self._server.set_frame(key, png)
+                except Exception as exc:
+                    logger.warning("Stream encode error (%s): %s", key, exc)
+
     def stop(self) -> None:
         self._timer.stop()
+        self._enc_running = False
+        self._enc_event.set()
+        if self._enc_thread is not None:
+            self._enc_thread.join(timeout=1.0)
+            self._enc_thread = None
+        with self._enc_lock:
+            self._enc_pending.clear()
         if self._server is not None:
             # Push transparent placeholder so OBS clears before server stops
             if self._placeholder:
@@ -329,7 +379,9 @@ class StreamManager(QObject):
                 except Exception:
                     pass
             try:
-                png = render_widget_png(widget)
-                self._server.set_frame(key, png)
+                img = render_widget_qimage(widget)          # GUI thread (light)
+                with self._enc_lock:
+                    self._enc_pending[key] = img             # latest-wins, no backlog
+                self._enc_event.set()                        # wake encoder thread
             except Exception as exc:
                 logger.warning("Stream render error (%s): %s", key, exc)

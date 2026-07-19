@@ -44,14 +44,7 @@ pip install -e ".[dev]"
 ## Usage
 
 ```bash
-# With LMU running
 python -m lmu_app
-
-# Offline mode — simulated data, no game needed
-python -m lmu_app --mock
-
-# Extra options
-python -m lmu_app --mock --hz 60 --verbose
 ```
 
 Each overlay can be dragged to any position on screen, locked in place, and configured independently via the main control window.

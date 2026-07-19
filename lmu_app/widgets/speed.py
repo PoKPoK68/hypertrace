@@ -6,7 +6,7 @@ from PySide6.QtGui import QColor, QFont, QPainter
 from PySide6.QtWidgets import QSizePolicy
 
 from lmu_app.api.reader import DataReader, LMUSnapshot
-from lmu_app.utils.theme import T, label_font, rpm_seg_color
+from lmu_app.utils.theme import T, draw_bold, label_font, rpm_seg_color
 from lmu_app.widgets.base import BaseWidget, DEFAULT_SCALE
 
 BASE_W, BASE_H = 90, 50
@@ -104,14 +104,14 @@ class SpeedWidget(BaseWidget):
                    avc | Qt.AlignmentFlag.AlignRight, speed_str)
 
         # KM/H — always at the same fixed position, baseline-aligned with speed
-        p.setFont(label_font(6))
+        p.setFont(label_font(6, hint=False))
         fm_kph  = p.fontMetrics()
         kph_x   = _PAD_X + ref_w + 3
         kph_w   = fm_kph.horizontalAdvance("KM/H") + 4
         p.setPen(QColor(T.DIM))
-        p.drawText(QRectF(kph_x, spd_base - fm_kph.ascent(),
+        draw_bold(p, lambda: p.drawText(QRectF(kph_x, spd_base - fm_kph.ascent(),
                           kph_w, fm_kph.height()),
-                   avc | Qt.AlignmentFlag.AlignLeft, "KM/H")
+                   avc | Qt.AlignmentFlag.AlignLeft, "KM/H"))
 
         # Gear — right-aligned in right 32 %
         p.setFont(_num_px(num_px))

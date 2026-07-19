@@ -9,18 +9,19 @@ from lmu_app.api.reader import DataReader, LMUSnapshot
 from lmu_app.utils.theme import T, label_font, num_font, draw_panel
 from lmu_app.widgets.base import BaseWidget, DEFAULT_SCALE
 from lmu_app.widgets.fuel_calc import (
-    _BH, _LVL_H, _PAD, _HDR, _RH,
+    _BH, _LVL_H, _PAD, _HDR, _RH, _LABEL_W,
     _draw_bar, _draw_level, _laps_remaining, _fuel_col, _calc,
-    _col_layout, _widget_w, _HDR_NAMES, _class_has_ve,
+    _table_layout, _widget_w, _HDR_NAMES, _VE_REFS, _class_has_ve, _fmt_fuel,
 )
 
 
 def _fmt_ve(v: float) -> str:
-    return f"{v:.0f} %" if v >= 10 else f"{v:.1f} %"
+    """One decimal up to 99.9 %; none at 100 % (the max) to stay 3 digits."""
+    return f"{v:.0f} %" if v >= 100 else f"{v:.1f} %"
 
 
 def _fmt_ref_ve(v: float) -> str:
-    return f"+{v:.0f} %" if v >= 10 else f"+{v:.1f} %"
+    return f"+{v:.0f} %" if v >= 100 else f"+{v:.1f} %"
 
 
 class VECalcWidget(BaseWidget):
@@ -69,6 +70,7 @@ class VECalcWidget(BaseWidget):
         self._ve_at_lap_start   = -1.0
         self._fuel_at_lap_start = -1.0
         self._fuel_prev_tick    = -1.0
+        self._last_session_id   = -1
 
         self._ve_history:  deque[float] = deque(maxlen=5)
         self._last_lap_ratio = 0.0
@@ -138,7 +140,12 @@ class VECalcWidget(BaseWidget):
         sep_h = 10 if bars_h > 0 and has_below else 0
         hdr_h = _HDR if has_table else 0
 
-        self._w          = _widget_w(len(vis_data)) if (has_table or ratio_h > 0) else _widget_w(0)
+        if has_table or ratio_h > 0:
+            self._w, self._col_pos = _table_layout(
+                _VE_REFS, self._show_usage, self._show_laps,
+                self._show_refuel, self._show_finish)
+        else:
+            self._w, self._col_pos = _widget_w(0), {"label": (_PAD, _LABEL_W)}
         self._bw         = self._w - 2 * _PAD
         self._ve_sec_h   = ve_h
         self._fuel_sec_h = fuel_h
@@ -151,8 +158,6 @@ class VECalcWidget(BaseWidget):
             _PAD + bars_h + sep_h + hdr_h + vis_rows * _RH + ratio_h + _PAD,
             _PAD * 2
         )
-        self._col_pos = _col_layout(self._w, self._show_usage, self._show_laps,
-                                    self._show_refuel, self._show_finish)
         self.setFixedSize(int(self._w * self._scale), int(self._layout_h * self._scale))
 
     def apply_params(self, params: dict) -> None:
@@ -180,21 +185,22 @@ class VECalcWidget(BaseWidget):
         s = snap.session
         player = next((x for x in s.vehicles if x.is_player), None)
 
+        # New session / restart (reader bumps session_id) → clear VE history
+        if s.session_id != self._last_session_id:
+            self._last_session_id   = s.session_id
+            self._last_total_laps   = -1
+            self._ve_history.clear()
+            self._last_lap_ve       = 0.0
+            self._last_lap_fuel     = 0.0
+            self._last_lap_ratio    = 0.0
+            self._ve_at_lap_start   = -1.0
+            self._fuel_at_lap_start = -1.0
+
         self._current_ve   = v.virtual_energy
         self._current_fuel = v.fuel
         self._fuel_cap     = max(1.0, v.fuel_capacity)
 
         if player:
-            # New session detected: lap counter went backwards → clear history
-            if self._last_total_laps >= 0 and player.total_laps < self._last_total_laps:
-                self._last_total_laps   = -1
-                self._ve_history.clear()
-                self._last_lap_ve       = 0.0
-                self._last_lap_fuel     = 0.0
-                self._last_lap_ratio    = 0.0
-                self._ve_at_lap_start   = -1.0
-                self._fuel_at_lap_start = -1.0
-
             if self._fuel_prev_tick >= 0 and (v.fuel - self._fuel_prev_tick) > 2.0:
                 self._fuel_at_lap_start = v.fuel
             if self._ve_at_lap_start >= 0 and (v.virtual_energy - self._ve_at_lap_start) > 0.05:
@@ -243,12 +249,12 @@ class VECalcWidget(BaseWidget):
         if self._show_ve_bar:
             _draw_bar(p, _PAD, y, self._bw, _BH, self._current_ve,
                       QColor(T.VE_LO), QColor(T.VE_HI),
-                      "VE", f"{self._current_ve * 100:.1f} %",
+                      "VE", _fmt_ve(self._current_ve * 100),
                       show_val=self._show_ve_level)
             y += _BH
         elif self._show_ve_level:
             _draw_level(p, _PAD, y, self._bw, _LVL_H,
-                        "VE", f"{self._current_ve * 100:.1f} %", QColor(T.VE_LO))
+                        "VE", _fmt_ve(self._current_ve * 100), QColor(T.VE_LO))
             y += _LVL_H
 
         if self._inter_h:
@@ -259,12 +265,12 @@ class VECalcWidget(BaseWidget):
             _draw_bar(p, _PAD, y, self._bw, _BH,
                       self._current_fuel / self._fuel_cap,
                       fuel_col[0], fuel_col[1],
-                      "FUEL", f"{self._current_fuel:.1f} L",
+                      "FUEL", _fmt_fuel(self._current_fuel),
                       show_val=self._show_fuel_level)
             y += _BH
         elif self._show_fuel_level:
             _draw_level(p, _PAD, y, self._bw, _LVL_H,
-                        "FUEL", f"{self._current_fuel:.1f} L", fuel_col[0])
+                        "FUEL", _fmt_fuel(self._current_fuel), fuel_col[0])
             y += _LVL_H
 
         if not (self._has_table or self._ratio_h > 0):
@@ -309,20 +315,20 @@ class VECalcWidget(BaseWidget):
                     p.setFont(num_font(8)); p.setPen(QColor(T.TEXT))
                     p.drawText(cx, y, cw, _RH,
                                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
-                               _fmt_ve(ve_pct) if ve_pct > 0.001 else "---")
+                               _fmt_ve(ve_pct) if ve_pct > 0.001 else "-")
 
                 if "laps" in self._col_pos:
                     cx, cw = self._col_pos["laps"]
                     p.setFont(num_font(8)); p.setPen(QColor(T.TEXT))
                     p.drawText(cx, y, cw, _RH,
                                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
-                               f"{laps_on:.1f}" if laps_on is not None else "---")
+                               f"{laps_on:.1f}" if laps_on is not None else "-")
 
                 if "refuel" in self._col_pos:
                     cx, cw = self._col_pos["refuel"]
                     p.setFont(num_font(8))
                     if refuel_pct is None:
-                        p.setPen(QColor(T.TEXT)); ref_str = "---"
+                        p.setPen(QColor(T.TEXT)); ref_str = "-"
                     elif refuel_pct < 0.05:
                         p.setPen(QColor(T.GOOD)); ref_str = "OK"
                     else:
@@ -335,7 +341,7 @@ class VECalcWidget(BaseWidget):
                     cx, cw = self._col_pos["finish"]
                     p.setFont(num_font(8))
                     if finish_pct is None:
-                        p.setPen(QColor(T.TEXT)); fin_str = "---"
+                        p.setPen(QColor(T.TEXT)); fin_str = "-"
                     else:
                         p.setPen(QColor(T.TEXT)); fin_str = _fmt_ve(finish_pct)
                     p.drawText(cx, y, cw, _RH,
@@ -348,7 +354,7 @@ class VECalcWidget(BaseWidget):
         if self._ratio_h:
             y += 5
             ratio = self._last_lap_ratio
-            ratio_str = f"{math.ceil(ratio * 100) / 100:.2f}" if ratio > 0 else "---"
+            ratio_str = f"{math.ceil(ratio * 100) / 100:.2f}" if ratio > 0 else "-"
             p.setFont(label_font(7)); p.setPen(QColor(T.DIM))
             p.drawText(_PAD, y, self._bw // 2, _RH, Qt.AlignmentFlag.AlignVCenter, "FUEL RATIO")
             p.setFont(num_font(8)); p.setPen(QColor(T.TEXT))
