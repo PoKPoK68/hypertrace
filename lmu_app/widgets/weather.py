@@ -66,7 +66,7 @@ class WeatherWidget(BaseWidget):
         self._svg_air    = None
         self._svg_trk    = None
         self._sky_svgs: list = []
-        super().__init__(reader, update_hz=5, **kw)
+        super().__init__(reader, update_hz=1, **kw)
         self._load_svgs()
         self.setFixedSize(int(BASE_W * self._scale), int(BASE_H * self._scale))
 

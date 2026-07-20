@@ -4,15 +4,20 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, QRectF
 from PySide6.QtGui import QColor, QPainter
 
+from lmu_app.utils.class_colors import CLASS_ENTRIES
+
+# Hard tyre red matches the Hypercar class color used elsewhere in the app
+# (standings/relative class badges), so both reds read as the same red.
+_HYPERCAR_RED = next(e["default"] for e in CLASS_ENTRIES if e["key"] == "HYPERCAR")
 
 # mCompoundType values from lmu_enum.LMUCompoundType
 COMP_TYPE_TO_NAME: dict[int, str] = {0: "Soft", 1: "Medium", 2: "Hard", 3: "Wet"}
 
 _COMP_COLORS: dict[str, tuple[str, str]] = {
-    "S": ("#FFFFFF", "#111111"),   # Soft   → blanc
-    "M": ("#F5C518", "#111111"),   # Medium → jaune
-    "H": ("#CC2200", "#FFFFFF"),   # Hard   → rouge
-    "W": ("#4488CC", "#FFFFFF"),   # Wet    → bleu
+    "S": ("#FFFFFF",      "#111111"),   # Soft   → blanc
+    "M": ("#F5C518",      "#111111"),   # Medium → jaune
+    "H": (_HYPERCAR_RED,  "#FFFFFF"),   # Hard   → rouge (même rouge que Hypercar)
+    "W": ("#4488CC",      "#FFFFFF"),   # Wet    → bleu
 }
 
 

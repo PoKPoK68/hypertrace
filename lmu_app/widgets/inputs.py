@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from collections import deque
 
-from PySide6.QtCore import Qt, QRectF, QPointF, QTimer
+from PySide6.QtCore import Qt, QRectF, QPointF
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QSizePolicy
 
@@ -50,8 +50,6 @@ class InputsWidget(BaseWidget):
          "show_if": ("show_trace", True)},
     ]
 
-    stream_hz = 30   # render at 30 fps in stream mode
-
     def __init__(self, reader: DataReader, **kw):
         self._t = self._b = self._c = 0.0
         self._scale          = DEFAULT_SCALE / 100.0
@@ -64,25 +62,20 @@ class InputsWidget(BaseWidget):
         self._show_brake      = True
         self._show_clutch     = True
         self._trace_buf: deque[tuple[float, float, float, float]] = deque()
-        super().__init__(reader, update_hz=60, **kw)
-        # Steady 60 fps repaint, decoupled from the 50 Hz data feed: the trace
-        # scrolls by wall-clock time so motion stays smooth even when no new
-        # sample arrived this frame (avoids the 60/50 Hz beat stutter).
-        self._render_timer = QTimer(self)
-        self._render_timer.setInterval(16)
-        self._render_timer.timeout.connect(self.update)
+        super().__init__(reader, update_hz=30, **kw)
         self._apply_size()
 
     def setup_ui(self):
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
-    def start(self) -> None:
-        super().start()
-        self._render_timer.start()
-
-    def stop(self) -> None:
-        self._render_timer.stop()
-        super().stop()
+    def _update(self) -> None:
+        # Steady 30 fps repaint, decoupled from the 50 Hz data feed: the trace
+        # scrolls by wall-clock time so motion stays smooth even when no new
+        # sample arrived this frame. Repainting here (instead of a second,
+        # separate QTimer) keeps that decoupling with a single timer.
+        super()._update()
+        if self.isVisible():
+            self.update()
 
     def _n_bars(self) -> int:
         return sum([self._show_throttle, self._show_brake, self._show_clutch])

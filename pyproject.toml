@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lmu-app"
-version = "0.6.12"
+version = "0.6.14"
 description = "A modern telemetry overlay for Le Mans Ultimate"
 requires-python = ">=3.11"
 dependencies = [

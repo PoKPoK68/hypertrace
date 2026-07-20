@@ -23,7 +23,6 @@ _ASSETS = Path(__file__).resolve().parent.parent / "assets"
 _TRACK_TEMP_SVG = str(_ASSETS / "track-temp.svg")
 _AIR_TEMP_SVG   = str(_ASSETS / "air-temp.svg")
 
-_POS_COL_W    = 28    # largeur colonne position
 _MARGIN       = 6     # marge droite
 _NAME_PAD_L   = 5     # gap between the position chip and the driver name
 _GAP_PAD_L    = 5     # gap between the name/badge zone and the relative-time text
@@ -35,6 +34,26 @@ def _session_bar_h(font_size: int) -> int:
 
 def _char_px(font_size: int) -> int:
     return max(4, round(7 * font_size / 9))
+
+
+_POS_CHIP_X = 4   # left inset of the position chip
+_POS_CHIP_R = 2   # gap between the chip's right edge and the driver name
+
+
+@lru_cache(maxsize=64)
+def _pos_chip_w(font_size: int) -> int:
+    """Position chip width, measured from real font metrics.
+
+    Was a fixed 22 px regardless of font size, so a 2-digit position (10+)
+    grazed the chip's edges — and at larger font sizes, since drawText clips
+    to its rect by default, actually got clipped by them.
+    """
+    fm = QFontMetrics(num_font(font_size))
+    return max(18, fm.horizontalAdvance("99") + 6)
+
+
+def _pos_col_w(font_size: int) -> int:
+    return _POS_CHIP_X + _pos_chip_w(font_size) + _POS_CHIP_R
 
 
 _BADGE_PAD = 5   # inner horizontal padding on each side of a badge label
@@ -66,7 +85,7 @@ def _gap_col_w(font_size: int, decimals: int) -> int:
 
 
 def _widget_w(name_width: int, font_size: int = 9, decimals: int = 1) -> int:
-    return (_POS_COL_W + name_width + _GAP_PAD_L
+    return (_pos_col_w(font_size) + name_width + _GAP_PAD_L
             + _gap_col_w(font_size, decimals) + _MARGIN)
 
 
@@ -365,6 +384,8 @@ class RelativeWidget(BaseWidget):
         H    = _widget_h(self._ahead, self._behind, self._font_size, _show_bar)
         ncw  = self._name_width
         bdg  = _badge_px(self._font_size)
+        pos_w  = _pos_col_w(self._font_size)
+        chip_w = _pos_chip_w(self._font_size)
         _sbh = _session_bar_h(self._font_size) if _show_bar else 0
 
         self._draw_panel(p, W, H)
@@ -447,10 +468,10 @@ class RelativeWidget(BaseWidget):
                 if cc:
                     c2 = QColor(cc); c2.setAlpha(255)
                     p.setBrush(c2); p.setPen(Qt.PenStyle.NoPen)
-                    p.drawRoundedRect(4, y + 1, 22, rh - 2, 2, 2)
+                    p.drawRoundedRect(_POS_CHIP_X, y + 1, chip_w, rh - 2, 2, 2)
                 p.setFont(num_font(fs))
                 p.setPen(QColor(T.TEXT))
-                p.drawText(4, y, 22, rh, Qt.AlignmentFlag.AlignCenter, str(row["pos"]))
+                p.drawText(_POS_CHIP_X, y, chip_w, rh, Qt.AlignmentFlag.AlignCenter, str(row["pos"]))
 
             # Driver name — elided to the column width: a character count no
             # longer maps to a width now that the text font is proportional.
@@ -459,7 +480,7 @@ class RelativeWidget(BaseWidget):
             p.setPen(name_col)
             avail = ncw - _NAME_PAD_L - (bdg + 2 if badge else 0)
             shown = p.fontMetrics().elidedText(name, Qt.TextElideMode.ElideRight, max(10, avail))
-            p.drawText(28 + _NAME_PAD_L, y, ncw - _NAME_PAD_L, rh,
+            p.drawText(pos_w + _NAME_PAD_L, y, ncw - _NAME_PAD_L, rh,
                        Qt.AlignmentFlag.AlignVCenter, shown)
 
             # Badge overlaid at right edge of name zone
@@ -468,7 +489,7 @@ class RelativeWidget(BaseWidget):
                     bg_c, fg_c = _badge_map[badge]
                 else:
                     bg_c, fg_c = QColor(T.LAP_BG), QColor(T.LAP_FG)
-                bx2, by2 = 28 + ncw - bdg, y + 3
+                bx2, by2 = pos_w + ncw - bdg, y + 3
                 p.setBrush(bg_c); p.setPen(Qt.PenStyle.NoPen)
                 p.drawRoundedRect(bx2, by2, bdg, rh - 6, 2, 2)
                 p.setFont(num_font(fss)); p.setPen(fg_c)
@@ -479,7 +500,7 @@ class RelativeWidget(BaseWidget):
             if not is_p and row["pos"] > 0:
                 p.setFont(num_font(fs))
                 p.setPen(QColor(T.TEXT))
-                gx = 28 + ncw + _GAP_PAD_L
+                gx = pos_w + ncw + _GAP_PAD_L
                 p.drawText(gx, y, W - gx - 4, rh,
                            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
                            _fmt_gap(gap, self._interval_decimals))

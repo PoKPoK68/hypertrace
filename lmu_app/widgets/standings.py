@@ -335,7 +335,7 @@ class StandingsWidget(BaseWidget):
         self._temp_pm_air = None
         self._temp_pm_sz  = 0
         self._dw: dict[str, int] = {}
-        super().__init__(reader, update_hz=5, **kw)
+        super().__init__(reader, update_hz=1, **kw)
         self._recompute_sizes()
         ncw = self._name_width
         n_init = top_n + 1 + 2 * around_n

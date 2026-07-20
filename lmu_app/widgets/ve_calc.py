@@ -94,7 +94,7 @@ class VECalcWidget(BaseWidget):
         self._ratio_h    = 5 + _RH
         self._col_pos: dict[str, tuple[int, int]] = {}
 
-        super().__init__(reader, update_hz=10, **kw)
+        super().__init__(reader, update_hz=1, **kw)
         self._refresh_layout()
 
     def setup_ui(self):

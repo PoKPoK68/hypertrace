@@ -29,7 +29,7 @@ _FONTS = [
     "SairaSemiCondensed-Bold.ttf",
 ]
 
-APP_VERSION = "0.6.12"
+APP_VERSION = "0.6.14"
 _LOGO = "lmu_app_logo.svg"
 LOG_PATH = None   # set by _log_handlers()
 
@@ -72,6 +72,37 @@ def _set_app_user_model_id() -> None:
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("LMUApp.Overlay")
     except Exception as exc:
         logging.debug("Could not set AppUserModelID: %s", exc)
+
+
+def _lower_process_priority() -> None:
+    """Windows: run the whole process at BELOW_NORMAL priority.
+
+    Each visible overlay is a separate always-on-top, per-pixel-alpha window;
+    Windows/DWM has to recomposite all of them on every repaint, which runs on
+    this process's main thread. Under CPU contention that competed with the
+    game for the same cores and could freeze it — confirmed by the fact it
+    only happened while overlays were shown (never while hidden, i.e. never
+    while idle), and that restricting the app's scheduling with Process Lasso
+    made the freezes disappear. Lowering the whole process's priority class
+    tells the Windows scheduler to prefer the game whenever both want the
+    same core, without having to guess which cores the game itself is using.
+    Must run before QApplication is created. No-op on other platforms.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+        BELOW_NORMAL_PRIORITY_CLASS = 0x00004000
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32.GetCurrentProcess.restype  = wintypes.HANDLE
+        k32.SetPriorityClass.restype   = wintypes.BOOL
+        k32.SetPriorityClass.argtypes  = [wintypes.HANDLE, wintypes.DWORD]
+        handle = k32.GetCurrentProcess()
+        if not k32.SetPriorityClass(handle, BELOW_NORMAL_PRIORITY_CLASS):
+            logging.debug("SetPriorityClass failed: %s", ctypes.get_last_error())
+    except Exception as exc:
+        logging.debug("Could not lower process priority: %s", exc)
 
 
 def _set_app_icon(app) -> None:
@@ -162,6 +193,7 @@ def main() -> int:
                  APP_VERSION, args.hz, LOG_PATH)
 
     _set_app_user_model_id()
+    _lower_process_priority()
     app = QApplication(sys.argv)
     _load_fonts()
     app.setStyle("Fusion")        # consistent rendering

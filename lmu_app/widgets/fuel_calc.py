@@ -137,8 +137,10 @@ def _fmt_ref_fuel(v: float) -> str:
 _HDR_NAMES = {"usage": "USAGE", "laps": "LAPS", "refuel": "REFUEL", "finish": "FINISH"}
 
 # Widest value each column must be able to render, used to size the columns.
-_FUEL_REFS = {"usage": "99.9L", "laps": "99.9", "refuel": "+99.9L", "finish": "99.9L"}
-_VE_REFS   = {"usage": "99.9%", "laps": "99.9", "refuel": "+99.9%", "finish": "99.9%"}
+# Fuel Calculator sizes its table off _VE_REFS too (not fuel-specific strings)
+# so both widgets always compute the same widget width — "%" renders a few
+# px wider than "L", so sizing off "99.9L" etc. made this widget narrower.
+_VE_REFS = {"usage": "99.9%", "laps": "99.9", "refuel": "+99.9%", "finish": "99.9%"}
 
 _VE_ENTRY_KEYS = {"HYPERCAR", "GT3"}
 
@@ -210,7 +212,7 @@ class FuelCalcWidget(BaseWidget):
         self._sep_h     = 10
         self._col_pos: dict[str, tuple[int, int]] = {}
 
-        super().__init__(reader, update_hz=10, **kw)
+        super().__init__(reader, update_hz=1, **kw)
         self._refresh_layout()
 
     def setup_ui(self):
@@ -255,7 +257,7 @@ class FuelCalcWidget(BaseWidget):
 
         if has_table:
             self._w, self._col_pos = _table_layout(
-                _FUEL_REFS, self._show_usage, self._show_laps,
+                _VE_REFS, self._show_usage, self._show_laps,
                 self._show_refuel, self._show_finish)
         else:
             self._w, self._col_pos = _widget_w(0), {"label": (_PAD, _LABEL_W)}
