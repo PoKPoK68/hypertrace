@@ -29,7 +29,7 @@ _FONTS = [
     "SairaSemiCondensed-Bold.ttf",
 ]
 
-APP_VERSION = "0.6.14"
+APP_VERSION = "0.6.13"
 _LOGO = "lmu_app_logo.svg"
 LOG_PATH = None   # set by _log_handlers()
 

@@ -4,25 +4,19 @@ All notable changes to LMU App are documented here.
 
 ---
 
-## [0.6.14] — Further CPU reduction & tyre color
-
-### CPU usage
-- Lowered the refresh rate of Weather, Standings, Fuel Calculator and VE Calculator to 1 fps — none of them show fast-changing values, so the higher rate was pure overhead.
-- Lowered the Pedals overlay from 60 fps to 30 fps.
-
-### Tyres
-- **Hard tyre badge now uses the exact same red as the Hypercar class badge**, instead of a separate red that was close but not identical.
-
----
-
 ## [0.6.13] — Performance & CPU usage
 
 ### Game freezing / CPU usage
 - **Fixed the app causing the game to freeze while overlays were visible.** Each overlay is a separate always-on-top, per-pixel-alpha window; Windows has to recomposite all of them on every repaint, which competed with the game for the same CPU cores under load — consistent with the freezes only happening while overlays were shown, never while idle. The app's process priority is now set to Below Normal on startup, so Windows favors the game whenever both want the same core.
 - **Fixed the Pedals overlay running two independent 60 fps repaint timers at once** instead of one — halves its timer overhead for the same smooth trace scrolling.
+- Lowered the refresh rate of Weather, Standings, Fuel Calculator and VE Calculator to 1 fps — none of them show fast-changing values, so the higher rate was pure overhead.
+- Lowered the Pedals overlay's own refresh rate from 60 fps to 30 fps.
 
 ### Fuel & VE calculators
 - **Fixed the Fuel Calculator rendering a few pixels narrower than the VE Calculator.** Both size their table columns from a reference value string, and `%` (VE) renders wider than `L` (Fuel) at the same size; Fuel Calculator now sizes off the same reference so the two always match.
+
+### Tyres
+- **Hard tyre badge now uses the exact same red as the Hypercar class badge**, instead of a separate red that was close but not identical.
 
 ---
 
