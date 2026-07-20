@@ -29,7 +29,7 @@ Two additional pieces exist for broadcast-style production, currently on hold (s
 ## Requirements
 
 - **Le Mans Ultimate** (Windows)
-- In-game: **Settings → Gameplay → Enable Plugins** must be **ON** (this is what publishes the shared memory the app reads — no relaunch of the game needed if you flip it while already in a session)
+- In-game: **Settings → Gameplay → Enable Plugins** must be **ON** (this is what publishes the shared memory the app reads). If you just enabled it, **restart the game** — it doesn't take effect on an already-running session.
 
 ---
 
