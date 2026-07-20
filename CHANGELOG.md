@@ -4,6 +4,14 @@ All notable changes to LMU App are documented here.
 
 ---
 
+## [0.6.12] — Documentation
+
+### README
+- Fully rewritten — it still only described 6 of the 9 overlays and a source-only install. Now covers every current overlay, the packaged `.exe` as the primary way to run the app, stream mode, controls (snap, lock, presets, hide-in-garage), and where config/logs live.
+- Corrected the in-game requirement: **Settings → Gameplay → Enable Plugins**.
+
+---
+
 ## [0.6.11] — Montserrat font, layout fixes & coherence pass
 
 ### Overlay defaults
