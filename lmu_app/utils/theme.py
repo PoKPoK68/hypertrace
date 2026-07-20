@@ -81,7 +81,8 @@ class T:
     # ---- type -----------------------------------------------------------
     F_TEXT = "JetBrains Mono"          # names, labels, titles, headers
     F_NUM  = "JetBrains Mono"          # speed, gear, gaps, lap times, %, °
-    LABEL_TRACKING = 114             # PercentageSpacing for uppercase labels (~0.14em)
+    # No letter tracking: it visibly spaced out short codes (GT3, GAR) and
+    # pushed centred single glyphs off-centre.
 
     # ---- RPM / shift-light bar -----------------------------------------
     RPM_SEGMENTS = 18
@@ -108,29 +109,53 @@ def accent_hairline(w: float, opacity_pct: int = 100) -> QLinearGradient:
     return g
 
 
+# Sizes passed to the font helpers below stay expressed in the historical point
+# scale, but are applied as *pixels*. Two reasons:
+#   - a point size is converted to pixels using the screen DPI and then rounded,
+#     so consecutive sizes could rasterise identically (a settings step did
+#     nothing) — pixel sizes always differ by at least one pixel;
+#   - it makes overlays render identically on machines with different DPI or
+#     Windows scaling, instead of silently changing size between them.
+# The 4/3 factor is the 96 DPI point→pixel ratio, so on-screen sizes are
+# unchanged compared to the previous point-based rendering.
+_PX_PER_PT = 4 / 3
+
+
+def _px(size: float) -> int:
+    return max(1, round(size * _PX_PER_PT))
+
+
 def label_font(size: float, weight: QFont.Weight = QFont.Weight.Bold,
                hint: bool = True) -> QFont:
     f = QFont(T.F_TEXT, -1, weight)
-    f.setPointSizeF(size)
+    f.setPixelSize(_px(size))
     if not hint:
         f.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
     f.setCapitalization(QFont.Capitalization.AllUppercase)
-    f.setLetterSpacing(QFont.SpacingType.PercentageSpacing, T.LABEL_TRACKING)
     return f
 
 
-def num_font(size: int, weight: QFont.Weight = QFont.Weight.Bold,
+def num_font(size: float, weight: QFont.Weight = QFont.Weight.Bold,
              hint: bool = True) -> QFont:
-    f = QFont(T.F_NUM, size, weight)
+    f = QFont(T.F_NUM, -1, weight)
+    f.setPixelSize(_px(size))
     f.setStyleHint(QFont.StyleHint.TypeWriter)
+    # Tabular figures: every digit gets the same advance, so lap times, gaps and
+    # the live delta keep their columns aligned instead of shifting on each
+    # update. Proportional fonts (Montserrat) make "1" about half of "0".
+    try:
+        f.setFeature(QFont.Tag("tnum"), 1)
+    except (AttributeError, TypeError, ValueError):
+        pass          # older Qt without font-feature support — falls back
     if not hint:
         f.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
     return f
 
 
-def text_font(size: int, weight: QFont.Weight = QFont.Weight.Bold,
+def text_font(size: float, weight: QFont.Weight = QFont.Weight.Bold,
               hint: bool = True) -> QFont:
-    f = QFont(T.F_TEXT, size, weight)
+    f = QFont(T.F_TEXT, -1, weight)
+    f.setPixelSize(_px(size))
     f.setStyleHint(QFont.StyleHint.TypeWriter)
     if not hint:
         f.setHintingPreference(QFont.HintingPreference.PreferNoHinting)

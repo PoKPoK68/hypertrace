@@ -9,18 +9,21 @@ from lmu_app.api.reader import DataReader, LMUSnapshot
 from lmu_app.utils.theme import T, label_font, num_font
 from lmu_app.widgets.base import BaseWidget, DEFAULT_SCALE
 
-_BASE_W  = 100
-_PAD     = 5
-_ROW_H   = 16
-_DELTA_H = 22
-_BAR_H   = 7
-_BAR_X   = 6
+_BASE_W  = 160
+_PAD     = 8
+_ROW_H   = 26
+_DELTA_H = 35
+_BAR_H   = 11
+_BAR_X   = 10
 _BAR_W   = _BASE_W - _BAR_X * 2
 
 
 def _fmt_lap(t: float) -> str:
     if t <= 0:
-        return "—"
+        # A hyphen, not an em-dash: at this widget's large font size the
+        # em-dash rendered as a solid 35 px bar (vs 10 px for "-"), looking
+        # disproportionately huge next to actual lap-time digits.
+        return "-"
     m = int(t // 60)
     s = t - m * 60
     return f"{m}:{s:06.3f}"
@@ -33,7 +36,7 @@ class DeltaWidget(BaseWidget):
         {"key": "opacity",    "label": "Opacity (%)",   "type": "int",
          "min": 0,  "max": 100, "step": 5,  "default": 85},
         {"key": "scale",      "label": "Size (%)",       "type": "int",
-         "min": 50, "max": 250, "step": 5,  "default": 80},
+         "min": 50, "max": 250, "step": 5,  "default": 100},
         {"type": "separator", "label": "Display"},
         {"key": "show_last",  "label": "Last Lap",       "type": "bool", "default": True},
         {"key": "show_best",  "label": "Best Lap",       "type": "bool", "default": True},
@@ -51,7 +54,7 @@ class DeltaWidget(BaseWidget):
         self._last_lap     = -1.0
         self._cls_ses_best = -1.0
         self._has_ref      = False
-        self._scale        = 80 / 100.0
+        self._scale        = 100 / 100.0
         self._bar_range    = 2.0
         self._show_last    = True
         self._show_best    = True
@@ -81,7 +84,7 @@ class DeltaWidget(BaseWidget):
         self.setFixedSize(int(_BASE_W * self._scale), int(self._base_h() * self._scale))
 
     def apply_params(self, params: dict) -> None:
-        self._scale      = int(params.get("scale",      80))          / 100.0
+        self._scale      = int(params.get("scale",      100))         / 100.0
         self._opacity    = max(0, min(100, int(params.get("opacity",  85))))
         self._bar_range  = float(params.get("bar_range",  2.0))
         self._show_last  = bool(params.get("show_last",   True))
@@ -111,22 +114,25 @@ class DeltaWidget(BaseWidget):
         bh = self._base_h()
         self._draw_panel(p, _BASE_W, bh)
 
-        lbl_w = 28
+        lbl_w = 45
         y = _PAD
 
         # ── Last Lap ──────────────────────────────────────────────────
         if self._show_last:
-            p.setFont(label_font(6))
+            p.setFont(label_font(10))
             p.setPen(QColor(T.DIM))
             p.drawText(QRectF(_PAD, y, lbl_w, _ROW_H),
                        Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, "LAST")
             if self._last_lap <= 0:
                 last_col = QColor(T.TEXT)
-            elif self._best_lap > 0 and self._last_lap < self._best_lap:
+            # <= not <: best_lap is the minimum lap time *including* last_lap,
+            # so the moment last_lap sets a new best they become equal, not
+            # last_lap < best_lap. Strict < here could (almost) never fire.
+            elif self._best_lap > 0 and self._last_lap <= self._best_lap:
                 last_col = QColor(T.PURPLE if self._cls_ses_best > 0 and self._best_lap <= self._cls_ses_best else T.GOOD)
             else:
                 last_col = QColor(T.TEXT)
-            p.setFont(num_font(9))
+            p.setFont(num_font(14))
             p.setPen(last_col)
             p.drawText(QRectF(_PAD + lbl_w, y, _BASE_W - _PAD - lbl_w - _PAD, _ROW_H),
                        Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
@@ -135,11 +141,11 @@ class DeltaWidget(BaseWidget):
 
         # ── Best Lap ──────────────────────────────────────────────────
         if self._show_best:
-            p.setFont(label_font(6))
+            p.setFont(label_font(10))
             p.setPen(QColor(T.DIM))
             p.drawText(QRectF(_PAD, y, lbl_w, _ROW_H),
                        Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, "BEST")
-            p.setFont(num_font(9))
+            p.setFont(num_font(14))
             p.setPen(QColor(T.PURPLE if self._best_lap > 0 else T.TEXT))
             p.drawText(QRectF(_PAD + lbl_w, y, _BASE_W - _PAD - lbl_w - _PAD, _ROW_H),
                        Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
@@ -151,10 +157,10 @@ class DeltaWidget(BaseWidget):
             if self._show_last or self._show_best:
                 y += 2
             if not self._has_ref:
-                p.setFont(num_font(13))
+                p.setFont(num_font(21))
                 p.setPen(QColor(T.TEXT))
                 p.drawText(QRectF(0, y, _BASE_W, _DELTA_H),
-                           Qt.AlignmentFlag.AlignCenter, "—")
+                           Qt.AlignmentFlag.AlignCenter, "-")
             else:
                 d = self._delta
                 if d < 0:
@@ -163,7 +169,7 @@ class DeltaWidget(BaseWidget):
                     col, txt = QColor(T.CRIT),  f"+{d:.3f}"
                 else:
                     col, txt = QColor(T.TEXT),  "0.000"
-                p.setFont(num_font(13))
+                p.setFont(num_font(21))
                 p.setPen(col)
                 p.drawText(QRectF(0, y, _BASE_W, _DELTA_H),
                            Qt.AlignmentFlag.AlignCenter, txt)

@@ -12,7 +12,7 @@ from lmu_app.api.reader import LMUSnapshot
 from lmu_app.utils.class_colors import class_abbrev, class_color
 from lmu_app.utils.logos import get_logo as _get_logo
 from lmu_app.utils.compounds import draw_compound_badge as _draw_compound_badge
-from lmu_app.utils.theme import T, accent_hairline, border_pen, draw_bold, label_font, num_font, panel_brush, text_font
+from lmu_app.utils.theme import T, accent_hairline, border_pen, label_font, num_font, panel_brush, text_font
 
 
 # ---------------------------------------------------------------------------
@@ -648,11 +648,11 @@ class BroadcastTower(_BcWidget):
             x += _TNUM_W
 
             # Driver / team name (already formatted)
-            p.setFont(text_font(10, hint=False))
+            p.setFont(text_font(10))
             p.setPen(QColor(T.TEXT))
-            draw_bold(p, lambda: p.drawText(x + 2, y, tnme_w - 2, _TRH,
+            p.drawText(x + 2, y, tnme_w - 2, _TRH,
                        Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
-                       e["name"]))
+                       e["name"])
             x += tnme_w
 
             # Info column — right-aligned with small right margin
@@ -897,8 +897,8 @@ class BroadcastBattle(_BcWidget):
             name_align = (Qt.AlignmentFlag.AlignVCenter |
                           (Qt.AlignmentFlag.AlignLeft if align_right
                            else Qt.AlignmentFlag.AlignRight))
-            p.setFont(text_font(11, hint=False)); p.setPen(QColor(T.TEXT))
-            draw_bold(p, lambda: p.drawText(name_x, 6, name_full_w, 26, name_align, driver["name"]))
+            p.setFont(text_font(11)); p.setPen(QColor(T.TEXT))
+            p.drawText(name_x, 6, name_full_w, 26, name_align, driver["name"])
 
             # Last lap (coloured)
             last_txt = _fmt_lap(driver["last"], 3)
@@ -1078,10 +1078,10 @@ class BroadcastDriverCard(_BcWidget):
         _dnum_w = 32
         name_x = 6 + _DPOS_W + 4 + _dlogo_w + 4 + (_dnum_w + 4 if num_txt else 0)
         name_w = W - name_x - ve_block_w - 12
-        p.setFont(text_font(12, hint=False)); p.setPen(QColor(T.TEXT))
-        draw_bold(p, lambda: p.drawText(name_x, row1_y, name_w, row1_h,
+        p.setFont(text_font(12)); p.setPen(QColor(T.TEXT))
+        p.drawText(name_x, row1_y, name_w, row1_h,
                    Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
-                   driver["name"]))
+                   driver["name"])
 
         # ── Separator ──────────────────────────────────────────────────
         sep_y = row1_y + row1_h + 2
@@ -1264,9 +1264,9 @@ class BroadcastSectors(_BcWidget):
 
         name_x = 6 + _qpos_w + 4 + _qlogo_w + 4 + (_qnum_w + 4 if num_txt else 0)
         name_w = W - name_x - best_blk_w - _q_badge_space - 12
-        p.setFont(text_font(11, hint=False)); p.setPen(QColor(T.TEXT))
-        draw_bold(p, lambda: p.drawText(name_x, top_y, name_w, top_h,
-                   Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, d["name"]))
+        p.setFont(text_font(11)); p.setPen(QColor(T.TEXT))
+        p.drawText(name_x, top_y, name_w, top_h,
+                   Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, d["name"])
 
         # ── Separator ────────────────────────────────────────────────────
         p.fillRect(QRectF(8, 50, W - 16, 1), T.FAINT)

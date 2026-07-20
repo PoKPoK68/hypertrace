@@ -9,7 +9,7 @@ from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QSizePolicy
 
 from lmu_app.api.reader import DataReader, LMUSnapshot
-from lmu_app.utils.theme import T, draw_bold, label_font, num_font
+from lmu_app.utils.theme import T, label_font, num_font
 from lmu_app.widgets.base import BaseWidget, DEFAULT_SCALE
 
 logger = logging.getLogger(__name__)
@@ -30,19 +30,19 @@ _SKY_FILES   = [
     "10_overcast_storm.svg",
 ]
 
-BASE_W  = 150
-_PAD_X  = 8
-_PAD_Y  = 5
-_LBL_H  = 9
+BASE_W  = 172
+_PAD_X  = 9
+_PAD_Y  = 6
+_LBL_H  = 10
 _GAP    = 1
-_VAL_H  = 15
-_ROW_H  = _LBL_H + _GAP + _VAL_H   # 25
-_SEP_Y  = _PAD_Y + _ROW_H * 2       # 55
-_FC_TOP = _SEP_Y + 4                 # 59
-_FC_HDR = 9    # "FORECAST" label
-_IC_H   = 16   # icon height (square)
-_NL_H   = 9    # node label
-BASE_H  = _FC_TOP + _FC_HDR + _IC_H + _NL_H + _PAD_Y  # 98
+_VAL_H  = 17
+_ROW_H  = _LBL_H + _GAP + _VAL_H
+_SEP_Y  = _PAD_Y + _ROW_H * 2
+_FC_TOP = _SEP_Y + 4
+_FC_HDR = 10   # "FORECAST" label
+_IC_H   = 18   # icon height (square)
+_NL_H   = 10   # node label
+BASE_H  = _FC_TOP + _FC_HDR + _IC_H + _NL_H + _PAD_Y
 
 
 class WeatherWidget(BaseWidget):
@@ -151,13 +151,13 @@ class WeatherWidget(BaseWidget):
                 if svg is not None:
                     self._render_svg(p, svg, lbl_r)
                 else:
-                    p.setFont(label_font(6))
+                    p.setFont(label_font(7))
                     p.setPen(QColor(T.DIM))
                     p.drawText(lbl_r, Qt.AlignmentFlag.AlignCenter, lbl)
-                p.setFont(num_font(10, hint=False))
+                p.setFont(num_font(12))
                 p.setPen(QColor(T.TEXT))
-                draw_bold(p, lambda r=QRectF(x, y + _LBL_H + _GAP, half, _VAL_H), v=val:
-                          p.drawText(r, Qt.AlignmentFlag.AlignCenter, v))
+                p.drawText(QRectF(x, y + _LBL_H + _GAP, half, _VAL_H),
+                           Qt.AlignmentFlag.AlignCenter, val)
 
         # Vertical divider
         p.fillRect(QRectF(half, _PAD_Y + 2, 1, _ROW_H * 2 - 4), T.FAINT)
@@ -165,7 +165,7 @@ class WeatherWidget(BaseWidget):
     def _draw_forecast(self, p: QPainter) -> None:
         p.fillRect(QRectF(2, _SEP_Y, BASE_W - 4, 1), T.FAINT)
 
-        p.setFont(label_font(5))
+        p.setFont(label_font(6))
         p.setPen(QColor(T.DIM))
         p.drawText(QRectF(_PAD_X, _FC_TOP, BASE_W - _PAD_X * 2, _FC_HDR),
                    Qt.AlignmentFlag.AlignCenter, "FORECAST")
@@ -182,12 +182,12 @@ class WeatherWidget(BaseWidget):
             if 0 <= self._sky_now < len(self._sky_svgs) and self._sky_svgs[self._sky_now] is not None:
                 ic_x = _PAD_X + (BASE_W - _PAD_X * 2 - _IC_H) / 2
                 self._sky_svgs[self._sky_now].render(p, QRectF(ic_x, icon_y, _IC_H, _IC_H))
-                p.setFont(label_font(5))
+                p.setFont(label_font(6))
                 p.setPen(QColor(T.DIM))
                 p.drawText(QRectF(_PAD_X, label_y, BASE_W - _PAD_X * 2, _NL_H - 1),
                            Qt.AlignmentFlag.AlignCenter, "NOW")
             else:
-                p.setFont(label_font(5))
+                p.setFont(label_font(6))
                 p.setPen(QColor(T.DIM))
                 p.drawText(QRectF(_PAD_X, icon_y, BASE_W - _PAD_X * 2, _IC_H),
                            Qt.AlignmentFlag.AlignCenter, "NO DATA")
@@ -201,12 +201,12 @@ class WeatherWidget(BaseWidget):
             if 0 <= sky < len(self._sky_svgs) and self._sky_svgs[sky] is not None:
                 self._sky_svgs[sky].render(p, QRectF(ic_x, icon_y, ic_size, ic_size))
             else:
-                p.setFont(label_font(5))
+                p.setFont(label_font(6))
                 p.setPen(QColor(T.DIM))
                 p.drawText(QRectF(slot_x, icon_y, slot_w, _IC_H),
                            Qt.AlignmentFlag.AlignCenter, f"?{sky}")
 
-            p.setFont(label_font(5, hint=False))
+            p.setFont(label_font(6))
             p.setPen(QColor(T.DIM))
-            draw_bold(p, lambda r=QRectF(slot_x, label_y, slot_w, _NL_H - 1),
-                      t=_NODE_LABELS[i]: p.drawText(r, Qt.AlignmentFlag.AlignCenter, t))
+            p.drawText(QRectF(slot_x, label_y, slot_w, _NL_H - 1),
+                       Qt.AlignmentFlag.AlignCenter, _NODE_LABELS[i])

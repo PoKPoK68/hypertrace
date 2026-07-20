@@ -4,6 +4,90 @@ All notable changes to LMU App are documented here.
 
 ---
 
+## [0.6.11] — Montserrat font, layout fixes & coherence pass
+
+### Overlay defaults
+- **Fixed the VE Calculator being disabled by default on a fresh install** — every other overlay defaulted to enabled, this one alone was hard-coded off in the config defaults.
+
+### Overlay sizing
+- **Fixed overlays shrinking the instant any setting was first touched, and rendering oversized before that.** The code's own default scale (115%) disagreed with every widget's own settings-schema default (100%): a fresh install rendered at 115%, then the settings dialog would apply the schema's 100% the first time any control was touched. The code default is now 100%, matching every schema (Delta's own default scale also moved from 80% to 100%, per the same "always 100%" rule).
+- **Recalibrated base sizes now that 100% is honest.** Tyres, Speed, Weather, and the Fuel/VE calculators used to be inflated by the 115% bug without anyone deciding it that way; their own pixel dimensions are increased so 100% still looks like what those widgets have always looked like. Delta — deliberately doubled earlier — is brought back down to exactly double its *original* size now that there's no extra 80%→100% scale change compounding on top of it.
+
+### Overlay positioning
+- **Fixed magnetic snap triggering across the whole screen.** X and Y snapping were evaluated independently, so a peer overlay whose edge happened to line up would snap even hundreds of pixels away on the other axis. Snapping to a peer's edge on one axis now requires that peer to actually be nearby on the other axis; ordinary stacking/side-by-side snapping with a normal gap is unaffected.
+
+### Lap time colors
+- **Fixed the last-lap color (purple/green) never showing on a new personal or session best**, in Standings, Delta and Live Timing. `best_lap` is the minimum lap time *including* the last one, so the instant a lap sets a new best, `last_lap` and `best_lap` become equal — the strict `<` comparison could (almost) never be true at exactly the moment it should fire. Changed to `<=` for this specific "did my last lap equal my best" check (unrelated to the other strict comparisons, which compare a live time against a separate, unmoving reference).
+
+### Standings
+- Column header labels (`GAP`/`INT`/`BEST`/`LAST`) reduced by two sizes — they matched the driver-name size, which read as too large (a one-size reduction wasn't a big enough step to notice).
+
+### Relative
+- Added a small gap between the position chip and the driver name.
+- Added a small gap between the name/badge zone and the relative-time value, so a wide value like `+123.4` no longer touches a `PIT`/`OUT`/`GAR`/`L`*n* badge — the column width reference was based on a 2-digit gap (`+12.x`), too narrow for the 3-digit gaps a long track like Le Mans can produce; it now matches Standings' `+999` reference.
+
+### Speed & Gear
+- **Fixed the still-oversized gap between `KM/H` and the gear.** The widget's width was computed from a content-area height formula that didn't match the one `paintEvent` actually used (40 px assumed vs 26 px real), sizing the layout for text far larger than what gets drawn and leaving a large unexplained gap. Both now share one formula.
+- **Fixed the gear digit being clipped on the left.** The gear column was sized to fit `"8"`, but `"N"` (neutral — shown any time you're stopped) and `"R"` are both wider; Qt clips `drawText` to its bounding rect by default, so the left edge of those glyphs was silently cut off. The reference now covers every character the gear display can show.
+
+### Fonts / bold text
+- **Class badge (standings) and status badges (`GAR`/`PIT`/`OUT`/`L`*n*, standings and relative) now render with the same synthetic-bold weight as the rest of the text.** Requesting a heavier `QFont.Weight` has no effect since only one Montserrat weight is bundled; at these small sizes the single embedded weight reads as visibly thinner than larger text.
+
+### Delta
+- The "no lap yet" placeholder is a `-` (hyphen) instead of an em-dash, which rendered as a disproportionately large solid bar (35 px wide vs 10 px) next to the lap-time digits.
+
+### Fuel & VE calculators
+- The `VE`/`FUEL` bar and level labels were noticeably smaller than the value next to them; bumped from an 8 px to an 11 px render size.
+
+### Shared memory
+- **Fixed the app never receiving data when started before LMU.** `mmap` with a tag name *creates* the mapping when it is missing, so the app attached to its own empty mapping, reported a successful connection and read zeros forever. The mapping's existence is now probed first, and a mapping that only ever reads zeros is dropped and reconnected. Launch order no longer matters.
+- Failures now report the Windows error code, distinguishing "LMU is not publishing" from "access denied" (elevation mismatch).
+- Added a rotating log file in `~/.lmuapp/lmuapp.log`: the packaged app has no console, so nothing was diagnosable on a machine without Python. Each overlay also logs why it is shown or hidden.
+
+### Standings
+- **Status badges (PIT / GAR / OUT / L*n*) now have their own column** instead of being drawn over the end of the name column, where they truncated long names. It can be reordered like any other column.
+- Badge width is derived from the actual text metrics, so labels keep an even margin at every font size instead of touching both edges.
+- **Manufacturer logos are sharp again** — they were rasterised at 3× and shrunk by the painter, whose bilinear filtering softens a >2× downscale. Vector logos are now rasterised directly at their on-screen size.
+
+### Text rendering
+- **Letter tracking removed everywhere.** The 14% tracking applied to labels visibly spaced out short codes (`GT3`, `GAR`) and pushed centred single glyphs off-centre.
+- The synthetic-bold workaround introduced in 0.6.9 is now limited to text containing digits. Applying it to driver names and labels made them look blurry, since it works by drawing the text twice with a sub-pixel offset.
+
+### Relative
+- The header shows only the **remaining** session time; the previous "elapsed / total" form was twice as wide and got clipped with a narrow name column.
+
+### Typography
+- **Montserrat Bold is now the app font**, for text and numbers alike. The OpenType `tnum` feature is enabled on numeric text so every digit keeps the same advance — lap times, gaps and the live delta stay aligned instead of shifting on each update. JetBrains Mono remains as a fallback.
+- **Font sizes are now expressed in pixels** rather than points. A point size is converted using the screen DPI and then rounded, so consecutive settings steps could render identically; pixel sizes always differ. Overlays also render identically on machines with different DPI or Windows scaling.
+- Fixed the smallest font sizes rendering identically: a floor in the derived sizes made steps 7 and 8 produce exactly the same text.
+
+### Standings & Relative
+- Default font size raised to **11**; default name width lowered to **150 px**.
+- **Header height now follows the font size** — it was a hard-coded constant, so it never adapted.
+- **Column header labels are now the same size as driver names** (same perceived weight), instead of a smaller derived size.
+- The name column is configured in **pixels** with a slider instead of a character count, which no longer maps to a width with a proportional font. Names are elided to the real column width instead of being cut at N characters.
+- **Standings**: fixed pit/out-lap badges never resetting on a session change or restart — the same fix applied to Relative in 0.6.9 had been missed here, so a stale `OUT` / `PIT` / `L*n*` badge could survive into the next session.
+- **Relative**: the gap/interval column width is now measured from real font metrics instead of a per-character estimate, which could run 2 px too narrow at large font sizes and clip the value.
+- Fixed a stale fallback color (`#ffc800`) used only when a saved config predates the `player_color` setting; it no longer disagrees with the setting's own default (`#ECAA43`).
+- A `-` dash is always white (`T.TEXT`), never dim (`T.DIM`) — fixed one remaining case in the Standings VE/Fuel column, and unified it from `---` to a single `-` like every other empty value.
+
+### Tyres
+- Removed the compound-badge letter (S/M/H/W) — unreadable at this size; the badge colour alone already identifies the compound.
+
+### Delta
+- Widget doubled in size (200×… instead of 100×…), fonts scaled to match.
+
+### Speed & Gear
+- Fixed **`KM/H` overlapping the gear** — the widget width was a hard-coded constant that assumed the previous monospaced font; Montserrat's wider digits made the speed block alone exceed it. Width is now computed from the fonts actually in use.
+
+### Pedals
+- Fixed the trailing `0` being clipped on `100`: the value box was 1 px narrower than the text it had to hold.
+
+### Removed
+- `DEFAULT_COLUMNS` (Standings): a stale, unused module constant listing an outdated set of default columns.
+
+---
+
 ## [0.6.10] — App icon & display fixes
 
 ### App icon

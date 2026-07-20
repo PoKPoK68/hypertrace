@@ -9,7 +9,9 @@ import math as _math
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QRectF
-from PySide6.QtGui import QColor, QFont, QIcon, QPainter
+from functools import lru_cache
+
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QIcon, QPainter
 from PySide6.QtWidgets import QSizePolicy
 
 from lmu_app.api.reader import DataReader, LMUSnapshot
@@ -23,25 +25,49 @@ _AIR_TEMP_SVG   = str(_ASSETS / "air-temp.svg")
 
 _POS_COL_W    = 28    # largeur colonne position
 _MARGIN       = 6     # marge droite
-SESSION_BAR_H = 22
+_NAME_PAD_L   = 5     # gap between the position chip and the driver name
+_GAP_PAD_L    = 5     # gap between the name/badge zone and the relative-time text
+                      # (avoids "+123.4" touching a PIT/OUT/L{n} badge)
+def _session_bar_h(font_size: int) -> int:
+    """Header height follows the font size (22 px at the former default of 9)."""
+    return font_size + 13
 
 
 def _char_px(font_size: int) -> int:
     return max(4, round(7 * font_size / 9))
 
 
+_BADGE_PAD = 5   # inner horizontal padding on each side of a badge label
+
+
+@lru_cache(maxsize=64)
 def _badge_px(font_size: int) -> int:
-    return max(14, round(22 * font_size / 9))
+    """Badge width sized from the actual text metrics, so the label never
+    touches the edges (a width merely scaled from the font size did)."""
+    fm = QFontMetrics(num_font(max(6, font_size - 2)))
+    return max(14, fm.horizontalAdvance("GAR") + 2 * _BADGE_PAD)
 
 
+@lru_cache(maxsize=64)
 def _gap_col_w(font_size: int, decimals: int) -> int:
-    # "+12.345" = 4 chars de base + nb décimales
-    max_chars = 4 + max(0, decimals)
-    return max_chars * _char_px(font_size) + 4
+    """Widest gap the column must fit, measured from real font metrics.
+
+    Was a per-character estimate (chars × avg width), which could run 2 px
+    narrower than the actual text once Montserrat's digits got wider than the
+    previous monospaced face — same class of bug already fixed on the GAR/PIT
+    badge width and the standings gap/interval/best/last columns.
+    """
+    # 3-digit worst case (a long track like Le Mans has ~200s laps, and a
+    # multi-lap gap can exceed 100s) — matches the "+999" reference standings
+    # already uses. Using "+12" here understated the width and let a wide
+    # gap value overflow past the badge padding.
+    ref = "+999." + "9" * decimals if decimals > 0 else "+999"
+    return QFontMetrics(num_font(font_size)).horizontalAdvance(ref) + 4
 
 
-def _widget_w(max_name_chars: int, font_size: int = 9, decimals: int = 1) -> int:
-    return _POS_COL_W + max_name_chars * _char_px(font_size) + _gap_col_w(font_size, decimals) + _MARGIN
+def _widget_w(name_width: int, font_size: int = 9, decimals: int = 1) -> int:
+    return (_POS_COL_W + name_width + _GAP_PAD_L
+            + _gap_col_w(font_size, decimals) + _MARGIN)
 
 
 def _row_h(font_size: int) -> int:
@@ -50,7 +76,8 @@ def _row_h(font_size: int) -> int:
 
 def _widget_h(ahead: int, behind: int, font_size: int = 9,
               show_session_bar: bool = False) -> int:
-    return (SESSION_BAR_H if show_session_bar else 0) + (ahead + 1 + behind) * _row_h(font_size) + 8
+    return ((_session_bar_h(font_size) if show_session_bar else 0)
+            + (ahead + 1 + behind) * _row_h(font_size) + 8)
 
 
 def _fmt_name(raw: str, fmt: str) -> str:
@@ -68,14 +95,15 @@ def _session_label(session_type: int) -> str:
     return "Practice"
 
 def _fmt_session_time(elapsed: float, remaining: float) -> str:
-    def _f(t: float) -> str:
-        t = max(0, int(t))
-        h, r = divmod(t, 3600)
-        m, s = divmod(r, 60)
-        return f"{h}:{m:02d}:{s:02d}"
-    total   = round((elapsed + max(0.0, remaining)) / 60) * 60
-    elapsed = max(0, total - int(max(0.0, remaining)))
-    return f"{_f(elapsed)} / {_f(total)}"
+    """Remaining session time only.
+
+    The former "elapsed / total" form is twice as wide and got clipped by the
+    header whenever the name column is configured narrow.
+    """
+    t = max(0, int(max(0.0, remaining)))
+    h, r = divmod(t, 3600)
+    m, s = divmod(r, 60)
+    return f"{h}:{m:02d}:{s:02d}"
 
 def _apply_case(name: str, case: str) -> str:
     if case == "title":
@@ -100,7 +128,7 @@ class RelativeWidget(BaseWidget):
         {"key": "scale",             "label": "Size (%)",    "type": "int",
          "min": 50, "max": 250, "step": 5, "default": 100},
         {"key": "font_size",         "label": "Font size",   "type": "int",
-         "min": 7, "max": 14, "step": 1, "default": 9},
+         "min": 7, "max": 14, "step": 1, "default": 11},
         {"type": "separator", "label": "Rows"},
         {"key": "drivers_ahead",     "label": "Drivers ahead",  "type": "int",
          "min": 1, "max": 10, "step": 1, "default": 4},
@@ -121,8 +149,8 @@ class RelativeWidget(BaseWidget):
              {"value": "mixed", "label": "Name LASTNAME"},
              {"value": "title", "label": "Name Lastname"},
          ], "default": "upper"},
-        {"key": "max_name_chars",    "label": "Max characters", "type": "int",
-         "min": 4, "max": 30, "step": 1, "default": 16},
+        {"key": "name_width",        "label": "Name width (px)", "type": "int",
+         "min": 60, "max": 400, "step": 5, "default": 150},
         {"type": "separator", "label": "Player row"},
         {"key": "player_color",      "label": "Color",        "type": "color", "default": "#ECAA43"},
         {"key": "player_color_alpha","label": "Intensity (%)", "type": "int",
@@ -146,18 +174,18 @@ class RelativeWidget(BaseWidget):
                  drivers_behind:     int = 4,
                  interval_decimals:  int = 1,
                  show_badges:        bool = True,
-                 max_name_chars:     int = 16,
+                 name_width:         int = 150,
                  name_format:        str = "full",
                  name_case:          str = "upper",
                  show_session_bar:   bool = False,
                  header_info:        str = "session",
-                 font_size:          int = 9,
+                 font_size:          int = 11,
                  **kw):
         self._ahead              = drivers_ahead
         self._behind             = drivers_behind
         self._interval_decimals  = interval_decimals
         self._show_badges        = show_badges
-        self._max_name_chars = max_name_chars
+        self._name_width = name_width
         self._name_format         = name_format
         self._name_case           = name_case
         self._show_session_bar    = show_session_bar
@@ -181,7 +209,7 @@ class RelativeWidget(BaseWidget):
         self._temp_pm_sz  = 0
         self._opacity = 85
         super().__init__(reader, update_hz=10, **kw)
-        self.setFixedSize(int(_widget_w(max_name_chars, self._font_size, self._interval_decimals) * self._scale),
+        self.setFixedSize(int(_widget_w(name_width, self._font_size, self._interval_decimals) * self._scale),
                           int(_widget_h(drivers_ahead, drivers_behind, self._font_size, show_session_bar) * self._scale))
 
     def setup_ui(self):
@@ -196,19 +224,19 @@ class RelativeWidget(BaseWidget):
         self._behind            = int(params.get("drivers_behind", 4))
         self._interval_decimals = int(params.get("interval_decimals", 1))
         self._show_badges       = bool(params.get("show_badges", True))
-        self._max_name_chars = int(params.get("max_name_chars", 16))
+        self._name_width = int(params.get("name_width", 150))
         self._name_format         = str(params.get("name_format", "full"))
         self._name_case           = str(params.get("name_case", "upper"))
         self._show_session_bar    = bool(params.get("show_session_bar",  False))
         self._header_info         = str(params.get("header_info", "session"))
         self._scale               = int(params.get("scale", DEFAULT_SCALE)) / 100.0
-        self._font_size           = max(7, min(14, int(params.get("font_size", 9))))
+        self._font_size           = max(7, min(14, int(params.get("font_size", 11))))
         self._opacity        = max(0, min(100, int(params.get("opacity", 85))))
-        _c = QColor(str(params.get("player_color", "#ffc800")))
+        _c = QColor(str(params.get("player_color", "#ECAA43")))
         if not _c.isValid(): _c = QColor(255, 200, 0)
         _c.setAlpha(round(255 * max(0, min(100, int(params.get("player_color_alpha", 20)))) / 100))
         self._player_color = _c
-        self.setFixedSize(int(_widget_w(self._max_name_chars, self._font_size, self._interval_decimals) * self._scale),
+        self.setFixedSize(int(_widget_w(self._name_width, self._font_size, self._interval_decimals) * self._scale),
                           int(_widget_h(self._ahead, self._behind, self._font_size, self._show_session_bar) * self._scale))
         self.update()
 
@@ -332,18 +360,18 @@ class RelativeWidget(BaseWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.scale(self._scale, self._scale)
-        W    = _widget_w(self._max_name_chars, self._font_size, self._interval_decimals)
+        W    = _widget_w(self._name_width, self._font_size, self._interval_decimals)
         _show_bar = self._show_session_bar and self._header_info != "none"
         H    = _widget_h(self._ahead, self._behind, self._font_size, _show_bar)
-        ncw  = self._max_name_chars * _char_px(self._font_size)
+        ncw  = self._name_width
         bdg  = _badge_px(self._font_size)
-        _sbh = SESSION_BAR_H if _show_bar else 0
+        _sbh = _session_bar_h(self._font_size) if _show_bar else 0
 
         self._draw_panel(p, W, H)
 
         fs  = self._font_size
-        fsh = max(6.0, fs - 1.5)   # session bar / column header labels
-        fss = max(6, fs - 2)   # row badges (GAR, PIT, OUT…)
+        fsh = fs   # headers match the driver-name size (same perceived weight)
+        fss = max(5, fs - 2)   # row badges (GAR, PIT, OUT…)
         rh  = _row_h(fs)
 
         # ── Session bar ───────────────────────────────────────────────────
@@ -358,14 +386,14 @@ class RelativeWidget(BaseWidget):
                 baseline = 1 + (_sbh + fm.ascent() - fm.descent()) // 2
                 p.setPen(QColor(T.ACCENT))
                 p.drawText(6, baseline, lbl)
-                f_num = label_font(max(6, fsh), hint=False)
+                f_num = label_font(max(6, fsh))
                 f_num.setCapitalization(QFont.Capitalization.MixedCase)
                 p.setFont(f_num)
                 p.setPen(QColor(T.TEXT))
                 _st = _fmt_session_time(self._current_et, self._ses_remaining)
-                draw_bold(p, lambda: p.drawText(6 + lbl_w + 6, baseline, _st))
+                p.drawText(6 + lbl_w + 6, baseline, _st)
             elif hi == "temp":
-                p.setFont(num_font(fsh, hint=False))
+                p.setFont(num_font(fsh))
                 fm = p.fontMetrics()
                 trk_str = f"{self._track_temp:.0f}°"
                 air_str = f"{self._air_temp:.0f}°"
@@ -382,15 +410,13 @@ class RelativeWidget(BaseWidget):
                 icon_y = 1 + _sbh // 2 - icon_sz // 2
                 p.drawPixmap(x0, icon_y, self._temp_pm_trk)
                 p.setPen(QColor(T.DIM))
-                draw_bold(p, lambda: p.drawText(
-                    x0 + icon_sz + gap_px, 1, trk_w + 2, _sbh,
-                    Qt.AlignmentFlag.AlignVCenter, trk_str))
+                p.drawText(x0 + icon_sz + gap_px, 1, trk_w + 2, _sbh,
+                           Qt.AlignmentFlag.AlignVCenter, trk_str)
                 ax = x0 + icon_sz + gap_px + trk_w + sep_px
                 p.drawPixmap(ax, icon_y, self._temp_pm_air)
                 p.setPen(QColor(T.DIM))
-                draw_bold(p, lambda: p.drawText(
-                    ax + icon_sz + gap_px, 1, air_w + 2, _sbh,
-                    Qt.AlignmentFlag.AlignVCenter, air_str))
+                p.drawText(ax + icon_sz + gap_px, 1, air_w + 2, _sbh,
+                           Qt.AlignmentFlag.AlignVCenter, air_str)
             p.fillRect(QRectF(2, _sbh, W - 4, 1), T.FAINT)
 
         _badge_map = {
@@ -407,7 +433,7 @@ class RelativeWidget(BaseWidget):
             is_p  = row["is_player"]
             gap   = row["gap"]
             badge = row["badge"] if self._show_badges else ""
-            name  = _apply_case(_fmt_name(row["name_raw"], self._name_format)[:self._max_name_chars], self._name_case)
+            name  = _apply_case(_fmt_name(row["name_raw"], self._name_format), self._name_case)
 
             # Player row highlight
             if is_p:
@@ -426,12 +452,15 @@ class RelativeWidget(BaseWidget):
                 p.setPen(QColor(T.TEXT))
                 p.drawText(4, y, 22, rh, Qt.AlignmentFlag.AlignCenter, str(row["pos"]))
 
-            # Driver name
+            # Driver name — elided to the column width: a character count no
+            # longer maps to a width now that the text font is proportional.
             name_col = QColor(T.TEXT)
-            p.setFont(text_font(fs, hint=False))
+            p.setFont(text_font(fs))
             p.setPen(name_col)
-            draw_bold(p, lambda: p.drawText(28, y, ncw, rh,
-                                            Qt.AlignmentFlag.AlignVCenter, name))
+            avail = ncw - _NAME_PAD_L - (bdg + 2 if badge else 0)
+            shown = p.fontMetrics().elidedText(name, Qt.TextElideMode.ElideRight, max(10, avail))
+            p.drawText(28 + _NAME_PAD_L, y, ncw - _NAME_PAD_L, rh,
+                       Qt.AlignmentFlag.AlignVCenter, shown)
 
             # Badge overlaid at right edge of name zone
             if badge:
@@ -443,13 +472,15 @@ class RelativeWidget(BaseWidget):
                 p.setBrush(bg_c); p.setPen(Qt.PenStyle.NoPen)
                 p.drawRoundedRect(bx2, by2, bdg, rh - 6, 2, 2)
                 p.setFont(num_font(fss)); p.setPen(fg_c)
-                p.drawText(bx2, by2, bdg, rh - 6, Qt.AlignmentFlag.AlignCenter, badge)
+                draw_bold(p, lambda: p.drawText(
+                    bx2, by2, bdg, rh - 6, Qt.AlignmentFlag.AlignCenter, badge))
 
             # Gap
             if not is_p and row["pos"] > 0:
                 p.setFont(num_font(fs))
                 p.setPen(QColor(T.TEXT))
-                p.drawText(28 + ncw, y, W - 28 - ncw - 4, rh,
+                gx = 28 + ncw + _GAP_PAD_L
+                p.drawText(gx, y, W - gx - 4, rh,
                            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
                            _fmt_gap(gap, self._interval_decimals))
 

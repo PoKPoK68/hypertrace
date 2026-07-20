@@ -2,9 +2,8 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, QRectF
-from PySide6.QtGui import QColor, QFont, QPainter
+from PySide6.QtGui import QColor, QPainter
 
-from lmu_app.utils.theme import draw_bold, label_font
 
 # mCompoundType values from lmu_enum.LMUCompoundType
 COMP_TYPE_TO_NAME: dict[int, str] = {0: "Soft", 1: "Medium", 2: "Hard", 3: "Wet"}
@@ -40,19 +39,11 @@ def draw_compound_badge(p: QPainter, cx: float, cy: float,
 
     p.setPen(Qt.PenStyle.NoPen)
     if all_same:
-        L = valid[0]
-        bg, fg = _COMP_COLORS.get(L, ("#777777", "#FFFFFF"))
+        # Colour alone identifies the compound — the letter was unreadable at
+        # this size anyway (white / yellow / red / blue = S / M / H / W).
+        bg, _fg = _COMP_COLORS.get(valid[0], ("#777777", "#FFFFFF"))
         p.setBrush(QColor(bg))
         p.drawEllipse(QRectF(cx - r, cy - r, 2 * r, 2 * r))
-        # Single centered glyph: drop the label letter-spacing (114%) — the
-        # trailing gap it adds pushes an AlignCenter'd lone letter off-center.
-        f = label_font(8, hint=False)
-        f.setLetterSpacing(QFont.SpacingType.PercentageSpacing, 100)
-        p.setFont(f)
-        p.setPen(QColor(fg))
-        draw_bold(p, lambda: p.drawText(
-            int(cx - r), int(cy - r), 2 * r, 2 * r,
-            Qt.AlignmentFlag.AlignCenter, L))
     else:
         dot = max(5, r - 2)
         gap = 2

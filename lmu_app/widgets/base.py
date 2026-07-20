@@ -13,8 +13,13 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_SCALE = 115  # default overlay scale in %; change here to resize all overlays globally
+DEFAULT_SCALE = 100  # default overlay scale in %; change here to resize all overlays globally
+                     # MUST match every widget's own CONFIG_SCHEMA "scale" default (100) —
+                     # a mismatch here (was 115) meant a fresh install rendered at the code
+                     # constant, then shrank the instant any setting was first touched and
+                     # the settings dialog applied the schema's own default instead.
 _SNAP_DIST    = 5    # px — distance to screen edge / peer overlay that triggers magnetic snap
+_SNAP_VICINITY = 150 # px — a peer overlay farther than this on BOTH axes is ignored entirely
 
 
 class BaseWidget(QWidget):
@@ -172,15 +177,30 @@ class BaseWidget(QWidget):
         _try_y(screen.top())
         _try_y(screen.bottom() - h + 1)
 
-        # Peer overlays
+        # Peer overlays — X/Y snapping is now gated per axis by proximity on
+        # the OTHER axis. Previously a peer's left edge could snap the widget
+        # into X-alignment no matter how far apart they were vertically (and
+        # symmetrically for Y), which looked like snapping along an infinite
+        # line across the whole screen. Matching edges only makes sense for
+        # peers that are actually nearby in the perpendicular direction:
+        # stacking (X match) needs a reasonable Y gap, side-by-side (Y match)
+        # needs a reasonable X gap. The final snap still requires the usual
+        # _SNAP_DIST proximity on the matching axis itself.
+        def _gap(a0: float, a1: float, b0: float, b1: float) -> float:
+            return max(0.0, a0 - b1, b0 - a1)   # 0 when the intervals overlap
+
         for peer in QApplication.topLevelWidgets():
             if peer is self or not isinstance(peer, BaseWidget) or not peer.isVisible():
                 continue
             px, py, pw, ph = peer.x(), peer.y(), peer.width(), peer.height()
-            for cx in (px, px + pw, px - w, px + pw - w):
-                _try_x(cx)
-            for cy in (py, py + ph, py - h, py + ph - h):
-                _try_y(cy)
+            x_gap = _gap(x, x + w, px, px + pw)
+            y_gap = _gap(y, y + h, py, py + ph)
+            if y_gap <= _SNAP_VICINITY:
+                for cx in (px, px + pw, px - w, px + pw - w):
+                    _try_x(cx)
+            if x_gap <= _SNAP_VICINITY:
+                for cy in (py, py + ph, py - h, py + ph - h):
+                    _try_y(cy)
 
         return QPoint(snap_x if snap_x is not None else x,
                       snap_y if snap_y is not None else y)
@@ -189,15 +209,27 @@ class BaseWidget(QWidget):
     # Internal tick
     # ------------------------------------------------------------------
 
+    def _log_state(self, state: str) -> None:
+        """Log why this widget is shown/hidden, once per state change."""
+        if state != getattr(self, "_last_state", None):
+            self._last_state = state
+            logger.info("[%s] %s", self.WIDGET_NAME, state)
+
     def _update(self) -> None:
         snapshot = self._reader.get()
 
         if not snapshot.game_running or not snapshot.session_active:
+            self._log_state(
+                f"hidden: game_running={snapshot.game_running} "
+                f"session_active={snapshot.session_active} "
+                f"(vehicles={len(snapshot.session.vehicles)} "
+                f"et={snapshot.session.current_et:.1f})")
             if self.isVisible():
                 self.hide()
             return
 
         if self._hide_in_garage and snapshot.player_in_garage:
+            self._log_state("hidden: player_in_garage and 'hide in garage' is on")
             if self.isVisible():
                 self.hide()
             return
@@ -206,14 +238,18 @@ class BaseWidget(QWidget):
 
         if self._auto_hide:
             if snapshot.is_on_track:
+                self._log_state("visible")
                 if not self.isVisible():
                     self.show()
             else:
+                self._log_state("hidden: auto_hide and not is_on_track")
                 if self.isVisible():
                     self.hide()
                 return
-        elif not self.isVisible():
-            self.show()
+        else:
+            self._log_state("visible")
+            if not self.isVisible():
+                self.show()
 
         if snapshot.timestamp > 0 and snapshot.timestamp == self._last_snap_ts:
             return

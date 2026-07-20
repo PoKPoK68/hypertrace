@@ -199,7 +199,9 @@ def _last_lap_color(last_lap: float, best_lap: float, cls_ses_best: float) -> QC
         return None
     if best_lap <= 0:
         return QColor(T.WARN)
-    if last_lap < best_lap:
+    # <= not <: best_lap is the minimum lap time *including* last_lap, so the
+    # instant last_lap sets a new best they're equal, not last_lap < best_lap.
+    if last_lap <= best_lap:
         return QColor(T.PURPLE if best_lap <= cls_ses_best else T.GOOD)
     return QColor(T.WARN)
 

@@ -218,7 +218,9 @@ class InputsWidget(BaseWidget):
             val_col = QColor(T.DIM) if val == 0 else col.lighter(150)
             p.setFont(num_font(7))
             p.setPen(val_col)
-            p.drawText(QRectF(x - 2, y - 15, bw + 4, 14),
+            # Widened: "100" measured 19 px in a 20 px box, so the trailing zero
+            # was clipped as soon as the painter scale rounded it up.
+            p.drawText(QRectF(x - 5, y - 16, bw + 10, 15),
                        Qt.AlignmentFlag.AlignCenter, str(int(val * 100)))
 
             p.setFont(label_font(6))

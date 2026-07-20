@@ -10,7 +10,9 @@ from collections import defaultdict
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QRectF
-from PySide6.QtGui import QColor, QFont, QIcon, QPainter
+from functools import lru_cache
+
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QIcon, QPainter
 from PySide6.QtWidgets import QSizePolicy
 
 from lmu_app.api.reader import DataReader, LMUSnapshot
@@ -27,17 +29,30 @@ _AIR_TEMP_SVG   = str(_ASSETS / "air-temp.svg")
 ROW_H = 20
 SEP_H = 4
 CLS_H = 16
-SESSION_BAR_H = 22
+def _session_bar_h(font_size: int) -> int:
+    """Header height follows the font size (22 px at the former default of 9)."""
+    return font_size + 13
 
 _CHAR_PX_BASE  = 7
-_BADGE_PX_BASE = 22
+_BADGE_PAD     = 5   # inner horizontal padding on each side of a badge label
 _CP            = 3   # column inner padding (applied left AND right — gap between cols = 2*_CP)
 
 def _char_px(font_size: int) -> int:
     return max(4, round(_CHAR_PX_BASE * font_size / 9))
 
+def _badge_font_size(font_size: int) -> int:
+    return max(6, font_size - 2)
+
+@lru_cache(maxsize=64)
 def _badge_px(font_size: int) -> int:
-    return max(14, round(_BADGE_PX_BASE * font_size / 9))
+    """Badge width sized from the actual text metrics.
+
+    A fixed width scaled from the font size left the label touching both edges,
+    since it was unrelated to how wide the text really renders. "GAR" is the
+    widest label (3 chars, same as "L12").
+    """
+    fm = QFontMetrics(num_font(_badge_font_size(font_size)))
+    return max(14, fm.horizontalAdvance("GAR") + 2 * _BADGE_PAD)
 
 # Fastest → slowest, with the same keyword sets as class_colors.CLASS_ENTRIES.
 # Each tuple lists all substrings that identify that class (uppercase match).
@@ -64,6 +79,7 @@ COLUMN_DEFS = {
     "pos":      ("",      24,          Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter),
     "logo":     ("",      _LOGO_COL_W, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter),
     "name":     ("",      -1,          Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
+    "badge":    ("",      26,          Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter),
     "compound": ("",      26,          Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter),
     "gap":      ("GAP",   52,          Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
     "interval": ("INT",   52,          Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
@@ -71,8 +87,6 @@ COLUMN_DEFS = {
     "last":     ("LAST",  62,          Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
     "fuel_ve":  ("VE/F",  44,          Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
 }
-DEFAULT_COLUMNS = ["pos", "logo", "name", "gap", "interval", "best", "last"]
-
 # All colors from theme.T — no hex literals in this module.
 
 
@@ -124,6 +138,8 @@ def _apply_case(name: str, case: str) -> str:
 def _col_w(col: str, ncw: int, font_size: int = 9, dw: dict | None = None) -> int:
     if col == "name":
         return ncw
+    if col == "badge":
+        return _badge_px(font_size) + 4
     if dw and col in dw:
         return dw[col]
     base = COLUMN_DEFS[col][1] if col in COLUMN_DEFS else 0
@@ -150,9 +166,10 @@ def _true_laps_behind(leader, v) -> int:
     return 1 if leader.time_into_lap >= v.time_into_lap else 0
 
 
-def _compute_h(entries: list, row_h: int = ROW_H, show_class_header: bool = True) -> int:
+def _compute_h(entries: list, row_h: int = ROW_H, show_class_header: bool = True,
+               bar_h: int = 22) -> int:
     """Compute widget height. Header row is always present and merged with column labels."""
-    h = SESSION_BAR_H + 8
+    h = bar_h + 8
     for e in entries:
         if e.get("is_sep"):
             h += SEP_H
@@ -172,7 +189,7 @@ class StandingsWidget(BaseWidget):
         {"key": "scale",     "label": "Size (%)",    "type": "int",
          "min": 50, "max": 250, "step": 5, "default": 100},
         {"key": "font_size", "label": "Font size",   "type": "int",
-         "min": 7, "max": 14, "step": 1, "default": 9},
+         "min": 7, "max": 14, "step": 1, "default": 11},
         {"type": "separator", "label": "Header"},
         {"key": "header_info", "label": "Content", "type": "choice",
          "options": [
@@ -202,8 +219,8 @@ class StandingsWidget(BaseWidget):
              {"value": "mixed", "label": "Name LASTNAME"},
              {"value": "title", "label": "Name Lastname"},
          ], "default": "upper"},
-        {"key": "max_name_chars", "label": "Max characters", "type": "int",
-         "min": 4, "max": 30, "step": 1, "default": 16},
+        {"key": "name_width", "label": "Name width (px)", "type": "int",
+         "min": 60, "max": 400, "step": 5, "default": 150},
         {"type": "separator", "label": "Player row"},
         {"key": "show_player_bg",    "label": "Highlight background", "type": "bool", "default": True},
         {"key": "player_color",      "label": "Color",      "type": "color", "default": "#ECAA43",
@@ -235,6 +252,7 @@ class StandingsWidget(BaseWidget):
              {"value": "pos",      "label": "Position"},
              {"value": "logo",     "label": "Brand logo"},
              {"value": "name",     "label": "Name"},
+             {"value": "badge",    "label": "Status badge"},
              {"value": "compound", "label": "Tire compound"},
              {"value": "gap",      "label": "Gap to leader"},
              {"value": "interval", "label": "Interval"},
@@ -250,13 +268,13 @@ class StandingsWidget(BaseWidget):
              "last":     "show_last_col",
              "fuel_ve":  "show_fuel_ve_col",
          },
-         "default": ["pos", "logo", "name", "compound", "gap", "interval", "best", "last", "fuel_ve"]},
+         "default": ["pos", "logo", "name", "badge", "compound", "gap", "interval", "best", "last", "fuel_ve"]},
     ]
 
     def __init__(self, reader: DataReader,
                  columns: list[str] | None = None,
                  top_n: int = 3, around_n: int = 2,
-                 max_name_chars: int = 16,
+                 name_width: int = 150,
                  gap_decimals: int = 1, interval_decimals: int = 1,
                  name_format: str = "full", name_case: str = "upper",
                  header_info: str = "session",
@@ -265,7 +283,7 @@ class StandingsWidget(BaseWidget):
                  show_gap_col: bool = True, show_interval_col: bool = True,
                  show_best_col: bool = True, show_last_col: bool = True,
                  show_fuel_ve_col: bool = False, show_compound_col: bool = True,
-                 font_size: int = 9,
+                 font_size: int = 11,
                  best_decimals: int = 3, last_decimals: int = 3,
                  **kw):
         _show_map = {
@@ -278,7 +296,7 @@ class StandingsWidget(BaseWidget):
         self.columns              = [c for c in _col_order if c in COLUMN_DEFS and _show_map.get(c, True)] or ["pos", "name"]
         self._top_n               = top_n
         self._around_n            = around_n
-        self._max_name_chars      = max_name_chars
+        self._name_width          = name_width
         self._gap_decimals        = gap_decimals
         self._interval_decimals   = interval_decimals
         self._name_format         = name_format
@@ -298,6 +316,7 @@ class StandingsWidget(BaseWidget):
         self._other_classes_top_n = other_classes_top_n
         self._font_size           = max(7, min(14, int(font_size)))
         self._rh                  = _row_h(self._font_size)
+        self._sbh                 = _session_bar_h(self._font_size)
         self._best_decimals       = max(0, min(3, int(best_decimals)))
         self._last_decimals       = max(0, min(3, int(last_decimals)))
         self._scale               = DEFAULT_SCALE / 100.0
@@ -310,6 +329,7 @@ class StandingsWidget(BaseWidget):
         self._outlap_tracking:    dict[int, int]  = {}
         self._pit_lap_tracking:   dict[int, int]  = {}
         self._prev_in_pits:       dict[int, bool] = {}
+        self._last_session_id:    int = -1
         self._class_colors:       dict[str, str]  = {}
         self._temp_pm_trk = None
         self._temp_pm_air = None
@@ -317,14 +337,14 @@ class StandingsWidget(BaseWidget):
         self._dw: dict[str, int] = {}
         super().__init__(reader, update_hz=5, **kw)
         self._recompute_sizes()
-        ncw = self._max_name_chars * _char_px(self._font_size)
+        ncw = self._name_width
         n_init = top_n + 1 + 2 * around_n
         self.setFixedSize(int(_total_w(self.columns, ncw, self._font_size, self._dw) * self._scale),
-                          int(_compute_h([{}] * n_init, self._rh) * self._scale))
+                          int(_compute_h([{}] * n_init, self._rh, bar_h=self._sbh) * self._scale))
 
     def _recompute_sizes(self) -> None:
         from PySide6.QtGui import QFontMetrics
-        fsd = max(7, self._font_size - 1)
+        fsd = max(6, self._font_size - 1)
         fm  = QFontMetrics(num_font(fsd))
         def _gap_ref(d: int) -> str:
             return "+999" + (f".{'9'*d}" if d > 0 else "")
@@ -348,7 +368,7 @@ class StandingsWidget(BaseWidget):
     def apply_params(self, params: dict) -> None:
         self._top_n               = int(params.get("top_n", 3))
         self._around_n            = int(params.get("around_n", 2))
-        self._max_name_chars      = int(params.get("max_name_chars", 16))
+        self._name_width          = int(params.get("name_width", 150))
         self._gap_decimals        = int(params.get("gap_decimals", 1))
         self._interval_decimals   = int(params.get("interval_decimals", self._gap_decimals))
         self._name_format         = str(params.get("name_format", "full"))
@@ -361,22 +381,32 @@ class StandingsWidget(BaseWidget):
         self._show_player_bg      = bool(params.get("show_player_bg",   True))
         self._show_other_classes  = bool(params.get("show_other_classes", False))
         self._other_classes_top_n = int(params.get("other_classes_top_n", 3))
-        self._font_size           = max(7, min(14, int(params.get("font_size", 9))))
+        self._font_size           = max(7, min(14, int(params.get("font_size", 11))))
         self._rh                  = _row_h(self._font_size)
+        self._sbh                 = _session_bar_h(self._font_size)
         self._best_decimals       = max(0, min(3, int(params.get("best_decimals", 3))))
         self._last_decimals       = max(0, min(3, int(params.get("last_decimals", 3))))
         self._scale               = int(params.get("scale", DEFAULT_SCALE)) / 100.0
         self._opacity             = max(0, min(100, int(params.get("opacity", 85))))
-        _c = QColor(str(params.get("player_color", "#ffc800")))
+        _c = QColor(str(params.get("player_color", "#ECAA43")))
         if not _c.isValid(): _c = QColor(255, 200, 0)
         _c.setAlpha(round(255 * max(0, min(100, int(params.get("player_color_alpha", 20)))) / 100))
         self._player_color = _c
         # Column order from ordered_multiselect (contains all columns in user order)
         col_order = list(params.get("columns") or COLUMN_DEFS.keys())
         col_order = [c for c in col_order if c in COLUMN_DEFS]
-        for c in COLUMN_DEFS:
-            if c not in col_order:
-                col_order.append(c)
+        # Columns added since the config was saved: insert them where they sit in
+        # COLUMN_DEFS rather than appending, so a new column doesn't land at the
+        # far right of an existing layout.
+        defs_order = list(COLUMN_DEFS)
+        for c in defs_order:
+            if c in col_order:
+                continue
+            idx = 0
+            for existing in col_order:
+                if defs_order.index(existing) < defs_order.index(c):
+                    idx = col_order.index(existing) + 1
+            col_order.insert(idx, c)
         show_map = {
             "pos":      True,
             "logo":     True,
@@ -390,9 +420,9 @@ class StandingsWidget(BaseWidget):
         }
         self.columns = [c for c in col_order if show_map.get(c, True)] or ["pos", "name"]
         self._recompute_sizes()
-        ncw   = self._max_name_chars * _char_px(self._font_size)
+        ncw   = self._name_width
         ref   = self._entries if self._entries else [{}] * (self._top_n + 1 + 2 * self._around_n)
-        new_h = _compute_h(ref, self._rh, self._show_class_badge)
+        new_h = _compute_h(ref, self._rh, self._show_class_badge, self._sbh)
         self.setFixedSize(int(_total_w(self.columns, ncw, self._font_size, self._dw) * self._scale),
                           int(new_h * self._scale))
         self.update()
@@ -407,6 +437,15 @@ class StandingsWidget(BaseWidget):
         self._ses_remaining = s.session_time_remaining
         self._track_temp    = s.track_temp
         self._air_temp      = s.ambient_temp
+
+        # New session / restart (reader bumps session_id) → clear badge state.
+        # Same fix already applied to relative.py; this one was missed, so a
+        # session change could leave stale OUT/PIT/L{n} badges on screen.
+        if s.session_id != self._last_session_id:
+            self._last_session_id = s.session_id
+            self._outlap_tracking.clear()
+            self._pit_lap_tracking.clear()
+            self._prev_in_pits.clear()
 
         self._player_fuel = snap.vehicle.fuel
         self._player_ve   = snap.vehicle.virtual_energy
@@ -537,9 +576,9 @@ class StandingsWidget(BaseWidget):
 
         self._entries = entries
 
-        ncw   = self._max_name_chars * _char_px(self._font_size)
+        ncw   = self._name_width
         new_w = _total_w(self.columns, ncw, self._font_size, self._dw)
-        new_h = _compute_h(entries, self._rh, self._show_class_badge)
+        new_h = _compute_h(entries, self._rh, self._show_class_badge, self._sbh)
         sw, sh = int(new_w * self._scale), int(new_h * self._scale)
         if self.width() != sw or self.height() != sh:
             self.setFixedSize(sw, sh)
@@ -579,8 +618,11 @@ class StandingsWidget(BaseWidget):
             "interval_laps":         interval_laps,
             "is_player":             v.is_player,
             "is_best":               v.best_lap > 0 and v.best_lap <= self._best_by_class.get(v.vehicle_class, 9999.0),
-            "is_last_session_best":  v.last_lap > 0 and v.best_lap > 0 and v.last_lap < v.best_lap and v.best_lap <= self._best_by_class.get(v.vehicle_class, 9999.0),
-            "is_last_personal_best": v.last_lap > 0 and v.best_lap > 0 and v.last_lap < v.best_lap,
+            # <= not <: best_lap is the minimum lap time *including* last_lap,
+            # so the instant last_lap sets a new best they're equal, never
+            # last_lap < best_lap — strict < here could (almost) never fire.
+            "is_last_session_best":  v.last_lap > 0 and v.best_lap > 0 and v.last_lap <= v.best_lap and v.best_lap <= self._best_by_class.get(v.vehicle_class, 9999.0),
+            "is_last_personal_best": v.last_lap > 0 and v.best_lap > 0 and v.last_lap <= v.best_lap,
             "is_race":               is_race,
             "is_outlap":             slot in self._outlap_tracking,
             "badge":                 badge,
@@ -596,16 +638,18 @@ class StandingsWidget(BaseWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         p.scale(self._scale, self._scale)
-        ncw  = self._max_name_chars * _char_px(self._font_size)
+        ncw  = self._name_width
         W    = _total_w(self.columns, ncw, self._font_size, self._dw)
-        H    = _compute_h(self._entries, self._rh, self._show_class_badge)
+        H    = _compute_h(self._entries, self._rh, self._show_class_badge, self._sbh)
 
         self._draw_panel(p, W, H, accent=False)
 
         fs  = self._font_size
-        fsd = max(7, fs - 1)
-        fsh = max(6.0, fs - 1.5)   # column header labels (GAP, INT, BEST…)
-        fss = max(6, fs - 2)   # class/row badges (HYP, GT3, GAR…)
+        fsd = max(6, fs - 1)
+        fsh = fs         # session bar (name + time) matches the driver-name size
+        fshc = fs - 2    # column header labels (GAP/INT/BEST/LAST) — one size down
+                        # was fs-1 (15->13px), too small a step to read as smaller
+        fss = max(5, fs - 2)   # class/row badges (HYP, GT3, GAR…)
 
         # ── Merged header row (session info + column labels) ──────────────
         pos_w  = _col_w("pos",  ncw, fs, self._dw) if "pos"  in self.columns else 0
@@ -614,7 +658,7 @@ class StandingsWidget(BaseWidget):
 
         p.setBrush(QColor(28, 30, 34, 200))
         p.setPen(Qt.PenStyle.NoPen)
-        p.drawRoundedRect(1, 1, W - 2, SESSION_BAR_H, T.RADIUS, T.RADIUS)
+        p.drawRoundedRect(1, 1, W - 2, self._sbh, T.RADIUS, T.RADIUS)
 
         # hairline drawn after session bar so it paints on top (not hidden by bar bg)
         from lmu_app.utils.theme import accent_hairline as _ahl
@@ -628,17 +672,17 @@ class StandingsWidget(BaseWidget):
                 p.setFont(f)
                 fm   = p.fontMetrics()
                 lbl_w = fm.horizontalAdvance(lbl)
-                baseline = 1 + (SESSION_BAR_H + fm.ascent() - fm.descent()) // 2
+                baseline = 1 + (self._sbh + fm.ascent() - fm.descent()) // 2
                 p.setPen(QColor(T.ACCENT))
                 p.drawText(6, baseline, lbl)
-                f_num = label_font(max(6, fsh), hint=False)
+                f_num = label_font(max(6, fsh))
                 f_num.setCapitalization(QFont.Capitalization.MixedCase)
                 p.setFont(f_num)
                 p.setPen(QColor(T.TEXT))
                 _st = _fmt_session_time(self._current_et, self._ses_remaining)
-                draw_bold(p, lambda: p.drawText(6 + lbl_w + 6, baseline, _st))
+                p.drawText(6 + lbl_w + 6, baseline, _st)
             elif hi == "temp":
-                p.setFont(num_font(fss, hint=False))
+                p.setFont(num_font(fss))
                 fm = p.fontMetrics()
                 trk_str = f"{self._track_temp:.0f}°"
                 air_str = f"{self._air_temp:.0f}°"
@@ -651,18 +695,16 @@ class StandingsWidget(BaseWidget):
                 trk_w = fm.horizontalAdvance(trk_str)
                 air_w = fm.horizontalAdvance(air_str)
                 x0     = 6
-                icon_y = 1 + SESSION_BAR_H // 2 - icon_sz // 2
+                icon_y = 1 + self._sbh // 2 - icon_sz // 2
                 p.drawPixmap(x0, icon_y, self._temp_pm_trk)
                 p.setPen(QColor(T.DIM))
-                draw_bold(p, lambda: p.drawText(
-                    x0 + icon_sz + gap_px, 1, trk_w + 2, SESSION_BAR_H,
-                    Qt.AlignmentFlag.AlignVCenter, trk_str))
+                p.drawText(x0 + icon_sz + gap_px, 1, trk_w + 2, self._sbh,
+                           Qt.AlignmentFlag.AlignVCenter, trk_str)
                 ax = x0 + icon_sz + gap_px + trk_w + sep_px
                 p.drawPixmap(ax, icon_y, self._temp_pm_air)
                 p.setPen(QColor(T.DIM))
-                draw_bold(p, lambda: p.drawText(
-                    ax + icon_sz + gap_px, 1, air_w + 2, SESSION_BAR_H,
-                    Qt.AlignmentFlag.AlignVCenter, air_str))
+                p.drawText(ax + icon_sz + gap_px, 1, air_w + 2, self._sbh,
+                           Qt.AlignmentFlag.AlignVCenter, air_str)
 
         x_col = 2
         for col in self.columns:
@@ -671,14 +713,14 @@ class StandingsWidget(BaseWidget):
             hdr_label, _, align = COLUMN_DEFS[col]
             cw = _col_w(col, ncw, fs, self._dw)
             if hdr_label:
-                p.setFont(label_font(max(6, fsh)))
+                p.setFont(label_font(max(6, fshc)))
                 p.setPen(QColor(T.DIM))
-                p.drawText(x_col + _CP, 1, cw - 2*_CP, SESSION_BAR_H, align, hdr_label)
+                p.drawText(x_col + _CP, 1, cw - 2*_CP, self._sbh, align, hdr_label)
             x_col += cw
 
-        p.fillRect(QRectF(2, SESSION_BAR_H, W - 4, 1), T.FAINT)
+        p.fillRect(QRectF(2, self._sbh, W - 4, 1), T.FAINT)
 
-        y = SESSION_BAR_H + 4
+        y = self._sbh + 4
 
         for e in self._entries:
 
@@ -700,9 +742,14 @@ class StandingsWidget(BaseWidget):
                     p.setBrush(cls_col)
                     p.setPen(Qt.PenStyle.NoPen)
                     p.drawRoundedRect(bdg_x, bdg_y, bdg_w, bdg_h, 2, 2)
-                p.setFont(label_font(max(6, fss)))
+                # Synthetic bold: at this small size Montserrat's single
+                # embedded weight looks noticeably thinner than larger text
+                # (requesting a heavier QFont.Weight has no effect — there is
+                # only one weight file loaded, Qt doesn't synthesize it).
+                p.setFont(label_font(fss))
                 p.setPen(QColor(T.TEXT))
-                p.drawText(bdg_x, bdg_y, bdg_w, bdg_h, Qt.AlignmentFlag.AlignCenter, abbrev)
+                draw_bold(p, lambda: p.drawText(
+                    bdg_x, bdg_y, bdg_w, bdg_h, Qt.AlignmentFlag.AlignCenter, abbrev))
                 y += CLS_H
                 continue
 
@@ -730,9 +777,13 @@ class StandingsWidget(BaseWidget):
 
                 elif col == "logo":
                     s  = self._scale
-                    # Load at 3× physical size so Qt downsamples → sharp result
-                    pw = max(12, round((_LOGO_COL_W - 2) * s * 3))
-                    ph = max(6,  round((rh - 4)          * s * 3))
+                    # Rasterise the vector logo at exactly its on-screen device
+                    # size: drawing it 1:1 means the painter never rescales it.
+                    # (Oversampling then letting the painter shrink it looks soft
+                    # — SmoothPixmapTransform is bilinear, which loses detail on
+                    # a >2× downscale.)
+                    pw = max(12, round((_LOGO_COL_W - 2) * s))
+                    ph = max(6,  round((rh - 4)          * s))
                     logo = _get_logo(e.get("vehicle_name", ""), pw, ph)
                     if logo:
                         max_lw = float(_LOGO_COL_W - 2)
@@ -745,6 +796,16 @@ class StandingsWidget(BaseWidget):
                         p.drawPixmap(QRectF(lx, ly, dw, dh), logo, QRectF(logo.rect()))
 
                 elif col == "name":
+                    name_text = _apply_case(_fmt_name(e["name_raw"], self._name_format), self._name_case)
+                    p.setFont(text_font(fs))
+                    # Elide to the column width: a character count no longer maps
+                    # to a width now that the text font is proportional.
+                    name_text = p.fontMetrics().elidedText(
+                        name_text, Qt.TextElideMode.ElideRight, int(cw) - 4)
+                    p.setPen(QColor(T.TEXT))
+                    p.drawText(x + 2, y, cw, rh, align, name_text)
+
+                elif col == "badge":
                     raw_badge = e["badge"]
                     if raw_badge in ("GAR", "PIT") and not self._show_gar_badge:
                         raw_badge = ""
@@ -752,26 +813,22 @@ class StandingsWidget(BaseWidget):
                         raw_badge = ""
                     elif raw_badge.startswith("L") and not self._show_lap_badge:
                         raw_badge = ""
-                    _badge_map = {
-                        "GAR": (QColor(T.GAR_BG), QColor(T.GAR_FG)),
-                        "PIT": (QColor(T.PIT_BG), QColor(T.PIT_FG)),
-                        "OUT": (QColor(T.OUT_BG), QColor(T.OUT_FG)),
-                    }
-                    name_text = _apply_case(_fmt_name(e["name_raw"], self._name_format)[:self._max_name_chars], self._name_case)
-                    p.setFont(text_font(fs, hint=False))
-                    p.setPen(QColor(T.TEXT))
-                    draw_bold(p, lambda: p.drawText(x + 2, y, cw, rh, align, name_text))
                     if raw_badge:
-                        if raw_badge in _badge_map:
-                            bg_c, fg_c = _badge_map[raw_badge]
-                        else:
-                            bg_c, fg_c = QColor(T.LAP_BG), QColor(T.LAP_FG)
+                        _badge_map = {
+                            "GAR": (QColor(T.GAR_BG), QColor(T.GAR_FG)),
+                            "PIT": (QColor(T.PIT_BG), QColor(T.PIT_FG)),
+                            "OUT": (QColor(T.OUT_BG), QColor(T.OUT_FG)),
+                        }
+                        bg_c, fg_c = _badge_map.get(raw_badge,
+                                                    (QColor(T.LAP_BG), QColor(T.LAP_FG)))
                         bdg = _badge_px(fs)
-                        bx2, by2 = x + cw - bdg, y + 3
+                        bx2, by2 = x + (cw - bdg) / 2, y + 3
                         p.setBrush(bg_c); p.setPen(Qt.PenStyle.NoPen)
-                        p.drawRoundedRect(bx2, by2, bdg, rh - 6, 2, 2)
+                        p.drawRoundedRect(QRectF(bx2, by2, bdg, rh - 6), 2, 2)
                         p.setFont(num_font(fss)); p.setPen(fg_c)
-                        p.drawText(bx2, by2, bdg, rh - 6, Qt.AlignmentFlag.AlignCenter, raw_badge)
+                        draw_bold(p, lambda: p.drawText(
+                            QRectF(bx2, by2, bdg, rh - 6),
+                            Qt.AlignmentFlag.AlignCenter, raw_badge))
 
                 elif col == "compound":
                     _draw_compound_badge(p,
@@ -833,7 +890,9 @@ class StandingsWidget(BaseWidget):
                               else QColor(T.TEXT))
                         txt = f"{fuel:.0f}L"
                     else:
-                        txt, vc = "---", QColor(T.DIM)
+                        # A "-" dash is always T.TEXT (white), never T.DIM — same
+                        # convention as every other column (recurring past bug).
+                        txt, vc = "-", QColor(T.TEXT)
                     p.setFont(num_font(fsd)); p.setPen(vc)
                     p.drawText(x + _CP, y, cw - 2*_CP, rh, align, txt)
 

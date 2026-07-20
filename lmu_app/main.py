@@ -21,6 +21,7 @@ from lmu_app.widgets.broadcast import BroadcastBattle, BroadcastDriverCard, Broa
 
 
 _FONTS = [
+    "Montserrat-Bold.ttf",
     "JetBrainsMono-Regular.ttf",
     "JetBrainsMono-Medium.ttf",
     "JetBrainsMono-Bold.ttf",
@@ -28,7 +29,33 @@ _FONTS = [
     "SairaSemiCondensed-Bold.ttf",
 ]
 
+APP_VERSION = "0.6.11"
 _LOGO = "lmu_app_logo.svg"
+LOG_PATH = None   # set by _log_handlers()
+
+
+def _log_handlers(verbose: bool) -> list:
+    """Console + rotating file log.
+
+    The packaged app is built with console=False, so stderr goes nowhere — a
+    file log is the only way to diagnose anything on a machine without Python.
+    Lives next to the config, in ~/.lmuapp/.
+    """
+    global LOG_PATH
+    handlers: list = [logging.StreamHandler()]
+    try:
+        from pathlib import Path
+        from logging.handlers import RotatingFileHandler
+        log_dir = Path.home() / ".lmuapp"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        LOG_PATH = log_dir / "lmuapp.log"
+        fh = RotatingFileHandler(LOG_PATH, maxBytes=1_000_000, backupCount=2,
+                                 encoding="utf-8")
+        fh.setLevel(logging.DEBUG if verbose else logging.INFO)
+        handlers.append(fh)
+    except Exception:
+        pass      # never let logging setup prevent the app from starting
+    return handlers
 
 
 def _set_app_user_model_id() -> None:
@@ -68,6 +95,7 @@ def _load_fonts() -> None:
     from lmu_app.utils import theme
     fonts_dir = Path(__file__).parent / "assets" / "fonts"
     _num_set = False
+    _text_set = False
     for name in _FONTS:
         path = fonts_dir / name
         fid = QFontDatabase.addApplicationFont(str(path))
@@ -82,7 +110,14 @@ def _load_fonts() -> None:
         # Take the first file's registered name only — subsequent weights of the
         # same typeface may register under "Family Bold" / "Family Medium" as
         # separate families; we want the base family that covers all weights.
-        if "JetBrains" in name and not _num_set:
+        # Montserrat everywhere. It is proportional, but num_font() enables the
+        # OpenType "tnum" feature so digits keep a fixed advance and columns
+        # stay aligned. JetBrains Mono is only a fallback if it fails to load.
+        if "Montserrat" in name and not _text_set:
+            theme.T.F_TEXT = family
+            theme.T.F_NUM  = family
+            _text_set = _num_set = True
+        elif "JetBrains" in name and not _num_set:
             theme.T.F_TEXT = family
             theme.T.F_NUM  = family
             _num_set = True
@@ -121,7 +156,10 @@ def main() -> int:
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+        handlers=_log_handlers(args.verbose),
     )
+    logging.info("LMU App %s starting (hz=%d) — log file: %s",
+                 APP_VERSION, args.hz, LOG_PATH)
 
     _set_app_user_model_id()
     app = QApplication(sys.argv)
@@ -129,7 +167,7 @@ def main() -> int:
     app.setStyle("Fusion")        # consistent rendering
     app.setPalette(_dark_palette())  # makes arrows/indicators visible on dark bg
     app.setApplicationName("LMU App")
-    app.setApplicationVersion("0.6.10")
+    app.setApplicationVersion(APP_VERSION)
     app.setQuitOnLastWindowClosed(False)
     _set_app_icon(app)
 

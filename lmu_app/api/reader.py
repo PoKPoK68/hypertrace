@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import math
+import sys
 import threading
 import time
 from dataclasses import dataclass, field
@@ -218,6 +219,44 @@ def _fetch_weather_forecast(session_type: int) -> list[int]:
         return []
 
 
+def _mapping_exists(name: str = "LMU_Data") -> tuple[bool, int]:
+    """(exists, win32_error) for the game's shared-memory mapping.
+
+    Essential: mmap() with a tagname *creates* the mapping when it is missing.
+    Without this check, an app started before LMU attaches to its own empty
+    mapping, reports a successful connection, and reads zeros forever — so
+    everything looks connected while no overlay ever gets data.
+
+    The error code matters: OpenFileMapping fails both when the mapping does
+    not exist (2) and when it exists but access is denied (5, typically LMU
+    running elevated and the app not) — two very different problems.
+    """
+    if sys.platform != "win32":
+        return True, 0
+    try:
+        import ctypes
+        from ctypes import wintypes
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32.OpenFileMappingW.restype  = wintypes.HANDLE
+        k32.OpenFileMappingW.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR]
+        handle = k32.OpenFileMappingW(0x0004, False, name)   # FILE_MAP_READ
+        if handle:
+            k32.CloseHandle(handle)
+            return True, 0
+        return False, ctypes.get_last_error()
+    except Exception as exc:                 # never block startup on this probe
+        logger.debug("Mapping probe failed (%s) — attempting to connect anyway", exc)
+        return True, 0
+
+
+_WIN_ERR = {
+    2: "mapping not found — LMU is not publishing its shared memory "
+       "(is the Shared Memory option enabled in the game?)",
+    5: "access denied — LMU is most likely running as administrator while this "
+       "app is not; run both the same way",
+}
+
+
 class LMUReader(BaseReader):
     """Lit la shared memory LMU via SimInfo de pyLMUSharedMemory."""
 
@@ -230,6 +269,8 @@ class LMUReader(BaseReader):
         self._rest_thread: threading.Thread | None = None
         self._sim: object | None = None
         self._connected = False
+        self._zero_ticks = 0     # consecutive ticks with gameVersion == 0
+        self._last_probe_err: int | None = None
         self._rest_lock  = threading.Lock()
         self._rest_focus: int = -1   # slotID from REST API; -1 = unknown
         self._rest_data: dict[int, dict] = {}   # slot_id → REST standings entry
@@ -331,7 +372,28 @@ class LMUReader(BaseReader):
             if s > 0:
                 time.sleep(s)
 
+    def _disconnect(self):
+        """Drop the current mapping so _loop reconnects on the next pass."""
+        if self._sim is not None:
+            try:
+                self._sim.close()
+            except Exception:
+                pass
+        self._sim = None
+        self._connected = False
+
     def _connect(self):
+        exists, err = _mapping_exists()
+        if not exists:
+            # Log once per distinct reason, not on every 2 s retry.
+            if err != self._last_probe_err:
+                self._last_probe_err = err
+                logger.warning("LMU shared memory unavailable (win32 error %d): %s",
+                               err, _WIN_ERR.get(err, "unknown error"))
+            self._connected = False
+            self._sim = None
+            return
+        self._last_probe_err = None
         try:
             from pyLMUSharedMemory.lmu_data import SimInfo  # type: ignore
             self._sim = SimInfo()
@@ -439,11 +501,23 @@ class LMUReader(BaseReader):
         try:
             data = self._sim.LMUData
 
-            # LMU pas lancé → gameVersion == 0
+            # LMU pas lancé → gameVersion == 0.
+            # Attention : mmap avec un tagname CRÉE le mapping s'il n'existe pas.
+            # Si l'app démarre avant LMU, on est donc attaché à un mapping vide
+            # (que l'on a créé soi-même) et tout restera à zéro indéfiniment.
+            # On lâche ce mapping après un moment pour laisser _loop réessayer et
+            # récupérer celui du jeu — sinon l'ordre de lancement casse tout.
             if not data.generic.gameVersion:
                 with self._lock:
                     self._snapshot = LMUSnapshot(game_running=False)
+                self._zero_ticks += 1
+                if self._zero_ticks * self._interval >= 3.0:
+                    logger.info("Shared memory reads all zeros — reconnecting "
+                                "(LMU may have started after the app)")
+                    self._zero_ticks = 0
+                    self._disconnect()
                 return
+            self._zero_ticks = 0
 
             sc_info = data.scoring.scoringInfo
             telem   = data.telemetry

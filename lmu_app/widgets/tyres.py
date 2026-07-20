@@ -6,12 +6,12 @@ from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QSizePolicy
 
 from lmu_app.api.reader import DataReader, LMUSnapshot
-from lmu_app.utils.theme import T, draw_bold, label_font, num_font
+from lmu_app.utils.theme import T, label_font, num_font
 from lmu_app.widgets.base import BaseWidget, DEFAULT_SCALE
 
-_BAR_W = 33
-_BAR_H = 52
-_G     = 4    # écart uniforme : bords, entre pneus gauche/droite, avant/arrière
+_BAR_W = 38
+_BAR_H = 60
+_G     = 5    # écart uniforme : bords, entre pneus gauche/droite, avant/arrière
 
 WIDGET_W = _G * 2 + _BAR_W * 2 + _G   # = 3*G + 2*BAR_W
 WIDGET_H = _G * 2 + _BAR_H * 2 + _G
@@ -126,23 +126,21 @@ class TyresWidget(BaseWidget):
 
         # Temperature — top center
         if self._show_temp and temp > 0:
-            p.setFont(num_font(7, hint=False))
+            p.setFont(num_font(8))
             p.setPen(txt_col)
-            draw_bold(p, lambda: p.drawText(
-                QRectF(x, y + 1, _BAR_W, 13),
-                Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter,
-                f"{temp:.0f}°"))
+            p.drawText(QRectF(x, y + 1, _BAR_W, 15),
+                       Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter,
+                       f"{temp:.0f}°")
 
         # Wear % — bottom center
         if self._show_wear_pct:
-            p.setFont(num_font(7, hint=False))
+            p.setFont(num_font(8))
             p.setPen(txt_col)
-            draw_bold(p, lambda: p.drawText(
-                QRectF(x, y + _BAR_H - 13, _BAR_W, 13),
-                Qt.AlignmentFlag.AlignCenter, f"{wear * 100:.0f}%"))
+            p.drawText(QRectF(x, y + _BAR_H - 15, _BAR_W, 15),
+                       Qt.AlignmentFlag.AlignCenter, f"{wear * 100:.0f}%")
 
-        # Corner label (FL/FR/RL/RR) — centered, drawn last to avoid font state leaking into num draws
-        p.setFont(label_font(6))
+        # Corner label (FL/FR/RL/RR) — centered, drawn last
+        p.setFont(label_font(7))
         p.setPen(QColor(255, 255, 255, 140))
         p.drawText(QRectF(x, y, _BAR_W, _BAR_H),
                    Qt.AlignmentFlag.AlignCenter, label)

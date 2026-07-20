@@ -19,7 +19,7 @@ _DEFAULTS: dict = {
         "relative":   {"enabled": True,  "x": 350, "y": 310},
         "tyres":      {"enabled": True,  "x": 50,  "y": 390},
         "fuel_calc":  {"enabled": True,  "x": 50,  "y": 540},
-        "ve_calc":    {"enabled": False, "x": 280, "y": 540},
+        "ve_calc":    {"enabled": True,  "x": 280, "y": 540},
     },
 }
 
