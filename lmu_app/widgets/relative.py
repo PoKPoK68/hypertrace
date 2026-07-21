@@ -14,7 +14,7 @@ from functools import lru_cache
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QIcon, QPainter
 from PySide6.QtWidgets import QSizePolicy
 
-from lmu_app.api.reader import DataReader, LMUSnapshot
+from lmu_app.calc.module_info import minfo
 from lmu_app.utils.class_colors import class_color
 from lmu_app.utils.theme import T, draw_bold, label_font, num_font, text_font
 from lmu_app.widgets.base import BaseWidget, DEFAULT_SCALE
@@ -188,7 +188,7 @@ class RelativeWidget(BaseWidget):
 
     # All colors from theme.T — no hex literals in this class.
 
-    def __init__(self, reader: DataReader,
+    def __init__(self,
                  drivers_ahead:      int = 4,
                  drivers_behind:     int = 4,
                  interval_decimals:  int = 1,
@@ -220,14 +220,14 @@ class RelativeWidget(BaseWidget):
         self._outlap_tracking:  dict[int, int]  = {}
         self._pit_lap_tracking: dict[int, int]  = {}
         self._prev_in_pits:     dict[int, bool] = {}
-        self._last_session_id:  int = -1
+        self._last_reset_count: int = -1
         self._class_colors:   dict[str, str]  = {}
         self._player_color = QColor(0xEC, 0xAA, 0x43, 51)
         self._temp_pm_trk = None
         self._temp_pm_air = None
         self._temp_pm_sz  = 0
         self._opacity = 85
-        super().__init__(reader, update_hz=10, **kw)
+        super().__init__(update_hz=10, **kw)
         self.setFixedSize(int(_widget_w(name_width, self._font_size, self._interval_decimals) * self._scale),
                           int(_widget_h(drivers_ahead, drivers_behind, self._font_size, show_session_bar) * self._scale))
 
@@ -259,21 +259,24 @@ class RelativeWidget(BaseWidget):
                           int(_widget_h(self._ahead, self._behind, self._font_size, self._show_session_bar) * self._scale))
         self.update()
 
-    def on_data(self, snap: LMUSnapshot):
-        self._ses_type      = snap.session.session_type
-        self._current_et    = snap.session.current_et
-        self._ses_remaining = snap.session.session_time_remaining
-        self._track_temp    = snap.session.track_temp
-        self._air_temp      = snap.session.ambient_temp
+    def on_data(self):
+        s = minfo.session
+        self._ses_type      = s.sessionType
+        self._current_et    = s.currentEt
+        self._ses_remaining = s.timeRemaining
+        self._track_temp    = s.trackTemp
+        self._air_temp      = s.ambientTemp
 
-        # New session / restart (reader bumps session_id) → clear badge state
-        if snap.session.session_id != self._last_session_id:
-            self._last_session_id = snap.session.session_id
+        # New session / restart → clear badge state. module_stint.py bumps
+        # resetCount on any detected reset; comparing with != survives this
+        # widget polling at a different cadence than that module's own tick.
+        if minfo.stint.resetCount != self._last_reset_count:
+            self._last_reset_count = minfo.stint.resetCount
             self._outlap_tracking.clear()
             self._pit_lap_tracking.clear()
             self._prev_in_pits.clear()
 
-        vehicles = snap.session.vehicles
+        vehicles = minfo.vehicles.dataSet
         player   = next((v for v in vehicles if v.is_player), None)
         if not player:
             return

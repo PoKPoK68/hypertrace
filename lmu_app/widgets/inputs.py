@@ -3,11 +3,11 @@ from __future__ import annotations
 import time
 from collections import deque
 
-from PySide6.QtCore import Qt, QRectF, QPointF
-from PySide6.QtGui import QColor, QPainter, QPen
+from PySide6.QtCore import Qt, QRectF
+from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QSizePolicy
 
-from lmu_app.api.reader import DataReader, LMUSnapshot
+from lmu_app.calc.module_info import minfo
 from lmu_app.utils.theme import T, label_font, num_font
 from lmu_app.widgets.base import BaseWidget, DEFAULT_SCALE
 
@@ -50,7 +50,7 @@ class InputsWidget(BaseWidget):
          "show_if": ("show_trace", True)},
     ]
 
-    def __init__(self, reader: DataReader, **kw):
+    def __init__(self, **kw):
         self._t = self._b = self._c = 0.0
         self._scale          = DEFAULT_SCALE / 100.0
         self._show_trace      = True
@@ -62,7 +62,7 @@ class InputsWidget(BaseWidget):
         self._show_brake      = True
         self._show_clutch     = True
         self._trace_buf: deque[tuple[float, float, float, float]] = deque()
-        super().__init__(reader, update_hz=30, **kw)
+        super().__init__(update_hz=30, **kw)
         self._apply_size()
 
     def setup_ui(self):
@@ -118,11 +118,11 @@ class InputsWidget(BaseWidget):
         self._apply_size()
         self.update()
 
-    def on_data(self, snap: LMUSnapshot):
-        v = snap.vehicle
-        t = max(0., min(1., v.throttle))
-        b = max(0., min(1., v.brake))
-        c = max(0., min(1., v.clutch))
+    def on_data(self):
+        p = minfo.player
+        t = max(0., min(1., p.throttle))
+        b = max(0., min(1., p.brake))
+        c = max(0., min(1., p.clutch))
         now = time.monotonic()
         self._trace_buf.append((now, t, b, c))
         cutoff = now - self._trace_secs - 1.0
@@ -170,18 +170,30 @@ class InputsWidget(BaseWidget):
             active_channels.append((1, _TRACE_COLORS[1]))
 
         p.setClipRect(QRectF(tx, ty, tw, th))
+        # drawPath() fills with the active brush as well as stroking with the
+        # pen — unlike the drawLine() calls this replaced, which only ever
+        # stroked. Without this, the trace fills with the leftover T.TRACK
+        # brush from the background rect above.
+        p.setBrush(Qt.BrushStyle.NoBrush)
         for ch, color in active_channels:
             pen = QPen(color, 1.5, Qt.PenStyle.SolidLine,
                        Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
             p.setPen(pen)
-            pts = []
-            for ts, t, b, c in samples:
+            # One QPainterPath + one drawPath() call instead of one drawLine()
+            # per segment — up to ~4500 individual drawLine calls per repaint
+            # at max trace length × 3 channels, which a py-spy flamegraph
+            # showed eating ~20% of all sampled CPU time, the single biggest
+            # cost in the whole app.
+            path = QPainterPath()
+            for i, (ts, t, b, c) in enumerate(samples):
                 val = (t, b, c)[ch]
                 x = tx + tw * (ts - cutoff) / self._trace_secs
                 y = ty + th * (1.0 - val)
-                pts.append(QPointF(x, y))
-            for i in range(len(pts) - 1):
-                p.drawLine(pts[i], pts[i + 1])
+                if i == 0:
+                    path.moveTo(x, y)
+                else:
+                    path.lineTo(x, y)
+            p.drawPath(path)
         p.setClipping(False)
 
     def _draw_bars(self, p: QPainter):

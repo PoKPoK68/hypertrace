@@ -14,6 +14,8 @@ Usage:
 """
 from __future__ import annotations
 
+from functools import lru_cache
+
 from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QBrush, QColor, QFont, QLinearGradient, QPen
 
@@ -88,6 +90,7 @@ class T:
     RPM_SEGMENTS = 18
     RPM_ZONE_LO = 0.62               # below -> GOOD, below 0.85 -> WARN, else CRIT
     RPM_ZONE_HI = 0.85
+    RPM_SHIFT = "#2E8FFF"            # shift-point blink color
 
 
 def border_pen(opacity_pct: int) -> QPen:
@@ -125,8 +128,8 @@ def _px(size: float) -> int:
     return max(1, round(size * _PX_PER_PT))
 
 
-def label_font(size: float, weight: QFont.Weight = QFont.Weight.Bold,
-               hint: bool = True) -> QFont:
+@lru_cache(maxsize=256)
+def _label_font_cached(size: float, weight: QFont.Weight, hint: bool) -> QFont:
     f = QFont(T.F_TEXT, -1, weight)
     f.setPixelSize(_px(size))
     if not hint:
@@ -135,8 +138,20 @@ def label_font(size: float, weight: QFont.Weight = QFont.Weight.Bold,
     return f
 
 
-def num_font(size: float, weight: QFont.Weight = QFont.Weight.Bold,
-             hint: bool = True) -> QFont:
+def label_font(size: float, weight: QFont.Weight = QFont.Weight.Bold,
+               hint: bool = True) -> QFont:
+    # Every paintEvent used to build a brand new QFont per call — family
+    # lookup, feature/hinting setup — dozens of times per repaint across 9
+    # overlays. Returning a copy of a cached template keeps that one-time
+    # cost to a single construction per distinct size, while still handing
+    # each caller its own QFont instance (some call sites mutate the
+    # returned font, e.g. standings.py's session-bar capitalization override
+    # — mutating the cached template itself would corrupt it for everyone).
+    return QFont(_label_font_cached(size, weight, hint))
+
+
+@lru_cache(maxsize=256)
+def _num_font_cached(size: float, weight: QFont.Weight, hint: bool) -> QFont:
     f = QFont(T.F_NUM, -1, weight)
     f.setPixelSize(_px(size))
     f.setStyleHint(QFont.StyleHint.TypeWriter)
@@ -152,14 +167,24 @@ def num_font(size: float, weight: QFont.Weight = QFont.Weight.Bold,
     return f
 
 
-def text_font(size: float, weight: QFont.Weight = QFont.Weight.Bold,
-              hint: bool = True) -> QFont:
+def num_font(size: float, weight: QFont.Weight = QFont.Weight.Bold,
+             hint: bool = True) -> QFont:
+    return QFont(_num_font_cached(size, weight, hint))
+
+
+@lru_cache(maxsize=256)
+def _text_font_cached(size: float, weight: QFont.Weight, hint: bool) -> QFont:
     f = QFont(T.F_TEXT, -1, weight)
     f.setPixelSize(_px(size))
     f.setStyleHint(QFont.StyleHint.TypeWriter)
     if not hint:
         f.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
     return f
+
+
+def text_font(size: float, weight: QFont.Weight = QFont.Weight.Bold,
+              hint: bool = True) -> QFont:
+    return QFont(_text_font_cached(size, weight, hint))
 
 
 def draw_bold(p, draw, offset: float = 0.5) -> None:

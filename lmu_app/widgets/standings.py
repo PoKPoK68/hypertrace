@@ -15,7 +15,7 @@ from functools import lru_cache
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QIcon, QPainter
 from PySide6.QtWidgets import QSizePolicy
 
-from lmu_app.api.reader import DataReader, LMUSnapshot
+from lmu_app.calc.module_info import minfo
 from lmu_app.utils.class_colors import class_abbrev, class_color
 from lmu_app.utils.compounds import draw_compound_badge as _draw_compound_badge
 from lmu_app.utils.logos import get_logo as _get_logo
@@ -271,7 +271,7 @@ class StandingsWidget(BaseWidget):
          "default": ["pos", "logo", "name", "badge", "compound", "gap", "interval", "best", "last", "fuel_ve"]},
     ]
 
-    def __init__(self, reader: DataReader,
+    def __init__(self,
                  columns: list[str] | None = None,
                  top_n: int = 3, around_n: int = 2,
                  name_width: int = 150,
@@ -329,13 +329,13 @@ class StandingsWidget(BaseWidget):
         self._outlap_tracking:    dict[int, int]  = {}
         self._pit_lap_tracking:   dict[int, int]  = {}
         self._prev_in_pits:       dict[int, bool] = {}
-        self._last_session_id:    int = -1
+        self._last_reset_count:   int = -1
         self._class_colors:       dict[str, str]  = {}
         self._temp_pm_trk = None
         self._temp_pm_air = None
         self._temp_pm_sz  = 0
         self._dw: dict[str, int] = {}
-        super().__init__(reader, update_hz=1, **kw)
+        super().__init__(update_hz=1, **kw)
         self._recompute_sizes()
         ncw = self._name_width
         n_init = top_n + 1 + 2 * around_n
@@ -429,37 +429,38 @@ class StandingsWidget(BaseWidget):
 
     # ------------------------------------------------------------------
 
-    def on_data(self, snap: LMUSnapshot):
-        s       = snap.session
-        is_race = s.session_type >= 10
-        self._ses_type      = s.session_type
-        self._current_et    = s.current_et
-        self._ses_remaining = s.session_time_remaining
-        self._track_temp    = s.track_temp
-        self._air_temp      = s.ambient_temp
+    def on_data(self):
+        vehicles = minfo.vehicles.dataSet
+        s       = minfo.session
+        is_race = s.sessionType >= 10
+        self._ses_type      = s.sessionType
+        self._current_et    = s.currentEt
+        self._ses_remaining = s.timeRemaining
+        self._track_temp    = s.trackTemp
+        self._air_temp      = s.ambientTemp
 
-        # New session / restart (reader bumps session_id) → clear badge state.
-        # Same fix already applied to relative.py; this one was missed, so a
-        # session change could leave stale OUT/PIT/L{n} badges on screen.
-        if s.session_id != self._last_session_id:
-            self._last_session_id = s.session_id
+        # New session / restart → clear badge state. module_stint.py bumps
+        # resetCount on any detected reset; comparing with != survives this
+        # widget polling at a different cadence than that module's own tick.
+        if minfo.stint.resetCount != self._last_reset_count:
+            self._last_reset_count = minfo.stint.resetCount
             self._outlap_tracking.clear()
             self._pit_lap_tracking.clear()
             self._prev_in_pits.clear()
 
-        self._player_fuel = snap.vehicle.fuel
-        self._player_ve   = snap.vehicle.virtual_energy
+        player = next((v for v in vehicles if v.is_player), None)
+        if not player:
+            return
+        self._player_fuel = player.fuel
+        self._player_ve   = player.virtual_energy
 
         # Group vehicles by class, sorted by overall place within each class
         by_class: dict[str, list] = defaultdict(list)
-        for v in s.vehicles:
+        for v in vehicles:
             by_class[v.vehicle_class].append(v)
         for cls in by_class:
             by_class[cls].sort(key=lambda v: v.place)
 
-        player = next((v for v in s.vehicles if v.is_player), None)
-        if not player:
-            return
         player_class       = player.vehicle_class
         player_cls_vehicles = by_class[player_class]
 
@@ -470,7 +471,7 @@ class StandingsWidget(BaseWidget):
 
         # Outlap / pit-lap tracking (all vehicles)
         new_prev: dict[int, bool] = {}
-        for v in s.vehicles:
+        for v in vehicles:
             slot     = v.slot_id
             in_pit   = v.in_pit_lane
             was_pits = self._prev_in_pits.get(slot, in_pit)

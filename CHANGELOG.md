@@ -4,6 +4,39 @@ All notable changes to LMU App are documented here.
 
 ---
 
+## [0.7.0] — Data & rendering engine rewrite
+
+### Engine
+- **The telemetry/calculation engine has been rebuilt on TinyPedal's architecture** (s-victor/TinyPedal, open source). Data reading, session detection, delta/fuel/VE calculations, standings/relative gaps, and the overlay update/visibility engine are now ported from TinyPedal's proven implementation instead of this app's own hand-rolled logic. The visual design, layout, colors, fonts and all settings of every overlay are unchanged — only what's underneath changed.
+- Fixes several long-standing sources of fragility this way: session-reset detection (used to reset fuel/VE history, outlap/pit badges) is now based on a robust signal instead of a heuristic; the local player's telemetry is now matched by car ID instead of trusting a raw index, which is more reliable when the game reorders internal arrays; on-track detection now reflects actually driving (ignition/realtime state) rather than just "a session is running".
+- Per-car sector times (used for gap columns) now come directly from shared memory instead of a slower REST poll — one less thing relying on the REST API to work.
+
+This is a foundational change — please report anything that looks off, especially around session transitions (practice → qualify → race, or restarting a session).
+
+### Presets
+- **Presets are now created and saved from the Overlays tab.** A "Preset" row shows the currently loaded preset, with a **Save** button to overwrite it and a **Save As…** button that swaps the row for a name field to create a new one.
+- **Removed the "Auto-load on session change" checkbox and the Practice/Qualifying/Race dropdown assignments.** Replaced with a **"Preset per class"** panel in the Presets tab — one dropdown per car class (Hypercar, LMP2, LMP3, GT3, GTE) to pick its dedicated preset, which then loads automatically as soon as you're driving a car of that class.
+
+### Class colors
+- **Removed the Colors tab.** Vehicle class colors (Hypercar, LMP2, LMP3, GT3, GTE) are no longer user-configurable and always use the app's defaults.
+
+### Main window
+- The control panel window can no longer be resized taller/shorter by dragging its edge — its height now follows each tab's own content instead.
+
+### Widget settings dialogs
+- **Fixed the Copy / Paste / Reset buttons clipping their text** on every overlay except Standings (whose settings dialog is wider due to its side panel). Shortened to "Copy" / "Paste" / "Reset".
+
+### Delta
+- The Last/Best lap time values and the live delta value are now smaller and closer in size to each other, instead of the delta being noticeably larger than the times.
+
+### Speed & Gear
+- **RPM bar shift light** — the bar now reads full at 92% of max RPM instead of 100%, and blinks blue every 100 ms from 95% onward as a shift cue.
+
+### Weather
+- The wetness row is now labeled "WETNESS" instead of the more ambiguous "WET".
+
+---
+
 ## [0.6.13] — Performance & CPU usage
 
 ### Game freezing / CPU usage

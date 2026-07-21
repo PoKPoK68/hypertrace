@@ -5,7 +5,8 @@ from collections import deque
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QSizePolicy
-from lmu_app.api.reader import DataReader, LMUSnapshot
+from lmu_app.calc.module_info import minfo
+from lmu_app.calc.realtime_state import realtime_state
 from lmu_app.utils.theme import T, label_font, num_font, draw_panel
 from lmu_app.widgets.base import BaseWidget, DEFAULT_SCALE
 from lmu_app.widgets.fuel_calc import (
@@ -49,7 +50,7 @@ class VECalcWidget(BaseWidget):
         {"key": "show_ratio",  "label": "Fuel ratio", "type": "bool", "default": True},
     ]
 
-    def __init__(self, reader: DataReader, **kw):
+    def __init__(self, **kw):
         self._show_ve_bar     = True
         self._show_ve_level   = True
         self._show_fuel_bar   = True
@@ -70,7 +71,7 @@ class VECalcWidget(BaseWidget):
         self._ve_at_lap_start   = -1.0
         self._fuel_at_lap_start = -1.0
         self._fuel_prev_tick    = -1.0
-        self._last_session_id   = -1
+        self._last_reset_count  = -1
 
         self._ve_history:  deque[float] = deque(maxlen=5)
         self._last_lap_ratio = 0.0
@@ -94,24 +95,23 @@ class VECalcWidget(BaseWidget):
         self._ratio_h    = 5 + _RH
         self._col_pos: dict[str, tuple[int, int]] = {}
 
-        super().__init__(reader, update_hz=1, **kw)
+        super().__init__(update_hz=1, **kw)
         self._refresh_layout()
 
     def setup_ui(self):
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
     def _update(self) -> None:
-        if self._merge:
-            snap = self._reader.get()
-            if snap.game_running:
-                player_sc = next((x for x in snap.session.vehicles if x.is_player), None)
-                if player_sc and player_sc.vehicle_class:
-                    if not _class_has_ve(player_sc.vehicle_class):
-                        if self.isVisible():
-                            self.hide()
-                        return
-                elif not self.isVisible():
-                    return  # class unknown, stay hidden
+        if self._merge and realtime_state.game_running:
+            player = next((v for v in minfo.vehicles.dataSet if v.is_player), None)
+            vclass = player.vehicle_class if player else ""
+            if vclass:
+                if not _class_has_ve(vclass):
+                    if self.isVisible():
+                        self.hide()
+                    return
+            elif not self.isVisible():
+                return  # class unknown, stay hidden
         super()._update()
 
     def start(self) -> None:
@@ -180,14 +180,9 @@ class VECalcWidget(BaseWidget):
         self._refresh_layout()
         self.update()
 
-    def on_data(self, snap: LMUSnapshot) -> None:
-        v = snap.vehicle
-        s = snap.session
-        player = next((x for x in s.vehicles if x.is_player), None)
-
-        # New session / restart (reader bumps session_id) → clear VE history
-        if s.session_id != self._last_session_id:
-            self._last_session_id   = s.session_id
+    def on_data(self) -> None:
+        if minfo.stint.resetCount != self._last_reset_count:
+            self._last_reset_count  = minfo.stint.resetCount
             self._last_total_laps   = -1
             self._ve_history.clear()
             self._last_lap_ve       = 0.0
@@ -196,23 +191,30 @@ class VECalcWidget(BaseWidget):
             self._ve_at_lap_start   = -1.0
             self._fuel_at_lap_start = -1.0
 
-        self._current_ve   = v.virtual_energy
-        self._current_fuel = v.fuel
-        self._fuel_cap     = max(1.0, v.fuel_capacity)
+        self._current_ve   = minfo.energy.amountCurrent / 100.0
+        self._current_fuel = minfo.fuel.amountCurrent
+        self._fuel_cap     = max(1.0, minfo.fuel.capacity)
 
+        player = next((v for v in minfo.vehicles.dataSet if v.is_player), None)
         if player:
-            if self._fuel_prev_tick >= 0 and (v.fuel - self._fuel_prev_tick) > 2.0:
-                self._fuel_at_lap_start = v.fuel
-            if self._ve_at_lap_start >= 0 and (v.virtual_energy - self._ve_at_lap_start) > 0.05:
-                self._ve_at_lap_start = v.virtual_energy
+            # Tracked locally from the widget's own VE/fuel readings rather
+            # than minfo.*.amountUsedLast — those fields are updated by
+            # module_fuel.py's own independent lap-boundary detection, on its
+            # own background thread; relying on them here raced against this
+            # widget's total_laps-based trigger and could read a stale value.
+            if self._fuel_prev_tick >= 0 and (self._current_fuel - self._fuel_prev_tick) > 2.0:
+                self._fuel_at_lap_start = self._current_fuel  # mid-lap refuel
+            if self._ve_at_lap_start >= 0 and (self._current_ve - self._ve_at_lap_start) > 0.05:
+                self._ve_at_lap_start = self._current_ve       # mid-lap "refuel"
 
+            total_laps = player.total_laps
             if self._last_total_laps < 0:
-                self._last_total_laps   = player.total_laps
-                self._ve_at_lap_start   = v.virtual_energy
-                self._fuel_at_lap_start = v.fuel
-            elif player.total_laps > self._last_total_laps:
-                ve_consumed   = self._ve_at_lap_start - v.virtual_energy
-                fuel_consumed = self._fuel_at_lap_start - v.fuel
+                self._last_total_laps   = total_laps
+                self._ve_at_lap_start   = self._current_ve
+                self._fuel_at_lap_start = self._current_fuel
+            elif total_laps > self._last_total_laps:
+                ve_consumed   = self._ve_at_lap_start - self._current_ve
+                fuel_consumed = self._fuel_at_lap_start - self._current_fuel
 
                 self._ve_history.append(ve_consumed)
                 self._last_lap_ve = ve_consumed
@@ -223,13 +225,12 @@ class VECalcWidget(BaseWidget):
                 if ve_consumed > 0.001 and fuel_consumed > 0.05:
                     self._last_lap_ratio = fuel_consumed / (ve_consumed * 100.0)
 
-                self._ve_at_lap_start   = v.virtual_energy
-                self._fuel_at_lap_start = v.fuel
-                self._last_total_laps   = player.total_laps
+                self._ve_at_lap_start   = self._current_ve
+                self._fuel_at_lap_start = self._current_fuel
+                self._last_total_laps   = total_laps
 
-            self._laps_remaining = _laps_remaining(s, player)
-
-        self._fuel_prev_tick = v.fuel
+        self._fuel_prev_tick = self._current_fuel
+        self._laps_remaining = _laps_remaining(player)
         self.update()
 
     def _avg5_ve(self) -> float:

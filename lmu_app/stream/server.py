@@ -266,6 +266,7 @@ class StreamManager(QObject):
         self._enc_event   = threading.Event()
         self._enc_thread: threading.Thread | None = None
         self._enc_running = False
+        self._on_data_wants_snap: dict[str, bool] = {}   # cached per-widget-key signature check
 
         self._timer = QTimer(self)
         self._timer.setInterval(16)   # ~60 fps tick — per-widget throttling handles actual rate
@@ -375,7 +376,19 @@ class StreamManager(QObject):
                 continue
             if snap.game_running and snap.session_active:
                 try:
-                    widget.on_data(snap)
+                    # Migrated widgets read lmu_app.calc.module_info.minfo
+                    # directly and take no argument; the still-on-hold
+                    # broadcast/live-timing widgets still expect the legacy
+                    # snapshot object — checked once per widget and cached.
+                    wants_snap = self._on_data_wants_snap.get(key)
+                    if wants_snap is None:
+                        import inspect
+                        try:
+                            wants_snap = len(inspect.signature(widget.on_data).parameters) >= 1
+                        except (TypeError, ValueError):
+                            wants_snap = True
+                        self._on_data_wants_snap[key] = wants_snap
+                    widget.on_data(snap) if wants_snap else widget.on_data()
                 except Exception:
                     pass
             try:

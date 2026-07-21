@@ -1,6 +1,6 @@
 """lmu_app/main.py — Entry point."""
 from __future__ import annotations
-import argparse, logging, sys
+import argparse, gc, logging, sys
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QApplication
@@ -29,7 +29,7 @@ _FONTS = [
     "SairaSemiCondensed-Bold.ttf",
 ]
 
-APP_VERSION = "0.6.13"
+APP_VERSION = "0.7.0"
 _LOGO = "lmu_app_logo.svg"
 LOG_PATH = None   # set by _log_handlers()
 
@@ -207,19 +207,19 @@ def main() -> int:
     reader = DataReader(update_hz=args.hz)
     reader.start()
 
-    fuel_calc_w = FuelCalcWidget(reader, auto_hide=False)
-    ve_calc_w   = VECalcWidget(reader,   auto_hide=False)
+    fuel_calc_w = FuelCalcWidget(auto_hide=False)
+    ve_calc_w   = VECalcWidget(auto_hide=False)
 
     widget_entries: list[tuple[str, object]] = [
-        ("delta",      DeltaWidget(reader,     auto_hide=False)),
+        ("delta",      DeltaWidget(auto_hide=False)),
         ("fuel_calc",  fuel_calc_w),
-        ("inputs",     InputsWidget(reader,    auto_hide=False)),
-        ("relative",   RelativeWidget(reader,  auto_hide=False)),
-        ("speed",      SpeedWidget(reader,     auto_hide=False)),
-        ("standings",  StandingsWidget(reader, auto_hide=False)),
-        ("tyres",      TyresWidget(reader,     auto_hide=False)),
+        ("inputs",     InputsWidget(auto_hide=False)),
+        ("relative",   RelativeWidget(auto_hide=False)),
+        ("speed",      SpeedWidget(auto_hide=False)),
+        ("standings",  StandingsWidget(auto_hide=False)),
+        ("tyres",      TyresWidget(auto_hide=False)),
         ("ve_calc",    ve_calc_w),
-        ("weather",    WeatherWidget(reader,   auto_hide=False)),
+        ("weather",    WeatherWidget(auto_hide=False)),
     ]
 
     merge = config.merge_calc
@@ -264,7 +264,7 @@ def main() -> int:
     ]
     stream_entries: list[tuple[str, object]] = []
     for key, cls in _stream_classes:
-        sw = cls(reader, auto_hide=False)
+        sw = cls(auto_hide=False)
         stream_entries.append((key, sw))
         stream_manager.add_widget(key, sw)
         p = config.stream_widget_params(key)
@@ -318,6 +318,20 @@ def main() -> int:
         reader.stop()
 
     app.aboutToQuit.connect(on_quit)
+
+    # Everything constructed above (widgets, config, fonts, Qt's own object
+    # graph) is long-lived — freeze() moves it out of the generations the
+    # cyclic collector rescans on every pass, so a collection triggered later
+    # by this session's steady per-tick allocations only has to look at
+    # actual new garbage, not re-walk the whole app's permanent object graph
+    # each time. This is a real technique for long-running GUI apps with
+    # allocation churn, not something copied from TinyPedal (it doesn't do
+    # this) — untested against the actual freeze, since that needs the game
+    # running to reproduce.
+    gc.collect()
+    gc.freeze()
+    gc.disable()
+
     return app.exec()
 
 

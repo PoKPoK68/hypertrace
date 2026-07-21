@@ -5,7 +5,7 @@ from PySide6.QtCore import Qt, QRectF
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QSizePolicy
 
-from lmu_app.api.reader import DataReader, LMUSnapshot
+from lmu_app.calc.module_info import minfo
 from lmu_app.utils.theme import T, label_font, num_font
 from lmu_app.widgets.base import BaseWidget, DEFAULT_SCALE
 
@@ -46,7 +46,7 @@ class TyresWidget(BaseWidget):
         {"key": "show_wear_pct", "label": "Show wear %",           "type": "bool", "default": True},
     ]
 
-    def __init__(self, reader: DataReader,
+    def __init__(self,
                  show_temp: bool = True, show_wear_pct: bool = True,
                  **kw):
         self._show_temp     = show_temp
@@ -56,7 +56,7 @@ class TyresWidget(BaseWidget):
         self._temps:  list[float] = [0.0] * 4
         self._wears:  list[float] = [1.0] * 4
         self._opts:   list[float] = [0.0] * 4
-        super().__init__(reader, update_hz=10, **kw)
+        super().__init__(update_hz=10, **kw)
         self.setFixedSize(int(WIDGET_W * self._scale), int(WIDGET_H * self._scale))
 
     def setup_ui(self):
@@ -70,10 +70,10 @@ class TyresWidget(BaseWidget):
         self.setFixedSize(int(WIDGET_W * self._scale), int(WIDGET_H * self._scale))
         self.update()
 
-    def on_data(self, snap: LMUSnapshot) -> None:
-        self._temps = list(snap.tyres.temp_carcass)
-        self._wears = list(snap.tyres.wear)
-        self._opts  = list(snap.tyres.optimal_temp)
+    def on_data(self) -> None:
+        self._temps = list(minfo.wheels.carcassTemp)
+        self._wears = list(minfo.wheels.wear)
+        self._opts  = list(minfo.wheels.optimalTemp)
         self.update()
 
     def _temp_color(self, t: float, opt: float) -> QColor:

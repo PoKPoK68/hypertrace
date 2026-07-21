@@ -8,7 +8,7 @@ from PySide6.QtCore import Qt, QRectF
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QSizePolicy
 
-from lmu_app.api.reader import DataReader, LMUSnapshot
+from lmu_app.calc.module_info import minfo
 from lmu_app.utils.theme import T, label_font, num_font
 from lmu_app.widgets.base import BaseWidget, DEFAULT_SCALE
 
@@ -55,7 +55,7 @@ class WeatherWidget(BaseWidget):
          "min": 50, "max": 250, "step": 5, "default": 100},
     ]
 
-    def __init__(self, reader: DataReader, **kw):
+    def __init__(self, **kw):
         self._scale      = DEFAULT_SCALE / 100.0
         self._air_temp   = 0.0
         self._track_temp = 0.0
@@ -66,7 +66,7 @@ class WeatherWidget(BaseWidget):
         self._svg_air    = None
         self._svg_trk    = None
         self._sky_svgs: list = []
-        super().__init__(reader, update_hz=1, **kw)
+        super().__init__(update_hz=1, **kw)
         self._load_svgs()
         self.setFixedSize(int(BASE_W * self._scale), int(BASE_H * self._scale))
 
@@ -103,14 +103,14 @@ class WeatherWidget(BaseWidget):
         self.setFixedSize(int(BASE_W * self._scale), int(BASE_H * self._scale))
         self.update()
 
-    def on_data(self, snap: LMUSnapshot) -> None:
-        s = snap.session
-        self._air_temp     = s.ambient_temp
-        self._track_temp   = s.track_temp
+    def on_data(self) -> None:
+        s = minfo.session
+        self._air_temp     = s.ambientTemp
+        self._track_temp   = s.trackTemp
         self._raining      = s.raining
-        self._wetness      = s.avg_path_wetness
-        self._forecast     = s.weather_forecast   # forecast via reader/REST (no REST here)
-        self._sky_now      = s.weather_sky        # current sky via shared memory (instant)
+        self._wetness      = s.avgPathWetness
+        self._forecast     = s.weatherForecast   # via calc/ext/rest_merge.py (no REST here)
+        self._sky_now      = s.weatherSky        # current sky via shared memory (instant)
         self.update()
 
     def paintEvent(self, _):
@@ -141,7 +141,7 @@ class WeatherWidget(BaseWidget):
             [(self._svg_air, "AIR",  f"{self._air_temp:.0f}°",      0),
              (self._svg_trk, "TRK",  f"{self._track_temp:.0f}°",    1)],
             [(None,           "RAIN", f"{self._raining * 100:.0f}%", 0),
-             (None,           "WET",  f"{self._wetness * 100:.0f}%", 1)],
+             (None,           "WETNESS", f"{self._wetness * 100:.0f}%", 1)],
         ]
         for row_idx, cells in enumerate(rows):
             y = _PAD_Y + row_idx * _ROW_H

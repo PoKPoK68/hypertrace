@@ -1,11 +1,13 @@
 """Speed / Gear / RPM bar overlay — Direction A "Broadcast"."""
 from __future__ import annotations
 
+import time
+
 from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QPainter
 from PySide6.QtWidgets import QSizePolicy
 
-from lmu_app.api.reader import DataReader, LMUSnapshot
+from lmu_app.calc.module_info import minfo
 from lmu_app.utils.theme import T, label_font, rpm_seg_color
 from functools import lru_cache
 
@@ -19,6 +21,9 @@ _PAD_X, _PAD_Y = 6, 6
 _RPM_H  = 5
 _RPM_Y  = _PAD_Y
 _RPM_GAP = 1
+_RPM_FULL_RATIO  = 0.92   # bar reads full at 92% of max RPM, not 100%
+_RPM_BLINK_RATIO = 0.95   # blinks blue from 95% of max RPM
+_BLINK_MS = 100           # shift-point blink toggle interval
 
 
 def _content_h() -> int:
@@ -53,13 +58,21 @@ def _layout_w() -> int:
     return _PAD_X + spd_w + 3 + kph_w + _GEAR_GAP + gear_w + _PAD_X
 
 
-def _num_px(px: int) -> QFont:
-    """Saira SemiCondensed Bold at an explicit pixel size — DPI-independent."""
+@lru_cache(maxsize=64)
+def _num_px_cached(px: int) -> QFont:
     f = QFont(T.F_NUM)
     f.setPixelSize(px)
     f.setWeight(QFont.Weight.Bold)
     f.setStyleHint(QFont.StyleHint.TypeWriter)
     return f
+
+
+def _num_px(px: int) -> QFont:
+    """Saira SemiCondensed Bold at an explicit pixel size — DPI-independent.
+    Own font builder (doesn't go through theme.py's num_font), so it needs
+    its own cache — a py-spy profile showed this constructing a fresh QFont
+    every paintEvent call, bypassing the caching added there."""
+    return QFont(_num_px_cached(px))
 
 
 class SpeedWidget(BaseWidget):
@@ -72,13 +85,13 @@ class SpeedWidget(BaseWidget):
          "min": 50, "max": 250, "step": 5, "default": 100},
     ]
 
-    def __init__(self, reader: DataReader, **kw):
+    def __init__(self, **kw):
         self._speed   = 0.0
         self._gear    = 0
         self._rpm     = 0.0
         self._rpm_max = 9000.0
         self._scale   = DEFAULT_SCALE / 100.0
-        super().__init__(reader, update_hz=30, **kw)
+        super().__init__(update_hz=30, **kw)
         self.setFixedSize(int(_layout_w() * self._scale), int(BASE_H * self._scale))
 
     def setup_ui(self):
@@ -90,9 +103,12 @@ class SpeedWidget(BaseWidget):
         self.setFixedSize(int(_layout_w() * self._scale), int(BASE_H * self._scale))
         self.update()
 
-    def on_data(self, snapshot: LMUSnapshot):
-        v = snapshot.vehicle
-        spd, gear, rpm, rpm_max = v.speed_kmh, v.gear, v.rpm, v.rpm_max
+    def on_data(self):
+        p       = minfo.player
+        spd     = p.speedMs * 3.6
+        gear    = p.gear
+        rpm     = p.rpm
+        rpm_max = p.rpmMax
         if (spd != self._speed or gear != self._gear
                 or rpm != self._rpm or rpm_max != self._rpm_max):
             self._speed, self._gear, self._rpm, self._rpm_max = spd, gear, rpm, rpm_max
@@ -108,17 +124,24 @@ class SpeedWidget(BaseWidget):
         self._draw_panel(p, w, h)
 
         # ── RPM bar — full overlay width ──────────────────────────────────
-        ratio = min(1.0, self._rpm / self._rpm_max) if self._rpm_max > 0 else 0.0
+        raw_ratio = min(1.0, self._rpm / self._rpm_max) if self._rpm_max > 0 else 0.0
+        shifting  = raw_ratio >= _RPM_BLINK_RATIO
+        # Bar reads as "full" at 90% of max RPM, not 100%.
+        ratio = min(1.0, raw_ratio / _RPM_FULL_RATIO)
         n     = T.RPM_SEGMENTS
         lit   = round(ratio * n)
         bar_y = _RPM_Y + 4
         bar_w = w - 2 * _PAD_X
         seg_w = (bar_w - (n - 1) * _RPM_GAP) / n
+        blink_on = shifting and (int(time.monotonic() * 1000 / _BLINK_MS) % 2 == 0)
 
         p.setPen(Qt.PenStyle.NoPen)
         for i in range(n):
             x = _PAD_X + i * (seg_w + _RPM_GAP)
-            p.setBrush(rpm_seg_color(i / (n - 1)) if i < lit else T.TRACK)
+            if shifting:
+                p.setBrush(QColor(T.RPM_SHIFT) if blink_on else QColor(T.TRACK))
+            else:
+                p.setBrush(rpm_seg_color(i / (n - 1)) if i < lit else QColor(T.TRACK))
             r = 3.0 if (i == 0 or i == n - 1) else 1.0
             p.drawRoundedRect(QRectF(x, bar_y, seg_w, _RPM_H), r, r)
 

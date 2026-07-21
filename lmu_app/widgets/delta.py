@@ -5,7 +5,7 @@ from PySide6.QtCore import Qt, QRectF
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QSizePolicy
 
-from lmu_app.api.reader import DataReader, LMUSnapshot
+from lmu_app.calc.module_info import minfo
 from lmu_app.utils.theme import T, label_font, num_font
 from lmu_app.widgets.base import BaseWidget, DEFAULT_SCALE
 
@@ -48,7 +48,7 @@ class DeltaWidget(BaseWidget):
          "show_if": ("show_bar", True)},
     ]
 
-    def __init__(self, reader: DataReader, **kw):
+    def __init__(self, **kw):
         self._delta        = 0.0
         self._best_lap     = -1.0
         self._last_lap     = -1.0
@@ -60,7 +60,7 @@ class DeltaWidget(BaseWidget):
         self._show_best    = True
         self._show_delta   = True
         self._show_bar     = True
-        super().__init__(reader, update_hz=20, **kw)
+        super().__init__(update_hz=20, **kw)
         self._apply_size()
 
     def setup_ui(self):
@@ -94,17 +94,25 @@ class DeltaWidget(BaseWidget):
         self._apply_size()
         self.update()
 
-    def on_data(self, snap: LMUSnapshot) -> None:
-        player = next((x for x in snap.session.vehicles if x.is_player), None)
+    def on_data(self) -> None:
+        # Sourced from the game's own per-car scoring fields (mBestLapTime /
+        # mLastLapTime / mDeltaBest), not this app's own re-derived
+        # minfo.delta — that value is tracked independently from scratch by
+        # our simplified port of TinyPedal's delta module (no GPS-position
+        # sync, in-memory only) and can disagree with what the game itself
+        # already computes and publishes directly. Same source standings.py
+        # already uses successfully for best/last lap.
+        player = next((v for v in minfo.vehicles.dataSet if v.is_player), None)
         if player:
             self._best_lap = player.best_lap
             self._last_lap = player.last_lap
             self._has_ref  = player.best_lap > 0
             cls   = player.vehicle_class
-            bests = [v.best_lap for v in snap.session.vehicles
+            bests = [v.best_lap for v in minfo.vehicles.dataSet
                      if v.vehicle_class == cls and v.best_lap > 0]
             self._cls_ses_best = min(bests) if bests else -1.0
-        self._delta = snap.vehicle.delta_best
+
+        self._delta = minfo.delta.deltaBestRaw
         self.update()
 
     def paintEvent(self, _):
@@ -132,7 +140,7 @@ class DeltaWidget(BaseWidget):
                 last_col = QColor(T.PURPLE if self._cls_ses_best > 0 and self._best_lap <= self._cls_ses_best else T.GOOD)
             else:
                 last_col = QColor(T.TEXT)
-            p.setFont(num_font(14))
+            p.setFont(num_font(13))
             p.setPen(last_col)
             p.drawText(QRectF(_PAD + lbl_w, y, _BASE_W - _PAD - lbl_w - _PAD, _ROW_H),
                        Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
@@ -145,8 +153,13 @@ class DeltaWidget(BaseWidget):
             p.setPen(QColor(T.DIM))
             p.drawText(QRectF(_PAD, y, lbl_w, _ROW_H),
                        Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, "BEST")
-            p.setFont(num_font(14))
-            p.setPen(QColor(T.PURPLE if self._best_lap > 0 else T.TEXT))
+            # Purple only while it's still the class's fastest — was purple
+            # for any personal best at all, so it never reverted when
+            # someone else took the class best away.
+            is_cls_best = (self._best_lap > 0 and self._cls_ses_best > 0
+                           and self._best_lap <= self._cls_ses_best)
+            p.setFont(num_font(13))
+            p.setPen(QColor(T.PURPLE if is_cls_best else T.TEXT))
             p.drawText(QRectF(_PAD + lbl_w, y, _BASE_W - _PAD - lbl_w - _PAD, _ROW_H),
                        Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
                        _fmt_lap(self._best_lap))
@@ -157,7 +170,7 @@ class DeltaWidget(BaseWidget):
             if self._show_last or self._show_best:
                 y += 2
             if not self._has_ref:
-                p.setFont(num_font(21))
+                p.setFont(num_font(18))
                 p.setPen(QColor(T.TEXT))
                 p.drawText(QRectF(0, y, _BASE_W, _DELTA_H),
                            Qt.AlignmentFlag.AlignCenter, "-")
@@ -169,7 +182,7 @@ class DeltaWidget(BaseWidget):
                     col, txt = QColor(T.CRIT),  f"+{d:.3f}"
                 else:
                     col, txt = QColor(T.TEXT),  "0.000"
-                p.setFont(num_font(21))
+                p.setFont(num_font(18))
                 p.setPen(col)
                 p.drawText(QRectF(0, y, _BASE_W, _DELTA_H),
                            Qt.AlignmentFlag.AlignCenter, txt)

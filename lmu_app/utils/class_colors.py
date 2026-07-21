@@ -47,6 +47,19 @@ def class_color(vclass: str, overrides: dict[str, str] | None = None) -> QColor 
     return c
 
 
+def class_key(vclass: str) -> str:
+    """Matching CLASS_ENTRIES key (e.g. "HYPERCAR", "GT3") for a raw class string."""
+    if not vclass:
+        return "UNKNOWN"
+    vc = vclass.strip().upper()
+    for entry in CLASS_ENTRIES:
+        if not entry["keywords"]:
+            continue
+        if any(k in vc for k in entry["keywords"]):
+            return entry["key"]
+    return "UNKNOWN"
+
+
 def class_abbrev(vclass: str) -> str:
     """Short code to display in the class column cell."""
     if not vclass:

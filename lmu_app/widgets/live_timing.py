@@ -257,7 +257,22 @@ class LiveTimingPanel(QWidget):
 
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._refresh)
+        # Started/stopped from show/hideEvent, not here — this window is
+        # created once at startup but not shown unless the user opens it,
+        # and _refresh() does real work (rebuilds the driver table). It used
+        # to run on this timer unconditionally from construction, whether or
+        # not the window was ever visible — a py-spy profile showed it
+        # eating ~12.5% of total CPU time on a run where this window was
+        # never opened.
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
         self._timer.start(400)
+        self._refresh()
+
+    def hideEvent(self, event) -> None:
+        super().hideEvent(event)
+        self._timer.stop()
 
     def _apply_dark(self) -> None:
         self.setStyleSheet(

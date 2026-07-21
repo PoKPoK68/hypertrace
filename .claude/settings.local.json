@@ -19,7 +19,21 @@
       "Bash(xargs grep -l \"WNV_SKY\")",
       "Bash(xargs grep -l \"weather\\\\|WNV\")",
       "Bash(mkdir -p /mnt/c/LMUApp/lmuapp/lmu_app/stream)",
-      "PowerShell(New-Item -ItemType Directory -Force \"c:\\\\LMUApp\\\\lmuapp\\\\lmu_app\\\\stream\")"
+      "PowerShell(New-Item -ItemType Directory -Force \"c:\\\\LMUApp\\\\lmuapp\\\\lmu_app\\\\stream\")",
+      "Read(//c/Users/matte/AppData/Local/Temp/claude/c--LMUApp-lmuapp/639c8267-0ab1-45d0-af52-a3bbd90e8bd6/scratchpad/tinypedal_ref/pyLMUSharedMemory/**)",
+      "Bash(TP=\"/c/Users/matte/AppData/Local/Temp/claude/c--LMUApp-lmuapp/639c8267-0ab1-45d0-af52-a3bbd90e8bd6/scratchpad/tinypedal_ref\" *)",
+      "Read(//c/Users/matte/AppData/Local/Temp/claude/c--LMUApp-lmuapp/639c8267-0ab1-45d0-af52-a3bbd90e8bd6/scratchpad/tinypedal_ref/**)",
+      "Bash(git clone *)",
+      "Read(//c/Users/matte/AppData/Local/Temp/claude/c--LMUApp-lmuapp/639c8267-0ab1-45d0-af52-a3bbd90e8bd6/scratchpad/tinypedal_ref/pyLMUSharedMemory_src/**)",
+      "Bash(echo \"mmap diff exit: $?\")",
+      "Bash(echo \"data diff exit: $?\")",
+      "Bash(echo \"enum diff exit: $?\")",
+      "Bash(echo \"type diff exit: $?\")",
+      "Read(//c/Users/matte/AppData/Local/Temp/claude/c--LMUApp-lmuapp/639c8267-0ab1-45d0-af52-a3bbd90e8bd6/scratchpad/tinypedal_ref/tinypedal/adapter//**)",
+      "Read(//c/Users/matte/AppData/Local/Temp/claude/c--LMUApp-lmuapp/639c8267-0ab1-45d0-af52-a3bbd90e8bd6/scratchpad/tinypedal_ref/tinypedal/adapter/**)",
+      "Read(//c/Users/matte/AppData/Local/Temp/claude/c--LMUApp-lmuapp/639c8267-0ab1-45d0-af52-a3bbd90e8bd6/scratchpad/tinypedal_ref/tinypedal/**)",
+      "Bash(python -m py_compile lmu_app/calc/lmu_connector.py lmu_app/calc/api.py)",
+      "Read(//c/Users/matte/AppData/Local/Temp/claude/c--LMUApp-lmuapp/639c8267-0ab1-45d0-af52-a3bbd90e8bd6/scratchpad/tinypedal_ref/tinypedal/module/**)"
     ],
     "additionalDirectories": [
       "\\mnt\\c\\LMUApp\\lmuapp\\lmu_app"

@@ -10,7 +10,6 @@ from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
-    QColorDialog,
     QComboBox,
     QFrame,
     QHBoxLayout,
@@ -24,7 +23,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from lmu_app.utils.class_colors import CLASS_ENTRIES
+from lmu_app.utils.class_colors import CLASS_ENTRIES, class_key
 from lmu_app.utils.theme import T, label_font, panel_brush, border_pen
 
 if TYPE_CHECKING:
@@ -281,26 +280,12 @@ _SS_BTN = (
     f"padding: 3px 8px; font-size: 11px; }}"
     f"QPushButton:hover {{ background: rgba(255,255,255,0.12); color: {T.TEXT}; }}"
 )
-_SS_BTN_ACCENT = (
-    f"QPushButton {{ color: {T.ACCENT_INK}; background: {T.ACCENT}; "
-    f"border: 1px solid {T.ACCENT}; border-radius: 4px; "
-    f"padding: 4px 10px; font-weight: bold; font-size: 11px; }}"
-    f"QPushButton:hover {{ background: #F0B54A; }}"
-)
 _SS_BTN_DANGER = (
     f"QPushButton {{ color: #FF7070; background: rgba(255,50,50,0.08); "
     f"border: 1px solid rgba(255,80,80,0.20); border-radius: 3px; "
     f"padding: 2px 5px; font-size: 10px; }}"
     f"QPushButton:hover {{ background: rgba(255,50,50,0.20); }}"
 )
-
-
-def _session_category(session_type: int) -> str:
-    if session_type >= 10:
-        return "race"
-    if 5 <= session_type <= 8:
-        return "qualifying"
-    return "practice"
 
 
 class _StreamConfigProxy:
@@ -338,7 +323,7 @@ class MainWindow(QWidget):
         self._stream_manager  = stream_manager
         self._stream_entries  = stream_entries or []
         self._get_snapshot    = reader.get if reader is not None else None
-        self._last_session_cat: str | None = None
+        self._last_player_class: str | None = None
 
         self.setWindowTitle("LMU App")
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
@@ -346,14 +331,17 @@ class MainWindow(QWidget):
         self.setStyleSheet(_WINDOW_SS)
 
         self._toggles: dict[str, _OnOffBtn] = {}
+        self._tabs: QTabWidget | None = None
         self._lock_toggle: _LockToggle | None = None
         self._lock_label: QLabel | None = None
         self._merge_btn: _OnOffBtn | None = None
         self._preset_list_layout: QVBoxLayout | None = None
-        self._session_combos: dict[str, QComboBox] = {}
-        self._save_btn: QPushButton | None = None
-        self._new_preset_edit: QLineEdit | None = None
-        self._save_mode: bool = False
+        self._preset_label: QLabel | None = None
+        self._preset_row_w: QWidget | None = None
+        self._saveas_row_w: QWidget | None = None
+        self._saveas_name_edit: QLineEdit | None = None
+        self._class_panel_w: QWidget | None = None
+        self._class_combos: dict[str, QComboBox] = {}
         self._stream_main_toggle: _OnOffBtn | None = None
         self._stream_toggles: dict[str, _OnOffBtn] = {}
         self._params_clipboard: dict | None = None   # (params dict, copied from key)
@@ -383,17 +371,22 @@ class MainWindow(QWidget):
 
         self._setup_ui()
         self._apply_lock_state()
-        self._broadcast_class_colors()
 
         if not self._config.preset_names():
             self._config.upsert_preset("Default", self._capture_state())
             self._config.save()
             self._rebuild_preset_ui()
+        if not self._config.current_preset:
+            names = self._config.preset_names()
+            self._config.current_preset = names[0] if names else ""
+            self._config.save()
+        self._refresh_preset_label()
+        self._resize_to_current_tab()
 
         if self._get_snapshot is not None:
             self._session_timer = QTimer(self)
             self._session_timer.setInterval(1000)
-            self._session_timer.timeout.connect(self._on_session_watch)
+            self._session_timer.timeout.connect(self._on_class_watch)
             self._session_timer.start()
 
     def paintEvent(self, _) -> None:
@@ -404,6 +397,18 @@ class MainWindow(QWidget):
         p.setPen(border_pen(100))
         p.drawRoundedRect(1, 1, w - 2, h - 2, 9, 9)
         p.end()
+
+    def _resize_to_current_tab(self) -> None:
+        """Fix the window height to exactly what the current tab needs, so it
+        can't be dragged taller/shorter (width is already fixed via
+        setFixedWidth()) while still adapting per tab instead of settling on
+        one height tall enough for the biggest tab and leaving a gap on the
+        others. Re-run whenever the current tab's own content height changes
+        (e.g. the Save As row swapping in)."""
+        self.setMinimumHeight(0)
+        self.setMaximumHeight(16777215)
+        self.adjustSize()
+        self.setFixedHeight(self.sizeHint().height())
 
     def _setup_ui(self) -> None:
         root = QVBoxLayout(self)
@@ -423,8 +428,9 @@ class MainWindow(QWidget):
         tabs.addTab(self._make_presets_tab(),      "Presets")
         tabs.addTab(self._make_stream_tab(),       "Stream")
         tabs.addTab(self._make_broadcast_tab(),    "Broadcast")
-        tabs.addTab(self._make_class_colors_tab(), "Colors")
         root.addWidget(tabs)
+        self._tabs = tabs
+        tabs.currentChanged.connect(lambda _: self._resize_to_current_tab())
 
     # ------------------------------------------------------------------ Tab 1
 
@@ -487,8 +493,97 @@ QCheckBox::indicator:checked {{
         lock_hl.addWidget(self._lock_label, 1)
         vl.addWidget(lock_row)
 
+        vl.addWidget(_sep())
+        vl.addWidget(self._make_preset_row())
+        vl.addWidget(self._make_saveas_row())
+
         vl.addStretch()
         return w
+
+    def _make_preset_row(self) -> QWidget:
+        row = QWidget()
+        hl = QHBoxLayout(row)
+        hl.setContentsMargins(0, 0, 0, 0)
+        hl.setSpacing(6)
+
+        title = QLabel("Preset:")
+        title.setStyleSheet(f"color: {T.DIM}; font-size: 11px;")
+        hl.addWidget(title)
+
+        self._preset_label = QLabel(self._config.current_preset or "—")
+        self._preset_label.setStyleSheet(f"color: {T.TEXT}; font-size: 11px; font-weight: bold;")
+        hl.addWidget(self._preset_label, 1)
+
+        save_btn = QPushButton("Save")
+        save_btn.setFixedSize(48, 22)
+        save_btn.setStyleSheet(_SS_BTN)
+        save_btn.clicked.connect(self._save_current_preset)
+        hl.addWidget(save_btn)
+
+        saveas_btn = QPushButton("Save As…")
+        saveas_btn.setFixedSize(72, 22)
+        saveas_btn.setStyleSheet(_SS_BTN)
+        saveas_btn.clicked.connect(self._toggle_saveas_row)
+        hl.addWidget(saveas_btn)
+
+        self._preset_row_w = row
+        return row
+
+    def _make_saveas_row(self) -> QWidget:
+        row = QWidget()
+        row.setObjectName("saveAsRow")
+        row.setStyleSheet(
+            f"#saveAsRow {{ background: rgba(236,170,67,0.10); border-radius: 4px; "
+            f"border: 1px solid rgba(236,170,67,0.30); }}"
+        )
+        hl = QHBoxLayout(row)
+        hl.setContentsMargins(6, 4, 4, 4)
+        hl.setSpacing(4)
+
+        edit = QLineEdit("New Preset")
+        edit.setFixedHeight(20)
+        edit.setStyleSheet(
+            f"QLineEdit {{ background: rgba(255,255,255,0.08); "
+            f"border: 1px solid {T.ACCENT}; border-radius: 3px; "
+            f"color: {T.TEXT}; font-size: 11px; padding: 0 4px; }}"
+        )
+        self._saveas_name_edit = edit
+        hl.addWidget(edit, 1)
+
+        cancel_btn = QPushButton("✕")
+        cancel_btn.setFixedSize(26, 22)
+        cancel_btn.setStyleSheet(_SS_BTN)
+        cancel_btn.setToolTip("Cancel")
+        cancel_btn.clicked.connect(self._hide_saveas_row)
+        hl.addWidget(cancel_btn)
+
+        confirm_btn = QPushButton()
+        confirm_btn.setIcon(QIcon(_check_svg))
+        confirm_btn.setIconSize(QSize(13, 13))
+        confirm_btn.setFixedSize(26, 22)
+        confirm_btn.setStyleSheet(
+            f"QPushButton {{ background: {T.ACCENT}; border: 1px solid {T.ACCENT}; "
+            f"border-radius: 4px; padding: 0px; }}"
+            f"QPushButton:hover {{ background: #F0B54A; }}"
+        )
+        confirm_btn.setToolTip("Create preset")
+        confirm_btn.clicked.connect(self._confirm_saveas)
+        hl.addWidget(confirm_btn)
+
+        edit.returnPressed.connect(self._confirm_saveas)
+        orig_kp = edit.keyPressEvent
+        def _nkp(event, orig=orig_kp):
+            if event.key() == Qt.Key.Key_Escape:
+                self._hide_saveas_row()
+            elif event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                self._confirm_saveas()
+            else:
+                orig(event)
+        edit.keyPressEvent = _nkp
+
+        row.setVisible(False)
+        self._saveas_row_w = row
+        return row
 
     def _make_row(self, key: str, widget: BaseWidget) -> QWidget:
         row = QWidget()
@@ -525,6 +620,52 @@ QCheckBox::indicator:checked {{
             if sw is not None:
                 sw.apply_params(self._params_clipboard)
 
+    def _refresh_preset_label(self) -> None:
+        if self._preset_label is not None:
+            self._preset_label.setText(self._config.current_preset or "—")
+
+    def _save_current_preset(self) -> None:
+        name = self._config.current_preset
+        if not name:
+            self._toggle_saveas_row()
+            return
+        self._config.upsert_preset(name, self._capture_state())
+        self._config.save()
+        self._rebuild_preset_ui()
+
+    def _toggle_saveas_row(self) -> None:
+        if self._saveas_row_w is None:
+            return
+        visible = not self._saveas_row_w.isVisible()
+        self._saveas_row_w.setVisible(visible)
+        if self._preset_row_w is not None:
+            self._preset_row_w.setVisible(not visible)
+        if visible and self._saveas_name_edit is not None:
+            self._saveas_name_edit.setText("New Preset")
+            QTimer.singleShot(0, self._saveas_name_edit.setFocus)
+            QTimer.singleShot(0, self._saveas_name_edit.selectAll)
+        self._resize_to_current_tab()
+
+    def _hide_saveas_row(self) -> None:
+        if self._saveas_row_w is not None:
+            self._saveas_row_w.setVisible(False)
+        if self._preset_row_w is not None:
+            self._preset_row_w.setVisible(True)
+        self._resize_to_current_tab()
+
+    def _confirm_saveas(self) -> None:
+        if self._saveas_name_edit is None:
+            return
+        name = self._saveas_name_edit.text().strip()
+        if not name:
+            return
+        self._config.upsert_preset(name, self._capture_state())
+        self._config.current_preset = name
+        self._config.save()
+        self._hide_saveas_row()
+        self._refresh_preset_label()
+        self._rebuild_preset_ui()
+
     # ------------------------------------------------------------------ Tab 2 — Presets
 
     def _make_presets_tab(self) -> QWidget:
@@ -533,10 +674,12 @@ QCheckBox::indicator:checked {{
         vl.setSpacing(6)
         vl.setContentsMargins(6, 8, 6, 8)
 
-        self._save_btn = QPushButton("+ Save current state as preset…")
-        self._save_btn.setStyleSheet(_SS_BTN_ACCENT)
-        self._save_btn.clicked.connect(self._toggle_save_mode)
-        vl.addWidget(self._save_btn)
+        info = QLabel("Presets are saved/created from the Overlays tab.\n"
+                       "A preset tagged with a car class loads automatically\n"
+                       "when you get in that class of car.")
+        info.setStyleSheet(f"color: {T.DIM}; font-size: 11px;")
+        info.setWordWrap(True)
+        vl.addWidget(info)
 
         # Scrollable preset list
         scroll = QScrollArea()
@@ -551,46 +694,99 @@ QCheckBox::indicator:checked {{
         self._preset_list_layout.setContentsMargins(0, 0, 0, 0)
         self._preset_list_layout.addStretch()
         scroll.setWidget(list_container)
-        scroll.setFixedHeight(140)
+        scroll.setFixedHeight(200)
         vl.addWidget(scroll)
 
         vl.addWidget(_sep())
 
-        # Auto-load section
-        self._auto_load_cb = QCheckBox("Auto-load on session change")
-        self._auto_load_cb.setChecked(self._config.auto_load_preset)
-        self._auto_load_cb.toggled.connect(self._on_auto_load_toggled)
-        vl.addWidget(self._auto_load_cb)
-
-        for session_key, session_label in [
-            ("practice",   "Practice"),
-            ("qualifying", "Qualifying"),
-            ("race",       "Race"),
-        ]:
-            row = QWidget()
-            hl  = QHBoxLayout(row)
-            hl.setContentsMargins(0, 1, 0, 1)
-            hl.setSpacing(8)
-            lbl = QLabel(session_label)
-            lbl.setStyleSheet(f"color: {T.DIM}; font-size: 11px;")
-            lbl.setFixedWidth(72)
-            combo = QComboBox()
-            combo.currentIndexChanged.connect(
-                lambda _, k=session_key: self._on_session_combo_changed(k)
-            )
-            self._session_combos[session_key] = combo
-            hl.addWidget(lbl)
-            hl.addWidget(combo, 1)
-            vl.addWidget(row)
+        class_hdr = QLabel("Preset per class")
+        class_hdr.setStyleSheet(f"color: {T.DIM}; font-size: 11px; font-weight: bold;")
+        vl.addWidget(class_hdr)
+        vl.addWidget(self._make_class_panel())
 
         vl.addStretch()
         self._rebuild_preset_ui()
         return w
 
+    def _make_class_panel(self) -> QWidget:
+        panel = QWidget()
+        pl = QVBoxLayout(panel)
+        pl.setContentsMargins(0, 4, 0, 0)
+        pl.setSpacing(4)
+
+        for entry in CLASS_ENTRIES:
+            if entry["key"] == "UNKNOWN":
+                continue
+            row = QWidget()
+            hl = QHBoxLayout(row)
+            hl.setContentsMargins(0, 1, 0, 1)
+            hl.setSpacing(8)
+            lbl = QLabel(entry["label"])
+            lbl.setStyleSheet(f"color: {T.DIM}; font-size: 11px;")
+            lbl.setFixedWidth(72)
+            combo = QComboBox()
+            combo.currentIndexChanged.connect(
+                lambda _, k=entry["key"]: self._on_class_combo_changed(k)
+            )
+            self._class_combos[entry["key"]] = combo
+            hl.addWidget(lbl)
+            hl.addWidget(combo, 1)
+            pl.addWidget(row)
+
+        self._class_panel_w = panel
+        return panel
+
+    def _update_class_combos(self) -> None:
+        names = self._config.preset_names()
+        cp    = self._config.class_presets
+        for cls_key, combo in self._class_combos.items():
+            combo.blockSignals(True)
+            combo.clear()
+            combo.addItem("— None —", "")
+            for n in names:
+                combo.addItem(n, n)
+            current = cp.get(cls_key, "")
+            idx = combo.findData(current)
+            combo.setCurrentIndex(max(0, idx))
+            combo.blockSignals(False)
+
+    def _on_class_combo_changed(self, cls_key: str) -> None:
+        combo = self._class_combos.get(cls_key)
+        if combo is None:
+            return
+        cp = dict(self._config.class_presets)
+        value = combo.currentData()
+        if value:
+            cp[cls_key] = value
+        else:
+            cp.pop(cls_key, None)
+        self._config.class_presets = cp
+        self._config.save()
+        self._rebuild_preset_ui()
+        self._maybe_apply_class_preset(cls_key, value)
+
+    def _maybe_apply_class_preset(self, cls_key: str, preset_name: str) -> None:
+        """If the player is currently driving that class, apply the newly
+        dedicated preset right away instead of waiting for the next class
+        change (which may never come again this session)."""
+        if not preset_name or self._get_snapshot is None:
+            return
+        snap = self._get_snapshot()
+        if not snap or not snap.game_running:
+            return
+        player = next((v for v in snap.session.vehicles if v.is_player), None)
+        if player is None or class_key(player.vehicle_class) != cls_key:
+            return
+        preset = self._config.preset_by_name(preset_name)
+        if preset:
+            self._apply_preset_data(preset)
+            self._config.current_preset = preset_name
+            self._config.save()
+            self._refresh_preset_label()
+
     def _rebuild_preset_ui(self) -> None:
         if self._preset_list_layout is None:
             return
-        self._new_preset_edit = None
 
         # Clear existing rows (keep stretch at end)
         while self._preset_list_layout.count() > 1:
@@ -600,225 +796,112 @@ QCheckBox::indicator:checked {{
 
         insert_at = 0
 
-        if self._save_mode:
-            # -- "New Preset" row at top --
-            new_row = QWidget()
-            new_row.setObjectName("newPresetRow")
-            new_row.setStyleSheet(
-                f"#newPresetRow {{ background: rgba(236,170,67,0.10); border-radius: 4px; "
-                f"border: 1px solid rgba(236,170,67,0.30); }}"
+        for name in self._config.preset_names():
+            row = QWidget()
+            row.setStyleSheet(
+                "QWidget { background: rgba(255,255,255,0.04); border-radius: 4px; }"
             )
-            new_hl = QHBoxLayout(new_row)
-            new_hl.setContentsMargins(8, 4, 4, 4)
-            new_hl.setSpacing(4)
-            new_lbl = QLabel("New")
-            new_lbl.setFixedWidth(26)
-            new_lbl.setStyleSheet(f"color: {T.ACCENT}; font-size: 11px; font-weight: bold; background: transparent;")
-            new_hl.addWidget(new_lbl)
-            edit = QLineEdit("New Preset")
-            edit.setFixedHeight(20)
-            edit.setStyleSheet(
+            hl = QHBoxLayout(row)
+            hl.setContentsMargins(8, 4, 4, 4)
+            hl.setSpacing(4)
+
+            lbl = QLabel(name)
+            lbl.setStyleSheet(f"color: {T.TEXT}; font-size: 11px; background: transparent;")
+            hl.addWidget(lbl, 1)
+
+            inline_edit = QLineEdit(name)
+            inline_edit.setFixedHeight(20)
+            inline_edit.setStyleSheet(
                 f"QLineEdit {{ background: rgba(255,255,255,0.08); "
                 f"border: 1px solid {T.ACCENT}; border-radius: 3px; "
                 f"color: {T.TEXT}; font-size: 11px; padding: 0 4px; }}"
             )
-            self._new_preset_edit = edit
-            new_hl.addWidget(edit, 1)
-            cancel_btn = QPushButton("✕")
-            cancel_btn.setFixedSize(26, 22)
-            cancel_btn.setStyleSheet(_SS_BTN)
-            cancel_btn.setToolTip("Cancel")
-            cancel_btn.clicked.connect(self._exit_save_mode)
-            new_hl.addWidget(cancel_btn)
-            confirm_btn = QPushButton()
-            confirm_btn.setIcon(QIcon(_check_svg))
-            confirm_btn.setIconSize(QSize(13, 13))
-            confirm_btn.setFixedSize(26, 22)
-            confirm_btn.setStyleSheet(
-                f"QPushButton {{ background: {T.ACCENT}; border: 1px solid {T.ACCENT}; "
-                f"border-radius: 4px; padding: 0px; }}"
-                f"QPushButton:hover {{ background: #F0B54A; }}"
-            )
-            confirm_btn.setToolTip("Create preset")
-            confirm_btn.clicked.connect(self._confirm_new_preset)
-            new_hl.addWidget(confirm_btn)
+            inline_edit.hide()
+            hl.addWidget(inline_edit, 1)
 
-            edit.returnPressed.connect(self._confirm_new_preset)
-            orig_kp = edit.keyPressEvent
-            def _nkp(event, orig=orig_kp):
-                if event.key() == Qt.Key.Key_Escape:
-                    self._exit_save_mode()
-                elif event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-                    self._confirm_new_preset()
+            load_btn = QPushButton("Load")
+            load_btn.setFixedSize(44, 22)
+            load_btn.setStyleSheet(_SS_BTN)
+            load_btn.clicked.connect(lambda _, n=name: self._load_preset(n))
+            hl.addWidget(load_btn)
+
+            rename_btn = QPushButton()
+            rename_btn.setIcon(QIcon(_edit_svg))
+            rename_btn.setIconSize(QSize(15, 15))
+            rename_btn.setFixedSize(28, 24)
+            rename_btn.setStyleSheet(_SS_BTN)
+            rename_btn.setToolTip("Rename")
+            hl.addWidget(rename_btn)
+
+            del_btn = QPushButton()
+            del_btn.setIcon(QIcon(_trash_svg))
+            del_btn.setIconSize(QSize(15, 15))
+            del_btn.setFixedSize(28, 24)
+            del_btn.setStyleSheet(_SS_BTN_DANGER)
+            del_btn.setToolTip("Delete")
+            del_btn.clicked.connect(lambda _, n=name: self._delete_preset(n))
+            hl.addWidget(del_btn)
+
+            # ---- inline rename wiring ----
+            def _commit(n=name, l=lbl, e=inline_edit):
+                new = e.text().strip()
+                e.blockSignals(True); e.hide(); e.blockSignals(False)
+                if new and new != n:
+                    self._config.rename_preset(n, new)
+                    if self._config.current_preset == n:
+                        self._config.current_preset = new
+                    self._config.save()
+                    self._refresh_preset_label()
+                    self._rebuild_preset_ui()
                 else:
-                    orig(event)
-            edit.keyPressEvent = _nkp
-
-            self._preset_list_layout.insertWidget(insert_at, new_row)
-            insert_at += 1
-
-        for name in self._config.preset_names():
-            if self._save_mode:
-                # -- Clickable save-target row --
-                row = QWidget()
-                row.setObjectName("saveTargetRow")
-                row.setStyleSheet(
-                    "#saveTargetRow { background: rgba(255,255,255,0.04); border-radius: 4px; "
-                    "border: 1px solid transparent; }"
-                    "#saveTargetRow:hover { background: rgba(236,170,67,0.12); "
-                    "border-color: rgba(236,170,67,0.35); }"
-                )
-                row.setCursor(Qt.CursorShape.PointingHandCursor)
-                hl = QHBoxLayout(row)
-                hl.setContentsMargins(8, 6, 8, 6)
-                hl.setSpacing(4)
-                lbl = QLabel(name)
-                lbl.setStyleSheet(f"color: {T.TEXT}; font-size: 11px; background: transparent;")
-                hl.addWidget(lbl, 1)
-                arrow = QLabel("→")
-                arrow.setStyleSheet(f"color: {T.ACCENT}; font-size: 11px; background: transparent;")
-                hl.addWidget(arrow)
-                row.mousePressEvent = lambda e, n=name: self._save_to_existing_preset(n)
-            else:
-                # -- Normal row with Load / rename / delete --
-                row = QWidget()
-                row.setStyleSheet(
-                    "QWidget { background: rgba(255,255,255,0.04); border-radius: 4px; }"
-                )
-                hl = QHBoxLayout(row)
-                hl.setContentsMargins(8, 4, 4, 4)
-                hl.setSpacing(4)
-
-                lbl = QLabel(name)
-                lbl.setStyleSheet(f"color: {T.TEXT}; font-size: 11px; background: transparent;")
-                hl.addWidget(lbl, 1)
-
-                inline_edit = QLineEdit(name)
-                inline_edit.setFixedHeight(20)
-                inline_edit.setStyleSheet(
-                    f"QLineEdit {{ background: rgba(255,255,255,0.08); "
-                    f"border: 1px solid {T.ACCENT}; border-radius: 3px; "
-                    f"color: {T.TEXT}; font-size: 11px; padding: 0 4px; }}"
-                )
-                inline_edit.hide()
-                hl.addWidget(inline_edit, 1)
-
-                load_btn = QPushButton("Load")
-                load_btn.setFixedSize(44, 22)
-                load_btn.setStyleSheet(_SS_BTN)
-                load_btn.clicked.connect(lambda _, n=name: self._load_preset(n))
-                hl.addWidget(load_btn)
-
-                rename_btn = QPushButton()
-                rename_btn.setIcon(QIcon(_edit_svg))
-                rename_btn.setIconSize(QSize(15, 15))
-                rename_btn.setFixedSize(28, 24)
-                rename_btn.setStyleSheet(_SS_BTN)
-                rename_btn.setToolTip("Rename")
-                hl.addWidget(rename_btn)
-
-                del_btn = QPushButton()
-                del_btn.setIcon(QIcon(_trash_svg))
-                del_btn.setIconSize(QSize(15, 15))
-                del_btn.setFixedSize(28, 24)
-                del_btn.setStyleSheet(_SS_BTN_DANGER)
-                del_btn.setToolTip("Delete")
-                del_btn.clicked.connect(lambda _, n=name: self._delete_preset(n))
-                hl.addWidget(del_btn)
-
-                # ---- inline rename wiring ----
-                def _commit(n=name, l=lbl, e=inline_edit):
-                    new = e.text().strip()
-                    e.blockSignals(True); e.hide(); e.blockSignals(False)
-                    if new and new != n:
-                        self._config.rename_preset(n, new)
-                        self._config.save()
-                        self._rebuild_preset_ui()
-                    else:
-                        l.show()
-
-                def _cancel(l=lbl, e=inline_edit):
-                    e.blockSignals(True); e.hide(); e.blockSignals(False)
                     l.show()
 
-                def _start(l=lbl, e=inline_edit):
-                    l.hide(); e.show(); e.setFocus(); e.selectAll()
+            def _cancel(l=lbl, e=inline_edit):
+                e.blockSignals(True); e.hide(); e.blockSignals(False)
+                l.show()
 
-                orig_kp = inline_edit.keyPressEvent
-                def _kp(event, commit=_commit, cancel=_cancel, orig=orig_kp):
-                    if event.key() == Qt.Key.Key_Escape:
-                        cancel()
-                    elif event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-                        commit()
-                    else:
-                        orig(event)
-                inline_edit.keyPressEvent = _kp
+            def _start(l=lbl, e=inline_edit):
+                l.hide(); e.show(); e.setFocus(); e.selectAll()
 
-                orig_foe = inline_edit.focusOutEvent
-                def _foe(event, commit=_commit, orig=orig_foe, e=inline_edit):
+            orig_kp = inline_edit.keyPressEvent
+            def _kp(event, commit=_commit, cancel=_cancel, orig=orig_kp):
+                if event.key() == Qt.Key.Key_Escape:
+                    cancel()
+                elif event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                    commit()
+                else:
                     orig(event)
-                    if e.isVisible():
-                        commit()
-                inline_edit.focusOutEvent = _foe
+            inline_edit.keyPressEvent = _kp
 
-                rename_btn.clicked.connect(lambda _, start=_start: start())
+            orig_foe = inline_edit.focusOutEvent
+            def _foe(event, commit=_commit, orig=orig_foe, e=inline_edit):
+                orig(event)
+                if e.isVisible():
+                    commit()
+            inline_edit.focusOutEvent = _foe
+
+            rename_btn.clicked.connect(lambda _, start=_start: start())
 
             self._preset_list_layout.insertWidget(insert_at, row)
             insert_at += 1
 
-        self._update_session_combos()
-
-    def _toggle_save_mode(self) -> None:
-        if self._save_mode:
-            self._exit_save_mode()
-        else:
-            self._save_mode = True
-            self._rebuild_preset_ui()
-            if self._new_preset_edit is not None:
-                QTimer.singleShot(0, self._new_preset_edit.setFocus)
-                QTimer.singleShot(0, self._new_preset_edit.selectAll)
-
-    def _exit_save_mode(self) -> None:
-        self._save_mode = False
-        self._rebuild_preset_ui()
-
-    def _confirm_new_preset(self) -> None:
-        if self._new_preset_edit is None:
-            return
-        name = self._new_preset_edit.text().strip()
-        if not name:
-            return
-        self._config.upsert_preset(name, self._capture_state())
-        self._config.save()
-        self._exit_save_mode()
-
-    def _save_to_existing_preset(self, name: str) -> None:
-        self._config.upsert_preset(name, self._capture_state())
-        self._config.save()
-        self._exit_save_mode()
-
-    def _update_session_combos(self) -> None:
-        names = self._config.preset_names()
-        sp    = self._config.session_presets
-        for session_key, combo in self._session_combos.items():
-            combo.blockSignals(True)
-            combo.clear()
-            combo.addItem("— None —", "")
-            for n in names:
-                combo.addItem(n, n)
-            current = sp.get(session_key, "")
-            idx = combo.findData(current)
-            combo.setCurrentIndex(max(0, idx))
-            combo.blockSignals(False)
+        self._update_class_combos()
 
     def _load_preset(self, name: str) -> None:
         preset = self._config.preset_by_name(name)
         if preset:
             self._apply_preset_data(preset)
+            self._config.current_preset = name
+            self._config.save()
+            self._refresh_preset_label()
 
     def _delete_preset(self, name: str) -> None:
         self._config.delete_preset(name)
+        if self._config.current_preset == name:
+            names = self._config.preset_names()
+            self._config.current_preset = names[0] if names else ""
         self._config.save()
+        self._refresh_preset_label()
         self._rebuild_preset_ui()
 
     def _capture_state(self) -> dict:
@@ -891,43 +974,30 @@ QCheckBox::indicator:checked {{
 
         self._config.save()
 
-    def _on_auto_load_toggled(self, checked: bool) -> None:
-        self._config.auto_load_preset = checked
-        self._config.save()
-
-    def _on_session_combo_changed(self, session_key: str) -> None:
-        combo = self._session_combos.get(session_key)
-        if combo is None:
-            return
-        sp = dict(self._config.session_presets)
-        value = combo.currentData()
-        if value:
-            sp[session_key] = value
-        else:
-            sp.pop(session_key, None)
-        self._config.session_presets = sp
-        self._config.save()
-
-    def _on_session_watch(self) -> None:
+    def _on_class_watch(self) -> None:
         if self._get_snapshot is None:
             return
         snap = self._get_snapshot()
         self._update_bc_viewer_combo(snap)
         if not snap.game_running:
-            self._last_session_cat = None
+            self._last_player_class = None
             return
-        cat = _session_category(snap.session.session_type)
-        if cat == self._last_session_cat:
+        player = next((v for v in snap.session.vehicles if v.is_player), None)
+        if player is None:
             return
-        self._last_session_cat = cat
-        if not self._config.auto_load_preset:
+        cls = class_key(player.vehicle_class)
+        if cls == self._last_player_class:
             return
-        preset_name = self._config.session_presets.get(cat, "")
+        self._last_player_class = cls
+        preset_name = self._config.class_presets.get(cls, "")
         if not preset_name:
             return
         preset = self._config.preset_by_name(preset_name)
         if preset:
             self._apply_preset_data(preset)
+            self._config.current_preset = preset_name
+            self._config.save()
+            self._refresh_preset_label()
 
     # ------------------------------------------------------------------ Tab 2 — Stream
 
@@ -1427,50 +1497,6 @@ QCheckBox::indicator:checked {{
         combo.setCurrentIndex(idx)
         combo.blockSignals(False)
 
-    # ------------------------------------------------------------------ Tab 5 — Class colors
-
-    def _make_class_colors_tab(self) -> QWidget:
-        w = QWidget()
-        vl = QVBoxLayout(w)
-        vl.setSpacing(6)
-        vl.setContentsMargins(6, 8, 6, 8)
-
-        info = QLabel("Background color per car class.\nApplied automatically from class name.")
-        info.setStyleSheet(f"color: {T.DIM}; font-size: 11px;")
-        info.setWordWrap(True)
-        vl.addWidget(info)
-
-        self._class_btns: dict[str, _ClassColorBtn] = {}
-        saved = self._config.class_colors()
-
-        for entry in CLASS_ENTRIES:
-            row = QWidget()
-            hl  = QHBoxLayout(row)
-            hl.setContentsMargins(0, 2, 0, 2)
-            hl.setSpacing(8)
-            lbl = QLabel(entry["label"])
-            lbl.setMinimumWidth(120)
-            lbl.setStyleSheet(f"color: {T.TEXT};")
-            btn = _ClassColorBtn(saved.get(entry["key"], entry["default"]))
-            btn.color_changed.connect(lambda k=entry["key"]: self._on_class_color_change(k))
-            self._class_btns[entry["key"]] = btn
-            hl.addWidget(lbl, 1)
-            hl.addWidget(btn)
-            vl.addWidget(row)
-
-        vl.addWidget(_sep())
-
-        reset_btn = QPushButton("Reset to defaults")
-        reset_btn.setStyleSheet(
-            f"QPushButton {{ color: {T.DIM}; background: rgba(255,255,255,0.06); "
-            f"border: 1px solid rgba(255,255,255,0.12); border-radius: 4px; padding: 4px 10px; }}"
-            f"QPushButton:hover {{ background: rgba(255,255,255,0.12); }}"
-        )
-        reset_btn.clicked.connect(self._reset_class_colors)
-        vl.addWidget(reset_btn)
-        vl.addStretch()
-        return w
-
     # ------------------------------------------------------------------ Handlers
 
     def _on_toggle(self, key: str, widget: BaseWidget, enabled: bool) -> None:
@@ -1534,68 +1560,6 @@ QCheckBox::indicator:checked {{
             fc.set_merge(enabled)
         if vc:
             vc.set_merge(enabled)
-
-    def _on_class_color_change(self, key: str) -> None:
-        colors = self._config.class_colors()
-        colors[key] = self._class_btns[key].color_str()
-        self._config.set_class_colors(colors)
-        self._config.save()
-        self._broadcast_class_colors()
-
-    def _reset_class_colors(self) -> None:
-        self._config.set_class_colors({})
-        self._config.save()
-        for entry in CLASS_ENTRIES:
-            self._class_btns[entry["key"]].set_color(entry["default"])
-        self._broadcast_class_colors()
-
-    def _broadcast_class_colors(self) -> None:
-        colors = self._config.class_colors()
-        for _, widget in self._entries:
-            try:
-                widget.apply_class_colors(colors)
-            except AttributeError:
-                pass
-
-
-# ---------------------------------------------------------------------------
-
-class _ClassColorBtn(QPushButton):
-    color_changed = Signal()
-
-    def __init__(self, hex_color: str, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        c = QColor(hex_color)
-        self._color = c if c.isValid() else QColor("#404040")
-        self.setFixedHeight(24)
-        self._refresh()
-        self.clicked.connect(self._pick)
-
-    def _refresh(self) -> None:
-        h = self._color.name()
-        lum = (self._color.red()*299 + self._color.green()*587 + self._color.blue()*114) // 1000
-        txt = "#000" if lum > 128 else "#fff"
-        self.setStyleSheet(
-            f"QPushButton {{ background:{h}; color:{txt}; border:1px solid rgba(255,255,255,0.2); "
-            f"padding:2px 8px; border-radius:3px; }}"
-        )
-        self.setText(h.upper())
-
-    def _pick(self) -> None:
-        c = QColorDialog.getColor(self._color, self)
-        if c.isValid():
-            self._color = c
-            self._refresh()
-            self.color_changed.emit()
-
-    def set_color(self, hex_color: str) -> None:
-        c = QColor(hex_color)
-        if c.isValid():
-            self._color = c
-            self._refresh()
-
-    def color_str(self) -> str:
-        return self._color.name()
 
 
 def _sep() -> QFrame:

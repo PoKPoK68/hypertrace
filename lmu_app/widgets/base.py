@@ -1,15 +1,26 @@
-"""lmu_app/widgets/base.py — Base class for all overlay widgets."""
+"""lmu_app/widgets/base.py — Base class for all overlay widgets.
+
+Update/visibility engine ported from TinyPedal's `tinypedal/widget/_base.py`
+(s-victor/TinyPedal, GPLv3): a QBasicTimer instead of QTimer, paused/resumed
+and shown/hidden from the shared `realtime_state` singleton (calc/realtime_state.py)
+instead of each widget pulling its own snapshot and recomputing game state.
+
+Drag/snap/lock and all drawing code are this app's own and untouched by the
+port — see the `_snapped()` docstring for the magnetic-snap fix from earlier
+this session, which stays exactly as it was.
+"""
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Callable
+import os
+from typing import Callable
 
-from PySide6.QtCore import QPoint, QRectF, QTimer, Qt
+from PySide6.QtCore import QBasicTimer, QPoint, QRectF, Qt
 from PySide6.QtGui import QColor, QKeyEvent, QMouseEvent, QPen
 from PySide6.QtWidgets import QApplication, QWidget
 
-if TYPE_CHECKING:
-    from lmu_app.api.reader import DataReader, LMUSnapshot
+from lmu_app.calc.module_info import minfo
+from lmu_app.calc.realtime_state import realtime_state
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +33,13 @@ _SNAP_DIST    = 5    # px — distance to screen edge / peer overlay that trigge
 _SNAP_VICINITY = 150 # px — a peer overlay farther than this on BOTH axes is ignored entirely
 
 
+def _player_in_garage() -> bool:
+    # Computed once per module_vehicles.py scan, not re-scanned here — this
+    # used to loop over every car on every call, and it's called by all 9
+    # widgets independently each tick.
+    return minfo.vehicles.playerInGarage
+
+
 class BaseWidget(QWidget):
     """Frameless, always-on-top overlay widget with drag-to-move and auto-hide."""
 
@@ -29,21 +47,18 @@ class BaseWidget(QWidget):
 
     def __init__(
         self,
-        reader: DataReader,
         update_hz: int = 20,
         auto_hide: bool = True,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
 
-        self._reader = reader
         self._auto_hide = auto_hide
         self._dragging = False
         self._drag_offset = QPoint()
         self._locked = False
         self._hide_in_garage = False
         self._on_position_changed: Callable[[int, int], None] | None = None
-        self._last_snap_ts: float = -1.0
         self._opacity: int = 85
 
         self.setWindowFlags(
@@ -51,21 +66,25 @@ class BaseWidget(QWidget):
             | Qt.WindowType.WindowStaysOnTopHint
             | Qt.WindowType.Tool
         )
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        # DIAGNOSTIC ONLY — set LMUAPP_DIAG_OPAQUE=1 to disable per-pixel-alpha
+        # translucent windows (ugly solid rectangles) to test whether that's
+        # the source of freezes reported while overlays are visible. Remove
+        # once the question is answered either way.
+        if not os.environ.get("LMUAPP_DIAG_OPAQUE"):
+            self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
 
         self.setup_ui()
 
-        self._timer = QTimer(self)
-        self._timer.setInterval(int(1000 / update_hz))
-        self._timer.timeout.connect(self._update)
+        self._timer = QBasicTimer()
+        self._timer_interval = max(1, int(1000 / update_hz))
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
     def start(self) -> None:
-        self._timer.start()
+        self._timer.start(self._timer_interval, self)
         self.show()
 
     def stop(self) -> None:
@@ -103,8 +122,8 @@ class BaseWidget(QWidget):
     def setup_ui(self) -> None:
         pass
 
-    def on_data(self, snapshot: LMUSnapshot) -> None:
-        pass
+    def on_data(self) -> None:
+        """Called every active timer tick — read `lmu_app.calc.module_info.minfo`."""
 
     def apply_params(self, params: dict) -> None:
         pass
@@ -215,20 +234,24 @@ class BaseWidget(QWidget):
             self._last_state = state
             logger.info("[%s] %s", self.WIDGET_NAME, state)
 
-    def _update(self) -> None:
-        snapshot = self._reader.get()
+    def timerEvent(self, event) -> None:
+        if event.timerId() != self._timer.timerId():
+            super().timerEvent(event)
+            return
+        self._update()
 
-        if not snapshot.game_running or not snapshot.session_active:
-            self._log_state(
-                f"hidden: game_running={snapshot.game_running} "
-                f"session_active={snapshot.session_active} "
-                f"(vehicles={len(snapshot.session.vehicles)} "
-                f"et={snapshot.session.current_et:.1f})")
+    def _update(self) -> None:
+        session_active = minfo.session.numVehicles > 0 and minfo.session.currentEt > 0
+
+        if not (realtime_state.game_running and realtime_state.connected and session_active):
+            self._log_state(f"hidden: game_running={realtime_state.game_running} "
+                             f"connected={realtime_state.connected} "
+                             f"session_active={session_active}")
             if self.isVisible():
                 self.hide()
             return
 
-        if self._hide_in_garage and snapshot.player_in_garage:
+        if self._hide_in_garage and _player_in_garage():
             self._log_state("hidden: player_in_garage and 'hide in garage' is on")
             if self.isVisible():
                 self.hide()
@@ -237,12 +260,12 @@ class BaseWidget(QWidget):
             self.show()
 
         if self._auto_hide:
-            if snapshot.is_on_track:
+            if realtime_state.active:
                 self._log_state("visible")
                 if not self.isVisible():
                     self.show()
             else:
-                self._log_state("hidden: auto_hide and not is_on_track")
+                self._log_state("hidden: auto_hide and not active")
                 if self.isVisible():
                     self.hide()
                 return
@@ -251,8 +274,4 @@ class BaseWidget(QWidget):
             if not self.isVisible():
                 self.show()
 
-        if snapshot.timestamp > 0 and snapshot.timestamp == self._last_snap_ts:
-            return
-        self._last_snap_ts = snapshot.timestamp
-
-        self.on_data(snapshot)
+        self.on_data()

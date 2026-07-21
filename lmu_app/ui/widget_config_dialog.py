@@ -306,7 +306,7 @@ class WidgetConfigDialog(QDialog):
         )
 
         if self._on_copy:
-            copy_btn = QPushButton(" Copy Settings")
+            copy_btn = QPushButton(" Copy")
             copy_btn.setIcon(QIcon(_copy_svg))
             copy_btn.setIconSize(QSize(14, 14))
             copy_btn.setStyleSheet(_icon_btn_ss)
@@ -314,14 +314,14 @@ class WidgetConfigDialog(QDialog):
             btn_row.addWidget(copy_btn)
 
         if self._on_paste:
-            paste_btn = QPushButton(" Paste Settings")
+            paste_btn = QPushButton(" Paste")
             paste_btn.setIcon(QIcon(_paste_svg))
             paste_btn.setIconSize(QSize(14, 14))
             paste_btn.setStyleSheet(_icon_btn_ss)
             paste_btn.clicked.connect(self._do_paste)
             btn_row.addWidget(paste_btn)
 
-        reset_btn = QPushButton("Reset to defaults")
+        reset_btn = QPushButton("Reset")
         reset_btn.setStyleSheet(_icon_btn_ss)
         reset_btn.clicked.connect(self._do_reset)
         btn_row.addWidget(reset_btn)

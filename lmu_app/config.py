@@ -81,12 +81,6 @@ class AppConfig:
         w["x"] = x
         w["y"] = y
 
-    def class_colors(self) -> dict[str, str]:
-        return dict(self._data.get("class_colors", {}))
-
-    def set_class_colors(self, colors: dict[str, str]) -> None:
-        self._data["class_colors"] = colors
-
     @property
     def merge_calc(self) -> bool:
         return bool(self._data.get("merge_calc", False))
@@ -127,33 +121,33 @@ class AppConfig:
             if p.get("name") == old_name:
                 p["name"] = new_name
                 break
-        sp = self._data.get("session_presets", {})
-        for k, v in list(sp.items()):
+        cp = self._data.get("class_presets", {})
+        for k, v in list(cp.items()):
             if v == old_name:
-                sp[k] = new_name
+                cp[k] = new_name
 
     def delete_preset(self, name: str) -> None:
         self._data["presets"] = [p for p in self._data.get("presets", []) if p.get("name") != name]
-        sp = self._data.get("session_presets", {})
-        for k in list(sp.keys()):
-            if sp[k] == name:
-                del sp[k]
+        cp = self._data.get("class_presets", {})
+        for k in list(cp.keys()):
+            if cp[k] == name:
+                del cp[k]
 
     @property
-    def session_presets(self) -> dict[str, str]:
-        return dict(self._data.get("session_presets", {}))
+    def class_presets(self) -> dict[str, str]:
+        return dict(self._data.get("class_presets", {}))
 
-    @session_presets.setter
-    def session_presets(self, v: dict[str, str]) -> None:
-        self._data["session_presets"] = v
+    @class_presets.setter
+    def class_presets(self, v: dict[str, str]) -> None:
+        self._data["class_presets"] = v
 
     @property
-    def auto_load_preset(self) -> bool:
-        return bool(self._data.get("auto_load_preset", False))
+    def current_preset(self) -> str:
+        return str(self._data.get("current_preset", ""))
 
-    @auto_load_preset.setter
-    def auto_load_preset(self, v: bool) -> None:
-        self._data["auto_load_preset"] = v
+    @current_preset.setter
+    def current_preset(self, v: str) -> None:
+        self._data["current_preset"] = v
 
     # ------------------------------------------------------------------
     # Stream mode
