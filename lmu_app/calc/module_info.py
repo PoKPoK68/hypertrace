@@ -55,7 +55,17 @@ class VehicleData:
 
     @property
     def in_pit_lane(self) -> bool:
-        """Combines all three signals — see calc/modules/module_vehicles.py."""
+        """Local player and AI (control 0/1) combine all three signals —
+        mCurrentSector's telemetry-based pitlane bit catches the moment of
+        driving out of the box that mInPits alone misses (see
+        calc/modules/module_vehicles.py). Remote vehicles (control==2) only
+        ever use mInPits: per-car telemetry isn't reliably synced for remote
+        cars over the network, which showed up as every remote opponent
+        flashing PIT while clearly on track in multiplayer — TinyPedal
+        itself (tinypedal/module/module_vehicles.py, in_paddock) never uses
+        telemetry-derived pit-lane detection for other cars, only mInPits."""
+        if self.control == 2:
+            return self.in_pits
         return self.pitlane or self.pit_state >= 2 or self.in_pits
 
 

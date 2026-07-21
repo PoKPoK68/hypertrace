@@ -241,7 +241,21 @@ class BaseWidget(QWidget):
         self._update()
 
     def _update(self) -> None:
-        session_active = minfo.session.numVehicles > 0 and minfo.session.currentEt > 0
+        # `active` alone (TinyPedal's own approach) isn't enough for LMU:
+        # mInRealtime/ignition apparently don't get reset when kicked back to
+        # the main menu, so `active` can stay stuck true there. What DOES
+        # reliably change is whether the session clock is still advancing —
+        # realtime_state.paused already tracks exactly that (mCurrentET
+        # frozen for >2s). Still requiring numVehicles/currentEt > 0 handles
+        # the case of a genuinely fresh "no session at all" menu state, where
+        # nothing is frozen (nothing was ever ticking) but there's still no
+        # session to show data for. Being *in* a session (garage included)
+        # keeps the clock ticking either way, so this doesn't affect that.
+        session_active = (
+            minfo.session.numVehicles > 0
+            and minfo.session.currentEt > 0
+            and not realtime_state.paused
+        )
 
         if not (realtime_state.game_running and realtime_state.connected and session_active):
             self._log_state(f"hidden: game_running={realtime_state.game_running} "

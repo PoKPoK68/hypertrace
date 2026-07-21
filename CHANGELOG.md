@@ -4,6 +4,16 @@ All notable changes to LMU App are documented here.
 
 ---
 
+## [0.7.1]
+
+### Overlay visibility
+- **Fixed overlays staying visible after being kicked back to the main menu** (e.g. a practice session with no qualifying/race after it), without hiding them early while still on track when a practice session's timer simply reaches zero. Visibility now checks whether the session clock is still actually advancing, instead of a session-phase flag that also flips the moment the timer runs out while still driving.
+
+### Standings & Relative
+- **Fixed remote opponents showing a PIT badge in multiplayer while clearly on track.** Per-car telemetry isn't reliably synced for remote vehicles over the network; the pit-lane detection for other cars now relies on the same single, more reliable field TinyPedal itself uses for opponents, instead of also factoring in telemetry data. The player's own pit-lane detection is unchanged.
+
+---
+
 ## [0.7.0] — Data & rendering engine rewrite
 
 ### Engine
