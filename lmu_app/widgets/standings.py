@@ -240,7 +240,7 @@ class StandingsWidget(BaseWidget):
         {"key": "show_last_col",     "label": "Last lap",      "type": "bool", "default": True},
         {"key": "last_decimals",     "label": "Decimals",      "type": "int",
          "min": 0, "max": 3, "step": 1, "default": 3, "show_if": "show_last_col"},
-        {"key": "show_fuel_ve_col",  "label": "VE / Fuel",     "type": "bool", "default": False},
+        {"key": "show_fuel_ve_col",  "label": "VE / Fuel",     "type": "bool", "default": True},
         {"key": "show_compound_col", "label": "Tire compound",  "type": "bool", "default": True},
         {"type": "separator", "label": "Badges"},
         {"key": "show_lap_badge",  "label": "Pitted lap",  "type": "bool", "default": True},
@@ -282,7 +282,7 @@ class StandingsWidget(BaseWidget):
                  show_other_classes: bool = False, other_classes_top_n: int = 3,
                  show_gap_col: bool = True, show_interval_col: bool = True,
                  show_best_col: bool = True, show_last_col: bool = True,
-                 show_fuel_ve_col: bool = False, show_compound_col: bool = True,
+                 show_fuel_ve_col: bool = True, show_compound_col: bool = True,
                  font_size: int = 11,
                  best_decimals: int = 3, last_decimals: int = 3,
                  **kw):
@@ -416,9 +416,10 @@ class StandingsWidget(BaseWidget):
             "interval": bool(params.get("show_interval_col", True)),
             "best":     bool(params.get("show_best_col",     True)),
             "last":     bool(params.get("show_last_col",     True)),
-            "fuel_ve":  bool(params.get("show_fuel_ve_col",  False)),
+            "fuel_ve":  bool(params.get("show_fuel_ve_col",  True)),
         }
         self.columns = [c for c in col_order if show_map.get(c, True)] or ["pos", "name"]
+        self._apply_session_visibility(params)
         self._recompute_sizes()
         ncw   = self._name_width
         ref   = self._entries if self._entries else [{}] * (self._top_n + 1 + 2 * self._around_n)
@@ -879,7 +880,10 @@ class StandingsWidget(BaseWidget):
 
                 elif col == "fuel_ve":
                     ve   = e["virtual_energy"]
-                    fuel = e.get("fuel", 0.0)
+                    # Fuel level isn't broadcast for other cars in online races
+                    # (only the player's own is ever accurate) — VE is, so
+                    # only fuel is restricted to the player here.
+                    fuel = e.get("fuel", 0.0) if e.get("is_player") else 0.0
                     if ve > 0.001:
                         vc = (QColor(T.CRIT) if ve < 0.10
                               else QColor(T.WARN) if ve < 0.25

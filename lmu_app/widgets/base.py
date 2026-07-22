@@ -32,6 +32,26 @@ DEFAULT_SCALE = 100  # default overlay scale in %; change here to resize all ove
 _SNAP_DIST    = 5    # px — distance to screen edge / peer overlay that triggers magnetic snap
 _SNAP_VICINITY = 150 # px — a peer overlay farther than this on BOTH axes is ignored entirely
 
+# Appended to every auto-hiding widget's CONFIG_SCHEMA by WidgetConfigDialog —
+# not duplicated in each widget's own schema list since the meaning (and the
+# fields read in _apply_session_visibility/_session_visible below) is
+# identical everywhere.
+SESSION_VISIBILITY_SCHEMA = [
+    {"type": "separator", "label": "Visibility in session"},
+    {"key": "show_practice",   "label": "Practice",   "type": "bool", "default": True},
+    {"key": "show_qualifying", "label": "Qualifying", "type": "bool", "default": True},
+    {"key": "show_race",       "label": "Race",       "type": "bool", "default": True},
+]
+
+
+def _session_category(session_type: int) -> str:
+    """Raw mSession: 0-4 practice, 5-8 qualify, 9 warmup, 10-13 race."""
+    if session_type >= 10:
+        return "race"
+    if 5 <= session_type <= 8:
+        return "qualifying"
+    return "practice"
+
 
 def _player_in_garage() -> bool:
     # Computed once per module_vehicles.py scan, not re-scanned here — this
@@ -60,6 +80,9 @@ class BaseWidget(QWidget):
         self._hide_in_garage = False
         self._on_position_changed: Callable[[int, int], None] | None = None
         self._opacity: int = 85
+        self._show_practice   = True
+        self._show_qualifying = True
+        self._show_race       = True
 
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -97,6 +120,21 @@ class BaseWidget(QWidget):
 
     def set_hide_in_garage(self, hide: bool) -> None:
         self._hide_in_garage = hide
+
+    def _apply_session_visibility(self, params: dict) -> None:
+        """Call from apply_params() — reads the SESSION_VISIBILITY_SCHEMA
+        fields WidgetConfigDialog appends to every auto-hiding widget."""
+        self._show_practice   = bool(params.get("show_practice",   True))
+        self._show_qualifying = bool(params.get("show_qualifying", True))
+        self._show_race       = bool(params.get("show_race",       True))
+
+    def _session_visible(self) -> bool:
+        cat = _session_category(minfo.session.sessionType)
+        if cat == "race":
+            return self._show_race
+        if cat == "qualifying":
+            return self._show_qualifying
+        return self._show_practice
 
     def _bg_alpha(self) -> int:
         return round(255 * self._opacity / 100)
@@ -261,6 +299,15 @@ class BaseWidget(QWidget):
             self._log_state(f"hidden: game_running={realtime_state.game_running} "
                              f"connected={realtime_state.connected} "
                              f"session_active={session_active}")
+            if self.isVisible():
+                self.hide()
+            return
+
+        # Checked unconditionally (not just when _auto_hide is set) — every
+        # desktop overlay is constructed with auto_hide=False (see main.py),
+        # so gating this behind _auto_hide meant it never actually applied.
+        if not self._session_visible():
+            self._log_state("hidden: this session type is disabled in settings")
             if self.isVisible():
                 self.hide()
             return

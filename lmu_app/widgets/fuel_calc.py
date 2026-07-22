@@ -290,6 +290,7 @@ class FuelCalcWidget(BaseWidget):
         self._show_refuel     = bool(params.get("show_refuel", True))
         self._show_finish     = bool(params.get("show_finish", True))
 
+        self._apply_session_visibility(params)
         self._refresh_layout()
         self.update()
 

@@ -142,7 +142,8 @@ class _LockToggle(QWidget):
 
     _W, _H = 52, 28
 
-    def __init__(self, locked: bool = False, parent: QWidget | None = None) -> None:
+    def __init__(self, locked: bool = False, parent: QWidget | None = None,
+                 tooltip: str = "Lock / unlock overlay positions") -> None:
         super().__init__(parent)
         self._locked = locked
         self._t = 1.0 if locked else 0.0
@@ -151,7 +152,7 @@ class _LockToggle(QWidget):
         self._timer.timeout.connect(self._step)
         self.setFixedSize(self._W, self._H)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setToolTip("Lock / unlock overlay positions")
+        self.setToolTip(tooltip)
 
     def set_locked(self, locked: bool) -> None:
         if locked != self._locked:
@@ -334,6 +335,8 @@ class MainWindow(QWidget):
         self._tabs: QTabWidget | None = None
         self._lock_toggle: _LockToggle | None = None
         self._lock_label: QLabel | None = None
+        self._garage_toggle: _LockToggle | None = None
+        self._garage_label: QLabel | None = None
         self._merge_btn: _OnOffBtn | None = None
         self._preset_list_layout: QVBoxLayout | None = None
         self._preset_label: QLabel | None = None
@@ -461,23 +464,20 @@ class MainWindow(QWidget):
 
         vl.addWidget(_sep())
 
-        self._garage_cb = QCheckBox("Hide overlays in garage")
-        self._garage_cb.setChecked(self._config.hide_in_garage)
-        self._garage_cb.toggled.connect(self._toggle_garage_hide)
-        _svg = (Path(__file__).parent.parent / "assets" / "check.svg").as_posix()
-        self._garage_cb.setStyleSheet(f"""
-QCheckBox {{ color: {T.TEXT}; font-family: '{T.F_TEXT}'; font-size: 12px; spacing: 9px; }}
-QCheckBox::indicator {{
-    width: 15px; height: 15px; border-radius: 3px;
-    border: 1px solid rgba(255,255,255,0.12);
-    background: rgba(255,255,255,0.03);
-}}
-QCheckBox::indicator:checked {{
-    background: {T.ACCENT}; border-color: {T.ACCENT};
-    image: url({_svg});
-}}
-""")
-        vl.addWidget(self._garage_cb)
+        garage_row = QWidget()
+        garage_hl  = QHBoxLayout(garage_row)
+        garage_hl.setContentsMargins(0, 0, 0, 0)
+        garage_hl.setSpacing(8)
+        self._garage_toggle = _LockToggle(
+            self._config.hide_in_garage,
+            tooltip="Hide / show overlays while in the garage",
+        )
+        self._garage_toggle.toggled.connect(self._toggle_garage_hide)
+        garage_hl.addWidget(self._garage_toggle)
+        self._garage_label = QLabel(self._garage_text(self._config.hide_in_garage))
+        self._garage_label.setStyleSheet(f"color: {T.DIM}; font-size: 11px;")
+        garage_hl.addWidget(self._garage_label, 1)
+        vl.addWidget(garage_row)
 
         vl.addWidget(_sep())
 
@@ -673,13 +673,6 @@ QCheckBox::indicator:checked {{
         vl = QVBoxLayout(w)
         vl.setSpacing(6)
         vl.setContentsMargins(6, 8, 6, 8)
-
-        info = QLabel("Presets are saved/created from the Overlays tab.\n"
-                       "A preset tagged with a car class loads automatically\n"
-                       "when you get in that class of car.")
-        info.setStyleSheet(f"color: {T.DIM}; font-size: 11px;")
-        info.setWordWrap(True)
-        vl.addWidget(info)
 
         # Scrollable preset list
         scroll = QScrollArea()
@@ -934,8 +927,10 @@ QCheckBox::indicator:checked {{
         self._config.hide_in_garage = hide
         for _, w in self._entries:
             w.set_hide_in_garage(hide)
-        if hasattr(self, "_garage_cb"):
-            self._garage_cb.setChecked(hide)
+        if self._garage_toggle is not None:
+            self._garage_toggle.set_locked(hide)
+        if self._garage_label is not None:
+            self._garage_label.setText(self._garage_text(hide))
 
         merge = data.get("merge_calc", self._config.merge_calc)
         self._config.merge_calc = merge
@@ -1527,6 +1522,10 @@ QCheckBox::indicator:checked {{
     def _lock_text(locked: bool) -> str:
         return "LOCK — overlays fixed" if locked else "FREE — overlays draggable"
 
+    @staticmethod
+    def _garage_text(hidden: bool) -> str:
+        return "Overlays hidden in garage" if hidden else "Overlays visible in garage"
+
     def _on_lock_toggled(self, locked: bool) -> None:
         self._config.locked = locked
         self._config.save()
@@ -1538,6 +1537,8 @@ QCheckBox::indicator:checked {{
     def _toggle_garage_hide(self, checked: bool) -> None:
         self._config.hide_in_garage = checked
         self._config.save()
+        if self._garage_label is not None:
+            self._garage_label.setText(self._garage_text(checked))
         for _, widget in self._entries:
             widget.set_hide_in_garage(checked)
 

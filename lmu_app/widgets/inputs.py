@@ -115,6 +115,7 @@ class InputsWidget(BaseWidget):
         self._show_throttle  = bool(params.get("show_throttle",  True))
         self._show_brake     = bool(params.get("show_brake",     True))
         self._show_clutch    = bool(params.get("show_clutch",    True))
+        self._apply_session_visibility(params)
         self._apply_size()
         self.update()
 

@@ -91,6 +91,7 @@ class DeltaWidget(BaseWidget):
         self._show_best  = bool(params.get("show_best",   True))
         self._show_delta = bool(params.get("show_delta",  True))
         self._show_bar   = bool(params.get("show_bar",    True))
+        self._apply_session_visibility(params)
         self._apply_size()
         self.update()
 

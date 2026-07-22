@@ -255,6 +255,7 @@ class RelativeWidget(BaseWidget):
         if not _c.isValid(): _c = QColor(255, 200, 0)
         _c.setAlpha(round(255 * max(0, min(100, int(params.get("player_color_alpha", 20)))) / 100))
         self._player_color = _c
+        self._apply_session_visibility(params)
         self.setFixedSize(int(_widget_w(self._name_width, self._font_size, self._interval_decimals) * self._scale),
                           int(_widget_h(self._ahead, self._behind, self._font_size, self._show_session_bar) * self._scale))
         self.update()

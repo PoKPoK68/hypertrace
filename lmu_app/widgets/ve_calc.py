@@ -177,6 +177,7 @@ class VECalcWidget(BaseWidget):
         self._show_finish     = bool(params.get("show_finish", True))
         self._show_ratio      = bool(params.get("show_ratio",  True))
 
+        self._apply_session_visibility(params)
         self._refresh_layout()
         self.update()
 

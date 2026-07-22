@@ -100,6 +100,7 @@ class WeatherWidget(BaseWidget):
     def apply_params(self, params: dict) -> None:
         self._scale   = int(params.get("scale",   DEFAULT_SCALE)) / 100.0
         self._opacity = max(0, min(100, int(params.get("opacity", 85))))
+        self._apply_session_visibility(params)
         self.setFixedSize(int(BASE_W * self._scale), int(BASE_H * self._scale))
         self.update()
 

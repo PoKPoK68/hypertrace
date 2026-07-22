@@ -4,6 +4,26 @@ All notable changes to LMU App are documented here.
 
 ---
 
+## [0.7.2]
+
+### Widget settings
+- **Per-session visibility** — every overlay's settings now have a "Visibility in session" section with Practice/Qualifying/Race toggles, so an overlay can be hidden during specific session types.
+- **New "Apply to preset" button** — opens a checklist of every saved preset; tick any number of them and confirm once to write that overlay's current position and settings directly into all of them, without loading each one (and overwriting everything else in it) first.
+- "Column order" entries (Standings) are now bold, matching the weight of the rest of the settings labels.
+
+### Standings
+- **VE/Fuel column is now shown by default.**
+- **Fuel level for other cars now shows "-" instead of a value** — it isn't broadcast for other cars in online races, only the player's own is ever accurate. Virtual Energy is unaffected and still shown for everyone.
+
+### Speed & Gear
+- Fixed the speed digits shifting slightly as the value changes — same tabular-figures fix already used for lap times and gaps elsewhere.
+
+### Main window
+- "Hide overlays in garage" is now a pill toggle (matching the lock/free one) instead of a checkbox, labeled "Overlays visible/hidden in garage".
+- Removed the description text above the preset list in the Presets tab.
+
+---
+
 ## [0.7.1]
 
 ### Overlay visibility

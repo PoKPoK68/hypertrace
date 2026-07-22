@@ -67,6 +67,7 @@ class TyresWidget(BaseWidget):
         self._show_wear_pct = bool(params.get("show_wear_pct", True))
         self._scale         = int(params.get("scale", DEFAULT_SCALE)) / 100.0
         self._opacity       = max(0, min(100, int(params.get("opacity", 85))))
+        self._apply_session_visibility(params)
         self.setFixedSize(int(WIDGET_W * self._scale), int(WIDGET_H * self._scale))
         self.update()
 

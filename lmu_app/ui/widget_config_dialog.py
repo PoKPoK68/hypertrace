@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from lmu_app.utils.theme import T, label_font, panel_brush, border_pen
+from lmu_app.widgets.base import SESSION_VISIBILITY_SCHEMA
 
 if TYPE_CHECKING:
     from lmu_app.config import AppConfig
@@ -168,7 +169,16 @@ class WidgetConfigDialog(QDialog):
         self._config   = config
         self._key      = key
         self._widget   = widget
-        self._schema   = widget.CONFIG_SCHEMA
+        self._schema   = list(widget.CONFIG_SCHEMA)
+        # Session-visibility toggles (Practice/Qualifying/Race) apply to every
+        # desktop overlay identically — appended here instead of duplicated
+        # in each widget's own schema. `_auto_hide` isn't a usable signal for
+        # "is this the desktop overlay instance" — every widget (desktop AND
+        # stream) is constructed with auto_hide=False in main.py — so this
+        # checks for a real AppConfig instead (the stream tab passes a
+        # _StreamConfigProxy, which has no concept of presets either).
+        if hasattr(config, "preset_names"):
+            self._schema += SESSION_VISIBILITY_SCHEMA
         self._on_copy  = on_copy
         self._on_paste = on_paste
         self._controls: dict[str, QWidget] = {}
@@ -295,15 +305,26 @@ class WidgetConfigDialog(QDialog):
         self._link_show_keys()
         self._setup_show_if()
 
-        btn_row = QHBoxLayout()
-        btn_row.setSpacing(6)
-
         _icon_btn_ss = (
             f"QPushButton {{ color: {T.DIM}; background: rgba(255,255,255,0.06); "
             f"border: 1px solid rgba(255,255,255,0.12); border-radius: 4px; "
             f"padding: 4px 8px; font-size: 11px; }}"
             f"QPushButton:hover {{ background: rgba(255,255,255,0.12); color: {T.TEXT}; }}"
         )
+
+        # On its own full-width row — competing with Copy/Paste/Reset/Close
+        # for space in the same row clipped its (longer) label.
+        if hasattr(self._config, "preset_names") and self._config.preset_names():
+            apply_btn = QPushButton("Apply to preset")
+            apply_btn.setStyleSheet(_icon_btn_ss)
+            apply_btn.clicked.connect(self._show_apply_to_preset_menu)
+            root.addWidget(apply_btn)
+            self._apply_btn = apply_btn
+        else:
+            self._apply_btn = None
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(6)
 
         if self._on_copy:
             copy_btn = QPushButton(" Copy")
@@ -368,6 +389,49 @@ class WidgetConfigDialog(QDialog):
             btn.setEnabled(False)
             QTimer.singleShot(1500, lambda b=btn, t=orig_text, i=orig_icon: (
                 b.setText(t), b.setIcon(i), b.setEnabled(True)
+            ))
+
+    def _show_apply_to_preset_menu(self) -> None:
+        if self._apply_btn is None:
+            return
+        popup = _ApplyToPresetPopup(self._config.preset_names(), self)
+        popup.applied.connect(self._do_apply_to_presets)
+        popup.move(self._apply_btn.mapToGlobal(self._apply_btn.rect().bottomLeft()))
+        popup.show()
+
+    def _apply_to_one_preset(self, preset_name: str) -> None:
+        """Write this widget's current position/enabled/params into a saved
+        preset directly — without loading it, changing this one overlay, and
+        re-saving everything else in that preset along with it."""
+        preset = self._config.preset_by_name(preset_name)
+        if preset is None:
+            return
+        data = dict(preset)
+        data.pop("name", None)
+        widgets = dict(data.get("widgets", {}))
+        widgets[self._key] = {
+            "enabled": self._config.widget_enabled(self._key),
+            "x": self._widget.x(),
+            "y": self._widget.y(),
+            "params": dict(self._config.widget_params(self._key)),
+        }
+        data["widgets"] = widgets
+        self._config.upsert_preset(preset_name, data)
+
+    def _do_apply_to_presets(self, preset_names: list[str]) -> None:
+        if not preset_names:
+            return
+        for name in preset_names:
+            self._apply_to_one_preset(name)
+        self._config.save()
+
+        if self._apply_btn is not None:
+            orig_text = self._apply_btn.text()
+            label = preset_names[0] if len(preset_names) == 1 else f"{len(preset_names)} presets"
+            self._apply_btn.setText(f"✓ Applied to {label}")
+            self._apply_btn.setEnabled(False)
+            QTimer.singleShot(1500, lambda b=self._apply_btn, t=orig_text: (
+                b.setText(t), b.setEnabled(True)
             ))
 
     def _load_controls(self, params: dict) -> None:
@@ -628,6 +692,62 @@ class _NoScrollCombo(QComboBox):
 
 
 # ---------------------------------------------------------------------------
+# Apply-to-preset popup
+
+class _ApplyToPresetPopup(QWidget):
+    """Small checklist popup — tick every preset this overlay's current
+    position/settings should be written into, then confirm once."""
+
+    applied = Signal(list)
+
+    def __init__(self, preset_names: list[str], parent: QWidget | None = None) -> None:
+        super().__init__(parent, Qt.WindowType.Popup)
+        self.setObjectName("applyPopup")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet(f"""
+#applyPopup {{
+    background: rgb({T.PANEL_TOP[0]}, {T.PANEL_TOP[1]}, {T.PANEL_TOP[2]});
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 6px;
+}}
+QCheckBox {{ color: {T.TEXT}; font-family: '{T.F_TEXT}'; font-size: 12px; spacing: 8px; }}
+QCheckBox::indicator {{
+    width: 14px; height: 14px; border-radius: 3px;
+    border: 1px solid rgba(255,255,255,0.20);
+    background: rgba(255,255,255,0.05);
+}}
+QCheckBox::indicator:checked {{
+    background: {T.ACCENT}; border-color: {T.ACCENT};
+    image: url({_check_svg});
+}}
+""")
+        vl = QVBoxLayout(self)
+        vl.setContentsMargins(10, 10, 10, 10)
+        vl.setSpacing(6)
+
+        self._checks: list[tuple[str, QCheckBox]] = []
+        for name in preset_names:
+            cb = QCheckBox(name)
+            vl.addWidget(cb)
+            self._checks.append((name, cb))
+
+        apply_btn = QPushButton("Apply")
+        apply_btn.setStyleSheet(
+            f"QPushButton {{ color: {T.ACCENT_INK}; background: {T.ACCENT}; "
+            f"border: 1px solid {T.ACCENT}; border-radius: 4px; "
+            f"padding: 4px 10px; font-weight: bold; font-size: 11px; }}"
+            f"QPushButton:hover {{ background: #F0B54A; }}"
+        )
+        apply_btn.clicked.connect(self._confirm)
+        vl.addWidget(apply_btn)
+
+    def _confirm(self) -> None:
+        selected = [name for name, cb in self._checks if cb.isChecked()]
+        self.applied.emit(selected)
+        self.close()
+
+
+# ---------------------------------------------------------------------------
 # Collapsible section header
 
 class _CollapsibleSection(QWidget):
@@ -728,7 +848,7 @@ class _OrderedMultiSelectWidget(QWidget):
         hl.setContentsMargins(0, 0, 0, 0)
         hl.setSpacing(4)
         lbl = QLabel(self._label.get(value, value))
-        lbl.setStyleSheet(f"color: {T.TEXT}; font-size: 11px;")
+        lbl.setStyleSheet(f"color: {T.TEXT}; font-size: 11px; font-weight: bold;")
         lbl.setMinimumWidth(80)
         up = QPushButton(); up.setObjectName("arrow"); up.setEnabled(not is_first)
         up.setIcon(QIcon(_chevron_up_svg)); up.setIconSize(QSize(8, 6))

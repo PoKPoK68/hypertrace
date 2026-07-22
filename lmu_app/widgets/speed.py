@@ -64,6 +64,13 @@ def _num_px_cached(px: int) -> QFont:
     f.setPixelSize(px)
     f.setWeight(QFont.Weight.Bold)
     f.setStyleHint(QFont.StyleHint.TypeWriter)
+    # Tabular figures: every digit gets the same advance, so the speed and
+    # gear don't shift as the digit count/shape changes — same fix as
+    # theme.py's num_font(), used elsewhere for the same reason.
+    try:
+        f.setFeature(QFont.Tag("tnum"), 1)
+    except (AttributeError, TypeError, ValueError):
+        pass
     return f
 
 
@@ -100,6 +107,7 @@ class SpeedWidget(BaseWidget):
     def apply_params(self, params: dict) -> None:
         self._scale   = int(params.get("scale", DEFAULT_SCALE)) / 100.0
         self._opacity = max(0, min(100, int(params.get("opacity", 85))))
+        self._apply_session_visibility(params)
         self.setFixedSize(int(_layout_w() * self._scale), int(BASE_H * self._scale))
         self.update()
 
