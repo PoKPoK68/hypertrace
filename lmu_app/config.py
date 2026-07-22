@@ -203,6 +203,14 @@ class AppConfig:
         return self._s().setdefault("broadcast", {})
 
     @property
+    def broadcast_active(self) -> bool:
+        return bool(self._bc().get("active", False))
+
+    @broadcast_active.setter
+    def broadcast_active(self, v: bool) -> None:
+        self._bc()["active"] = bool(v)
+
+    @property
     def bc_tower_enabled(self) -> bool:
         return bool(self._bc().get("tower_enabled", True))
 

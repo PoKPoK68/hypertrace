@@ -22,6 +22,10 @@ All notable changes to LMU App are documented here.
 - "Hide overlays in garage" is now a pill toggle (matching the lock/free one) instead of a checkbox, labeled "Overlays visible/hidden in garage".
 - Removed the description text above the preset list in the Presets tab.
 
+### Broadcast
+- **New master "Broadcast" on/off switch**, at the top of the Broadcast tab.
+- **REST (localhost:6397) is no longer contacted at all unless this switch is on.** None of the 9 primary overlays need it, even when streamed — only the broadcast overlays and the Live Timing panel do. The weather forecast simply shows the current sky (from shared memory) while it's off. Previously REST ran for the app's entire lifetime.
+
 ---
 
 ## [0.7.1]

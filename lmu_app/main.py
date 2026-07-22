@@ -15,6 +15,7 @@ from lmu_app.widgets.fuel_calc import FuelCalcWidget
 from lmu_app.widgets.ve_calc import VECalcWidget
 from lmu_app.widgets.weather import WeatherWidget
 from lmu_app.widgets.delta import DeltaWidget
+from lmu_app.calc.ext.rest_merge import rest_merge
 from lmu_app.stream.server import StreamManager
 from lmu_app.ui.main_window import MainWindow
 from lmu_app.widgets.broadcast import BroadcastBattle, BroadcastDriverCard, BroadcastSectors, BroadcastState, BroadcastTower
@@ -299,6 +300,14 @@ def main() -> int:
 
     if config.stream_active:
         stream_manager.start(config.stream_port)
+
+    # REST (localhost:6397) is only ever needed by the broadcast overlays and
+    # the Live Timing panel — see calc/module_control.py's docstring — not by
+    # any of the 9 primary overlays (even served over stream), so it's tied
+    # to the Broadcast tab's own on/off toggle, independent of the stream
+    # server itself.
+    if config.broadcast_active:
+        rest_merge.start()
 
     main_win = MainWindow(config, widget_entries, reader=reader,
                           stream_manager=stream_manager,
