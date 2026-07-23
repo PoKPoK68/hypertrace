@@ -18,6 +18,7 @@ _DEFAULTS: dict = {
         "standings":  {"enabled": True,  "x": 350, "y": 50},
         "relative":   {"enabled": True,  "x": 350, "y": 310},
         "tyres":      {"enabled": True,  "x": 50,  "y": 390},
+        "damage":     {"enabled": True,  "x": 600, "y": 390},
         "fuel_calc":  {"enabled": True,  "x": 50,  "y": 540},
         "ve_calc":    {"enabled": True,  "x": 280, "y": 540},
     },
@@ -201,6 +202,14 @@ class AppConfig:
 
     def _bc(self) -> dict:
         return self._s().setdefault("broadcast", {})
+
+    @property
+    def broadcast_active(self) -> bool:
+        return bool(self._bc().get("active", False))
+
+    @broadcast_active.setter
+    def broadcast_active(self, v: bool) -> None:
+        self._bc()["active"] = bool(v)
 
     @property
     def bc_tower_enabled(self) -> bool:

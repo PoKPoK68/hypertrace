@@ -1,0 +1,91 @@
+<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Saira+Semi+Condensed:wght@500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="overlays.css">
+<title>LMU — Damage Overlay</title>
+<style>
+html,body{margin:0;height:100%}
+.ov-damage{padding:12px}
+.dmg-car{display:flex;align-items:center;justify-content:center}
+.dmg-car svg{display:block;width:150px;height:auto}
+.dz{transition:stroke .12s,fill .12s,filter .12s;cursor:pointer}
+.dz-body,.dz-corner{fill:none;stroke-width:7;stroke-linecap:round}
+.dz-susp{fill:none;stroke-width:4;stroke-linecap:round}
+.dz-wing{stroke:none}
+.dz-wheel{stroke-width:2.5}
+.dz.lvl3{filter:drop-shadow(0 0 4px currentColor)}
+.dmg-deco{fill:none;stroke:rgba(255,255,255,.07);stroke-width:2}
+.dmg-fill{fill:rgba(255,255,255,.025)}
+</style></head>
+<body>
+<div class="ov-stage dir-broadcast">
+  <div class="ov ov-damage">
+    <div class="dmg-car" id="car"></div>
+  </div>
+</div>
+
+<script>
+const COLORS = ['#3f434a', '#e0a52a', '#e8701c', '#e0433d'];
+const LABELS = {
+  'body-front':'Carrosserie AV','body-rear':'Carrosserie AR','body-left':'Flanc gauche','body-right':'Flanc droit',
+  'corner-fl':'Coin AV-G','corner-fr':'Coin AV-D','corner-rl':'Coin AR-G','corner-rr':'Coin AR-D',
+  'wheel-fl':'Roue AV-G','wheel-fr':'Roue AV-D','wheel-rl':'Roue AR-G','wheel-rr':'Roue AR-D',
+  'susp-fl':'Susp. AV-G','susp-fr':'Susp. AV-D','susp-rl':'Susp. AR-G','susp-rr':'Susp. AR-D',
+  'wing-rear':'Aileron AR',
+};
+// viewBox 230×300 — proportions voiture (plus courte/large)
+const ZONES = [
+  {id:'body-front', cls:'dz-body',   d:'M91,34 L139,34'},
+  {id:'body-rear',  cls:'dz-body',   d:'M91,266 L139,266'},
+  {id:'body-left',  cls:'dz-body',   d:'M58,67 L58,233'},
+  {id:'body-right', cls:'dz-body',   d:'M172,67 L172,233'},
+  {id:'corner-fl',  cls:'dz-corner', d:'M58.4,57.1 A28,28 0 0 1 81.1,34.4'},
+  {id:'corner-fr',  cls:'dz-corner', d:'M148.9,34.4 A28,28 0 0 1 171.6,57.1'},
+  {id:'corner-rl',  cls:'dz-corner', d:'M81.1,265.6 A28,28 0 0 1 58.4,242.9'},
+  {id:'corner-rr',  cls:'dz-corner', d:'M171.6,242.9 A28,28 0 0 1 148.9,265.6'},
+  {id:'susp-fl',    cls:'dz-susp',   d:'M53,84 L41,92 M53,102 L41,92'},
+  {id:'susp-fr',    cls:'dz-susp',   d:'M177,84 L189,92 M177,102 L189,92'},
+  {id:'susp-rl',    cls:'dz-susp',   d:'M53,200 L41,208 M53,218 L41,208'},
+  {id:'susp-rr',    cls:'dz-susp',   d:'M177,200 L189,208 M177,218 L189,208'},
+  {id:'wing-rear',  cls:'dz-wing',   d:'M65,277 L165,277 A7,7 0 0 1 172,284 L172,288.5 A2.5,2.5 0 0 1 169.5,291 L60.5,291 A2.5,2.5 0 0 1 58,288.5 L58,284 A7,7 0 0 1 65,277 Z'},
+];
+const WHEELS = [
+  {id:'wheel-fl', x:16, y:71},  {id:'wheel-fr', x:192, y:71},
+  {id:'wheel-rl', x:16, y:187}, {id:'wheel-rr', x:192, y:187},
+];
+const ORDER = ['body-front','body-rear','body-left','body-right',
+  'corner-fl','corner-fr','corner-rl','corner-rr',
+  'wheel-fl','wheel-fr','wheel-rl','wheel-rr',
+  'susp-fl','susp-fr','susp-rl','susp-rr','wing-rear'];
+
+const state = {}; ORDER.forEach(id => state[id] = 0);
+
+const car = document.getElementById('car');
+car.innerHTML = `
+<svg viewBox="0 0 230 300" role="img" aria-label="Vue de dessus des dégâts">
+  <path class="dmg-fill" d="M86,34 L144,34 A28,28 0 0 1 172,62 L172,238 A28,28 0 0 1 144,266 L86,266 A28,28 0 0 1 58,238 L58,62 A28,28 0 0 1 86,34 Z"/>
+  ${WHEELS.map(w=>`<rect class="dz dz-wheel" data-zone="${w.id}" x="${w.x}" y="${w.y}" width="22" height="42" rx="5"><title>${LABELS[w.id]}</title></rect>`).join('')}
+  ${ZONES.map(z=>`<path class="dz ${z.cls}" data-zone="${z.id}" d="${z.d}"><title>${LABELS[z.id]}</title></path>`).join('')}
+</svg>`;
+
+function render(){
+  ORDER.forEach(id=>{
+    const el = car.querySelector(`[data-zone="${id}"]`);
+    const lv = state[id], c = COLORS[lv];
+    el.style.stroke = c; el.style.color = c;
+    el.classList.toggle('lvl3', lv===3);
+    if(id.startsWith('wheel') || id==='wing-rear') el.style.fill = c;
+  });
+}
+car.addEventListener('click', e=>{
+  const el = e.target.closest('[data-zone]'); if(!el) return;
+  state[el.dataset.zone] = (state[el.dataset.zone]+1)%4;
+  render();
+});
+// état de démo
+state['corner-fr']=3; state['body-front']=2; state['wheel-fr']=2; state['susp-fr']=1; state['body-right']=1;
+render();
+</script>
+</body></html>

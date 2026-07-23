@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from lmu_app.calc.ext.rest_merge import rest_merge
 from lmu_app.utils.class_colors import CLASS_ENTRIES, class_key
 from lmu_app.utils.theme import T, label_font, panel_brush, border_pen
 
@@ -357,6 +358,7 @@ class MainWindow(QWidget):
         self._bc_name_drv_btn:  QPushButton | None = None
         self._bc_name_team_btn: QPushButton | None = None
         self._bc_url_lbl:        QLabel    | None = None
+        self._bc_master_toggle:  _OnOffBtn | None = None
         self._bc_tower_toggle:   _OnOffBtn | None = None
         self._bc_battle_toggle:  _OnOffBtn | None = None
         self._bc_driver_toggle:  _OnOffBtn | None = None
@@ -1205,6 +1207,34 @@ QCheckBox::indicator:checked {{
 }}
 """
 
+        # ── Section helper ─────────────────────────────────────────────
+        def _section(title: str, toggle_attr: str, enabled: bool) -> tuple[QWidget, _OnOffBtn]:
+            hdr = QWidget()
+            hl  = QHBoxLayout(hdr)
+            hl.setContentsMargins(0, 2, 0, 2)
+            hl.setSpacing(6)
+            lbl = QLabel(title)
+            lbl.setStyleSheet(
+                f"color: {T.DIM}; font-size: 10px; font-weight: bold; "
+                f"letter-spacing: 1px; text-transform: uppercase;"
+            )
+            hl.addWidget(lbl)
+            hl.addStretch()
+            tog = _OnOffBtn(enabled)
+            setattr(self, toggle_attr, tog)
+            hl.addWidget(tog)
+            return hdr, tog
+
+        # ── Master broadcast switch — REST (localhost:6397) still starts
+        # automatically on launch on this build (unchanged), this just adds a
+        # manual on/off on top of that, for parity with the without-rest-api
+        # build where this same switch is the only thing that starts it.
+        master_hdr, master_tog = _section("Broadcast", "_bc_master_toggle",
+                                           self._config.broadcast_active)
+        master_tog.toggled.connect(self._on_broadcast_toggle)
+        vl.addWidget(master_hdr)
+        vl.addWidget(_sep())
+
         # ── Broadcast URL (visible only when stream is ON) ─────────────
         no_stream = QLabel("Start stream in the Stream tab first.")
         no_stream.setStyleSheet(f"color: {T.DIM}; font-size: 11px;")
@@ -1229,24 +1259,6 @@ QCheckBox::indicator:checked {{
         vl.addWidget(url_row)
 
         vl.addWidget(_sep())
-
-        # ── Section helper ─────────────────────────────────────────────
-        def _section(title: str, toggle_attr: str, enabled: bool) -> tuple[QWidget, _OnOffBtn]:
-            hdr = QWidget()
-            hl  = QHBoxLayout(hdr)
-            hl.setContentsMargins(0, 2, 0, 2)
-            hl.setSpacing(6)
-            lbl = QLabel(title)
-            lbl.setStyleSheet(
-                f"color: {T.DIM}; font-size: 10px; font-weight: bold; "
-                f"letter-spacing: 1px; text-transform: uppercase;"
-            )
-            hl.addWidget(lbl)
-            hl.addStretch()
-            tog = _OnOffBtn(enabled)
-            setattr(self, toggle_attr, tog)
-            hl.addWidget(tog)
-            return hdr, tog
 
         # ── TOWER ──────────────────────────────────────────────────────
         tower_hdr, tower_tog = _section("Tower", "_bc_tower_toggle",
@@ -1381,6 +1393,14 @@ QCheckBox::indicator:checked {{
         if isinstance(btn, QPushButton):
             btn.setText("✓ Copied")
             QTimer.singleShot(1500, lambda b=btn: b.setText("Copy URL"))
+
+    def _on_broadcast_toggle(self, checked: bool) -> None:
+        self._config.broadcast_active = checked
+        self._config.save()
+        if checked:
+            rest_merge.start()
+        else:
+            rest_merge.stop()
 
     def _on_bc_tower_toggle(self, checked: bool) -> None:
         self._config.bc_tower_enabled = checked

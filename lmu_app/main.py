@@ -11,6 +11,7 @@ from lmu_app.widgets.inputs import InputsWidget
 from lmu_app.widgets.standings import StandingsWidget
 from lmu_app.widgets.relative import RelativeWidget
 from lmu_app.widgets.tyres import TyresWidget
+from lmu_app.widgets.damage import DamageWidget
 from lmu_app.widgets.fuel_calc import FuelCalcWidget
 from lmu_app.widgets.ve_calc import VECalcWidget
 from lmu_app.widgets.weather import WeatherWidget
@@ -29,7 +30,7 @@ _FONTS = [
     "SairaSemiCondensed-Bold.ttf",
 ]
 
-APP_VERSION = "0.7.2"
+APP_VERSION = "0.8.0"
 _LOGO = "lmu_app_logo.svg"
 LOG_PATH = None   # set by _log_handlers()
 
@@ -207,10 +208,18 @@ def main() -> int:
     reader = DataReader(update_hz=args.hz)
     reader.start()
 
+    # REST (localhost:6397) starts unconditionally as part of reader.start()
+    # on this build (see calc/module_control.py) — keep the Broadcast tab's
+    # on/off switch honest about that from the first frame, regardless of
+    # whatever was last saved.
+    config.broadcast_active = True
+    config.save()
+
     fuel_calc_w = FuelCalcWidget(auto_hide=False)
     ve_calc_w   = VECalcWidget(auto_hide=False)
 
     widget_entries: list[tuple[str, object]] = [
+        ("damage",     DamageWidget(auto_hide=False)),
         ("delta",      DeltaWidget(auto_hide=False)),
         ("fuel_calc",  fuel_calc_w),
         ("inputs",     InputsWidget(auto_hide=False)),
@@ -252,6 +261,7 @@ def main() -> int:
     stream_manager = StreamManager(reader)
 
     _stream_classes = [
+        ("damage",    DamageWidget),
         ("delta",     DeltaWidget),
         ("fuel_calc", FuelCalcWidget),
         ("inputs",    InputsWidget),

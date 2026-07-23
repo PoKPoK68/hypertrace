@@ -12,10 +12,18 @@ per-car sector times from REST; that's now redundant, shared memory already
 publishes them directly (see module_vehicles.py) and more reliably (REST
 polls at 3 Hz; shared memory is read every tick).
 
-Three independent things, each on its own cadence:
+Four independent things, each on its own cadence:
   - focus (watched driver)   — 5 Hz
   - standings enrichment     — 3 Hz  (car number, team name, class gap)
   - weather forecast         — every 30s, fast-retry (2s) until first success
+  - suspension damage        — 2 Hz  (player only — REST doesn't broadcast
+                                 this for other cars; LMU has no shared-memory
+                                 equivalent, this is REST-only by nature, see
+                                 project memory. Deliberately not ported to
+                                 the without-rest-api build: that build simply
+                                 never populates minfo.damage.suspensionDamage,
+                                 which the Damage widget already treats as
+                                 "no data" via the -1.0 default.)
 """
 from __future__ import annotations
 
@@ -37,6 +45,8 @@ _WEATHER_INTERVAL = 30.0
 _WEATHER_RETRY_INTERVAL = 2.0
 _WEATHER_URL = f"{_REST_BASE}/rest/sessions/weather"
 _WEATHER_NODES = ["START", "NODE_25", "NODE_50", "NODE_75", "FINISH"]
+_DAMAGE_INTERVAL = 0.5
+_DAMAGE_URL = f"{_REST_BASE}/rest/garage/UIScreen/RepairAndRefuel"
 
 
 def _weather_outer_key(session_type: int) -> str:
@@ -81,6 +91,7 @@ class RestMerge:
     def _loop(self) -> None:
         last_standings = 0.0
         last_weather = 0.0
+        last_damage = 0.0
         wx_last_session: int | None = None
 
         while self._running:
@@ -105,6 +116,17 @@ class RestMerge:
                             entry.time_behind_class_leader = float(rd.get("timeBehindClassLeader", 0.0))
                             entry.laps_behind_class_leader = int(rd.get("lapsBehindClassLeader", 0))
                     last_standings = now
+                except Exception:
+                    pass
+
+            if now - last_damage >= _DAMAGE_INTERVAL:
+                try:
+                    with _ur.urlopen(_DAMAGE_URL, timeout=1) as r:
+                        wearables = json.loads(r.read()).get("wearables") or {}
+                    susp = wearables.get("suspension")
+                    if isinstance(susp, list) and len(susp) == 4:
+                        minfo.damage.suspensionDamage = [float(v) for v in susp]
+                    last_damage = now
                 except Exception:
                     pass
 

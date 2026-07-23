@@ -3,9 +3,10 @@
 Ported from TinyPedal's `tinypedal/adapter/lmu_reader.py` (s-victor/TinyPedal,
 GPLv3), trimmed to the domains this app's widgets/modules actually read
 (state, lap, session, timing, tyre, vehicle, engine fuel/energy, pedal
-inputs). Anything LMU-specific not used here (brakes, electric-motor detail,
-switches/assists, suspension, damage, car setup) was intentionally left out —
-see the plan for the full rationale.
+inputs, bodywork/wheel damage). Anything LMU-specific not used here (brakes,
+electric-motor detail, switches/assists, exact aero/suspension damage % —
+REST-only in LMU, no shared-memory fallback, see project memory — car setup)
+was intentionally left out — see the plan for the full rationale.
 
 `index=None` means "the local player", resolved by `LMUInfo` via mID-matched
 sync rather than trusting a raw index — see calc/lmu_connector.py.
@@ -265,6 +266,58 @@ class Tyre(_Adapter):
         wheel_data = self.shmm.lmuTeleVeh(index).mWheels
         return tuple(rmnan(w.mBrakeTemp) for w in wheel_data)
 
+    def puncture(self, index: int | None = None, threshold: float = 0.01) -> tuple[bool, bool, bool, bool]:
+        """Tyre punctured (worn past threshold) — mWear, same field as wear() above."""
+        wheel_data = self.shmm.lmuTeleVeh(index).mWheels
+        return tuple(rmnan(w.mWear) <= threshold for w in wheel_data)
+
+
+class Damage(_Adapter):
+    """Bodywork/wheel damage — shared memory only, no REST dependency (unlike
+    aero/suspension damage %, which LMU only exposes via REST and therefore
+    isn't covered here — see the plan's rationale for keeping this app
+    usable without the REST API)."""
+    __slots__ = ()
+
+    def body_severity(self, index: int | None = None) -> tuple[int, int, int, int, int, int, int, int]:
+        """8 body-damage zones (0=none, 1=light, 2=heavy), ordered row by row
+        front-to-rear, left-to-right: FL, FC, FR, CL, CR, RL, RC, RR.
+
+        mDentSeverity's raw 8 slots don't come in that visual order — this
+        reorders them the same way TinyPedal's LMU adapter does (verified
+        against real telemetry there). Unlike TinyPedal, the rear-center slot
+        is NOT overridden when the rear wing detaches — the design widget
+        shows the wing as its own separate zone (see rear_wing_detached()),
+        so this stays the genuine dent value underneath it.
+        """
+        dmg = self.shmm.lmuTeleVeh(index).mDentSeverity
+        return dmg[1], dmg[0], dmg[7], dmg[2], dmg[6], dmg[3], dmg[4], dmg[5]
+
+    def rear_wing_detached(self, index: int | None = None) -> bool:
+        """Whether the rear wing (the only detachable body part in LMU) is gone."""
+        return bool(self.shmm.lmuTeleVeh(index).mDetached)
+
+    def wheel_detached(self, index: int | None = None) -> tuple[bool, bool, bool, bool]:
+        wheel_data = self.shmm.lmuTeleVeh(index).mWheels
+        return tuple(bool(w.mDetached) for w in wheel_data)
+
+    def last_impact_time(self, index: int | None = None) -> float:
+        """Elapsed-time timestamp (seconds) of the last recorded impact."""
+        return rmnan(self.shmm.lmuTeleVeh(index).mLastImpactET)
+
+    def integrity(self, index: int | None = None) -> float:
+        """Rough overall damage estimate (1.0 = pristine, 0.0 = wrecked),
+        shared-memory only — no exact aero/suspension % without REST, so this
+        is a coarse stand-in: dent severity averaged over its 0-2 range per
+        zone, plus a flat penalty per detached wheel and for the rear wing."""
+        data = self.shmm.lmuTeleVeh(index)
+        penalty = (
+            sum(data.mDentSeverity) / 16
+            + sum(1 for w in data.mWheels if w.mDetached)
+            + (0.5 if data.mDetached else 0.0)
+        )
+        return max(0.0, min(1.0, 1.0 - penalty))
+
 
 class Vehicle(_Adapter):
     __slots__ = ()
@@ -382,7 +435,7 @@ class SimAPI:
     __slots__ = ("_info", "read", "raw")
 
     class _Read:
-        __slots__ = ("state", "lap", "session", "timing", "tyre", "vehicle", "engine", "inputs")
+        __slots__ = ("state", "lap", "session", "timing", "tyre", "vehicle", "engine", "inputs", "damage")
 
         def __init__(self, shmm: LMUInfo) -> None:
             self.state   = State(shmm)
@@ -393,6 +446,7 @@ class SimAPI:
             self.vehicle = Vehicle(shmm)
             self.engine  = Engine(shmm)
             self.inputs  = Inputs(shmm)
+            self.damage  = Damage(shmm)
 
     def __init__(self) -> None:
         self._info = LMUInfo()

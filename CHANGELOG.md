@@ -4,6 +4,16 @@ All notable changes to LMU App are documented here.
 
 ---
 
+## [0.8.0] — work in progress
+
+### New: Damage overlay
+- **New "Damage" widget** — top-down car silhouette (design handoff: `design_handoff_damage_overlay`), 17 zones total: 4 body edges + 4 corners, 4 wheels, 4 suspension wishbones, and the rear wing as its own zone. Each zone is coloured on a 4-level severity scale (grey/amber/orange/bright red for the most severe level).
+- **Wheels** show detached/punctured state; **suspension** shows REST-only damage tiers; **body zones and the rear wing** are shared memory. No text or numeric readout — the silhouette is the whole display, matching the design spec.
+- Suspension damage is the one REST-only signal here — LMU has no shared-memory equivalent for it — so it's only available on this build; the without-rest-api build shows the same widget without that one zone lighting up (always neutral grey there).
+- **Not finished** — zone mapping still needs to be checked against real in-game damage before this is considered final.
+
+---
+
 ## [0.7.2]
 
 ### Widget settings
@@ -21,6 +31,9 @@ All notable changes to LMU App are documented here.
 ### Main window
 - "Hide overlays in garage" is now a pill toggle (matching the lock/free one) instead of a checkbox, labeled "Overlays visible/hidden in garage".
 - Removed the description text above the preset list in the Presets tab.
+
+### Broadcast
+- **New master "Broadcast" on/off switch**, at the top of the Broadcast tab — lets you manually stop/restart REST (localhost:6397) without closing the app. REST still starts automatically on launch, unchanged.
 
 ---
 

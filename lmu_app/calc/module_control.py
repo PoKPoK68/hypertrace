@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 
 from lmu_app.calc.ext.rest_merge import rest_merge
-from lmu_app.calc.modules import module_delta, module_fuel, module_stint, module_telemetry, module_vehicles, module_wheels
+from lmu_app.calc.modules import module_damage, module_delta, module_fuel, module_stint, module_telemetry, module_vehicles, module_wheels
 from lmu_app.calc.realtime_state import state_control
 
 logger = logging.getLogger(__name__)
@@ -19,6 +19,7 @@ _MODULES = (
     module_delta,
     module_fuel,       # also covers Virtual Energy + fuel/VE ratio
     module_wheels,
+    module_damage,
     module_telemetry,  # Speed/Pedals — needs to be fast (30 Hz widgets), keep light
     module_vehicles,   # standings/relative — heaviest, last
 )
