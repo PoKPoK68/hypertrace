@@ -1,12 +1,11 @@
 """lmu_app/ui/main_window.py — Tabbed main control panel — Direction A "Broadcast"."""
 from __future__ import annotations
 
-import math
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Qt, QSize, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPainterPath, QPen
+from PySide6.QtCore import QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QIcon, QPainter
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -18,14 +17,27 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSpinBox,
-    QTabWidget,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from lmu_app.calc.ext.rest_merge import rest_merge
+from lmu_app.calc.realtime_state import realtime_state
+from lmu_app.ui.main_window_controls import (
+    _SS_BTN,
+    _SS_BTN_DANGER,
+    _SS_BTN_DANGER_ARMED,
+    _CogBtn,
+    _ExclusiveOnOffGroup,
+    _LockToggle,
+    _OnOffBtn,
+    _SegmentedControl,
+    _StreamConfigProxy,
+    _sep,
+)
 from lmu_app.utils.class_colors import CLASS_ENTRIES, class_key
-from lmu_app.utils.theme import T, label_font, panel_brush, border_pen
+from lmu_app.utils.theme import T, border_pen, label_font, panel_brush
 
 if TYPE_CHECKING:
     from lmu_app.config import AppConfig
@@ -34,175 +46,12 @@ if TYPE_CHECKING:
 
 
 # ---------------------------------------------------------------------------
-# ON / OFF toggle button
-# ---------------------------------------------------------------------------
-
-_SS_ON = (
-    f"QPushButton {{ background: #00A040; color: #FFFFFF; "
-    f"border: 1px solid #00A040; border-radius: 2px; "
-    f"font-weight: bold; font-size: 10px; font-family: '{T.F_TEXT}'; }}"
-    f"QPushButton:hover {{ background: #00B848; border-color: #00B848; }}"
-)
-_SS_OFF = (
-    f"QPushButton {{ background: #CC0000; color: #FFFFFF; "
-    f"border: 1px solid #CC0000; border-radius: 2px; "
-    f"font-weight: bold; font-size: 10px; font-family: '{T.F_TEXT}'; }}"
-    f"QPushButton:hover {{ background: #E00000; border-color: #E00000; }}"
-)
-_SS_SEG_ON = (
-    f"QPushButton {{ background: {T.ACCENT}; color: #000000; "
-    f"border: 1px solid {T.ACCENT}; border-radius: 2px; "
-    f"font-weight: bold; font-size: 9px; font-family: '{T.F_TEXT}'; padding: 0 4px; }}"
-)
-_SS_SEG_OFF = (
-    f"QPushButton {{ background: rgba(255,255,255,0.06); color: {T.DIM}; "
-    f"border: 1px solid rgba(255,255,255,0.12); border-radius: 2px; "
-    f"font-size: 9px; font-family: '{T.F_TEXT}'; padding: 0 4px; }}"
-    f"QPushButton:hover {{ color: {T.TEXT}; border-color: rgba(255,255,255,0.25); }}"
-)
-
-
-class _OnOffBtn(QPushButton):
-    """Pill-shaped ON / OFF toggle."""
-
-    def __init__(self, enabled: bool, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setCheckable(True)
-        self.setChecked(enabled)
-        self.setFixedSize(46, 22)
-        self._refresh(enabled)
-        self.toggled.connect(self._refresh)
-
-    def _refresh(self, checked: bool) -> None:
-        self.setText("ON" if checked else "OFF")
-        self.setStyleSheet(_SS_ON if checked else _SS_OFF)
-
-
-# ---------------------------------------------------------------------------
-# Gear cog icon button
-# ---------------------------------------------------------------------------
-
-class _CogBtn(QPushButton):
-    """Round button that draws a proper gear cog via QPainterPath."""
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setFixedSize(22, 22)
-        self.setFlat(True)
-        self.setStyleSheet(
-            "QPushButton { background: transparent; border: none; border-radius: 11px; }"
-            "QPushButton:hover { background: rgba(255,255,255,0.09); }"
-        )
-
-    def paintEvent(self, _) -> None:
-        super().paintEvent(_)
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        self._draw_cog(p, 11.0, 11.0, 13.0)
-        p.end()
-
-    @staticmethod
-    def _draw_cog(p: QPainter, cx: float, cy: float, size: float) -> None:
-        n       = 8
-        r_out   = size / 2
-        r_in    = size * 0.68 / 2
-        r_hole  = size * 0.30 / 2
-        step    = math.pi / n          # half tooth angular width
-        tooth_w = step * 0.55          # flat-top fraction
-
-        path = QPainterPath()
-        first = True
-        for i in range(n):
-            base = 2 * math.pi * i / n
-            for ang, r in (
-                (base - step + tooth_w, r_in),
-                (base - tooth_w,        r_out),
-                (base + tooth_w,        r_out),
-                (base + step - tooth_w, r_in),
-            ):
-                x, y = cx + r * math.cos(ang), cy + r * math.sin(ang)
-                if first:
-                    path.moveTo(x, y); first = False
-                else:
-                    path.lineTo(x, y)
-        path.closeSubpath()
-
-        hole = QPainterPath()
-        hole.addEllipse(cx - r_hole, cy - r_hole, r_hole * 2, r_hole * 2)
-        p.fillPath(path.subtracted(hole), QColor(T.DIM))
-
-
-# ---------------------------------------------------------------------------
-# Sliding lock / unlock toggle
-# ---------------------------------------------------------------------------
-
-class _LockToggle(QWidget):
-    """Animated pill toggle: FREE (left) ↔ LOCK (right)."""
-
-    toggled = Signal(bool)
-
-    _W, _H = 52, 28
-
-    def __init__(self, locked: bool = False, parent: QWidget | None = None,
-                 tooltip: str = "Lock / unlock overlay positions") -> None:
-        super().__init__(parent)
-        self._locked = locked
-        self._t = 1.0 if locked else 0.0
-        self._timer = QTimer(self)
-        self._timer.setInterval(14)
-        self._timer.timeout.connect(self._step)
-        self.setFixedSize(self._W, self._H)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setToolTip(tooltip)
-
-    def set_locked(self, locked: bool) -> None:
-        if locked != self._locked:
-            self._locked = locked
-            self._timer.start()
-        else:
-            self._t = 1.0 if locked else 0.0
-            self.update()
-
-    def _step(self) -> None:
-        target = 1.0 if self._locked else 0.0
-        self._t += (target - self._t) * 0.20
-        if abs(self._t - target) < 0.008:
-            self._t = target
-            self._timer.stop()
-        self.update()
-
-    def mousePressEvent(self, e) -> None:
-        if e.button() == Qt.MouseButton.LeftButton:
-            self._locked = not self._locked
-            self._timer.start()
-            self.toggled.emit(self._locked)
-
-    def paintEvent(self, _) -> None:
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        W, H, t = self._W, self._H, self._t
-        pad = 3; knob_d = H - pad * 2; travel = W - pad * 2 - knob_d
-
-        def lerp(a, b): return round(a + (b - a) * t)
-        track = QColor(lerp(38, 0xEC), lerp(38, 0xAA), lerp(38, 0x43), lerp(40, 255))
-        p.setBrush(track)
-        p.setPen(QPen(QColor(255, 255, 255, 30), 1))
-        p.drawRoundedRect(0, 0, W, H, H // 2, H // 2)
-
-        knob_x = pad + int(travel * t)
-        p.setBrush(QColor(0x1A, 0x14, 0x07) if t > 0.5 else QColor(0xF4, 0xF1, 0xEA))
-        p.setPen(Qt.PenStyle.NoPen)
-        p.drawEllipse(knob_x, pad, knob_d, knob_d)
-        p.end()
-
-
-# ---------------------------------------------------------------------------
 # Main window
 # ---------------------------------------------------------------------------
 
-_check_svg   = (Path(__file__).parent.parent / "assets" / "check.svg").as_posix()
-_edit_svg    = (Path(__file__).parent.parent / "assets" / "edit.svg").as_posix()
-_trash_svg   = (Path(__file__).parent.parent / "assets" / "trash.svg").as_posix()
+_check_svg      = (Path(__file__).parent.parent / "assets" / "check.svg").as_posix()
+_edit_svg       = (Path(__file__).parent.parent / "assets" / "edit.svg").as_posix()
+_trash_svg      = (Path(__file__).parent.parent / "assets" / "trash.svg").as_posix()
 _chevron_svg    = (Path(__file__).parent.parent / "assets" / "chevron-down.svg").as_posix()
 _chevron_up_svg = (Path(__file__).parent.parent / "assets" / "chevron-up.svg").as_posix()
 
@@ -275,36 +124,17 @@ QSpinBox::up-arrow   {{ image: url({_chevron_up_svg});   width: 8px; height: 5px
 QSpinBox::down-arrow {{ image: url({_chevron_svg}); width: 8px; height: 5px; }}
 """
 
-
-_SS_BTN = (
-    f"QPushButton {{ color: {T.DIM}; background: rgba(255,255,255,0.06); "
-    f"border: 1px solid rgba(255,255,255,0.12); border-radius: 4px; "
-    f"padding: 3px 8px; font-size: 11px; }}"
-    f"QPushButton:hover {{ background: rgba(255,255,255,0.12); color: {T.TEXT}; }}"
+# Sidebar navigation buttons — checked page gets a solid accent bar on the
+# left edge (SimHub/RaceLab-style rail), unchecked stays dim.
+_SS_NAV = (
+    f"QPushButton {{ text-align: left; padding: 8px 10px 8px 12px; "
+    f"color: {T.DIM}; background: transparent; border: none; "
+    f"border-left: 3px solid transparent; font-size: 11px; font-weight: bold; "
+    f"letter-spacing: 1px; text-transform: uppercase; }}"
+    f"QPushButton:hover {{ color: {T.TEXT}; background: rgba(255,255,255,0.04); }}"
+    f"QPushButton:checked {{ color: {T.TEXT}; border-left: 3px solid {T.ACCENT}; "
+    f"background: rgba(255,255,255,0.05); }}"
 )
-_SS_BTN_DANGER = (
-    f"QPushButton {{ color: #FF7070; background: rgba(255,50,50,0.08); "
-    f"border: 1px solid rgba(255,80,80,0.20); border-radius: 3px; "
-    f"padding: 2px 5px; font-size: 10px; }}"
-    f"QPushButton:hover {{ background: rgba(255,50,50,0.20); }}"
-)
-
-
-class _StreamConfigProxy:
-    """Thin proxy so WidgetConfigDialog can read/write stream widget params."""
-
-    def __init__(self, config, key: str) -> None:
-        self._cfg = config
-        self._key = key
-
-    def widget_params(self, key: str) -> dict:
-        return self._cfg.stream_widget_params(key)
-
-    def set_widget_params(self, key: str, params: dict) -> None:
-        self._cfg.set_stream_widget_params(key, params)
-
-    def save(self) -> None:
-        self._cfg.save()
 
 
 class MainWindow(QWidget):
@@ -329,18 +159,21 @@ class MainWindow(QWidget):
 
         self.setWindowTitle("LMU App")
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
-        self.setFixedWidth(350)
+        self.setFixedWidth(560)
         self.setStyleSheet(_WINDOW_SS)
 
         self._toggles: dict[str, _OnOffBtn] = {}
-        self._tabs: QTabWidget | None = None
+        self._stack: QStackedWidget | None = None
+        self._nav_btns: list[QPushButton] = []
+        self._status_lbl: QLabel | None = None
         self._lock_toggle: _LockToggle | None = None
         self._lock_label: QLabel | None = None
         self._garage_toggle: _LockToggle | None = None
         self._garage_label: QLabel | None = None
         self._merge_btn: _OnOffBtn | None = None
+        self._preset_switcher_combo: QComboBox | None = None
         self._preset_list_layout: QVBoxLayout | None = None
-        self._preset_label: QLabel | None = None
+        self._preset_row_labels: dict[str, QLabel] = {}
         self._preset_row_w: QWidget | None = None
         self._saveas_row_w: QWidget | None = None
         self._saveas_name_edit: QLineEdit | None = None
@@ -355,24 +188,28 @@ class MainWindow(QWidget):
 
         # Broadcast director
         self._bc_state = None   # set later by caller via set_broadcast_state()
-        self._bc_name_drv_btn:  QPushButton | None = None
-        self._bc_name_team_btn: QPushButton | None = None
-        self._bc_url_lbl:        QLabel    | None = None
-        self._bc_master_toggle:  _OnOffBtn | None = None
-        self._bc_tower_toggle:   _OnOffBtn | None = None
-        self._bc_battle_toggle:  _OnOffBtn | None = None
-        self._bc_driver_toggle:  _OnOffBtn | None = None
-        self._bc_sectors_toggle: _OnOffBtn | None = None
-        self._bc_count_ovr_spin: QSpinBox  | None = None
-        self._bc_count_mc_spin:  QSpinBox  | None = None
-        self._bc_count_cls_spin: QSpinBox  | None = None
-        self._bc_tower_mode_btns: list     | None = None
+        self._bc_name_seg:        _SegmentedControl | None = None
+        self._bc_url_lbl:         QLabel    | None = None
+        self._bc_master_toggle:   _OnOffBtn | None = None
+        self._bc_tower_toggle:    _OnOffBtn | None = None
+        self._bc_battle_toggle:   _OnOffBtn | None = None
+        self._bc_driver_toggle:   _OnOffBtn | None = None
+        self._bc_sectors_toggle:  _OnOffBtn | None = None
+        self._bc_count_ovr_spin:  QSpinBox  | None = None
+        self._bc_count_mc_spin:   QSpinBox  | None = None
+        self._bc_count_cls_spin:  QSpinBox  | None = None
+        self._bc_tower_mode_seg:  _SegmentedControl | None = None
         self._bc_tower_spin_rows: list     | None = None
+        self._bc_parade_count_spin: QSpinBox | None = None
+        # NOTE: _bc_class_combo / _bc_viewer_combo are intentionally never
+        # instantiated (no QComboBox is ever built for them) — left exactly
+        # as they were, per explicit instruction not to touch this during the
+        # v1.0 redesign. Their handlers below (_on_bc_class_changed,
+        # _on_bc_viewer_changed, _update_bc_viewer_combo) are correspondingly
+        # unreachable dead code, also left untouched.
         self._bc_class_combo:    QComboBox | None = None
         self._bc_viewer_combo:   QComboBox | None = None
         self._bc_viewer_slots:   list[int]        = []
-        self._bc_no_stream_lbl:  QLabel    | None = None
-        self._live_timing_win = None
 
         self._setup_ui()
         self._apply_lock_state()
@@ -385,7 +222,7 @@ class MainWindow(QWidget):
             names = self._config.preset_names()
             self._config.current_preset = names[0] if names else ""
             self._config.save()
-        self._refresh_preset_label()
+        self._refresh_preset_chrome()
         self._resize_to_current_tab()
 
         if self._get_snapshot is not None:
@@ -393,6 +230,14 @@ class MainWindow(QWidget):
             self._session_timer.setInterval(1000)
             self._session_timer.timeout.connect(self._on_class_watch)
             self._session_timer.start()
+
+        # Status footer refresh — independent of the reader-driven class
+        # watcher above so the footer works even without a reader.
+        self._status_timer = QTimer(self)
+        self._status_timer.setInterval(1000)
+        self._status_timer.timeout.connect(self._refresh_status_footer)
+        self._status_timer.start()
+        self._refresh_status_footer()
 
     def paintEvent(self, _) -> None:
         p = QPainter(self)
@@ -404,57 +249,192 @@ class MainWindow(QWidget):
         p.end()
 
     def _resize_to_current_tab(self) -> None:
-        """Fix the window height to exactly what the current tab needs, so it
-        can't be dragged taller/shorter (width is already fixed via
-        setFixedWidth()) while still adapting per tab instead of settling on
-        one height tall enough for the biggest tab and leaving a gap on the
-        others. Re-run whenever the current tab's own content height changes
-        (e.g. the Save As row swapping in)."""
+        """Fix the window height to exactly what the current page needs, so
+        it can't be dragged taller/shorter (width is already fixed via
+        setFixedWidth()) while still adapting per page instead of settling
+        on one height tall enough for the biggest page and leaving a gap on
+        the others. Re-run whenever the current page's own content height
+        changes (e.g. the Save As row swapping in, a collapsible group
+        toggling).
+
+        QStackedLayout's sizeHint is always the max over *every* page it
+        holds, regardless of each page's QSizePolicy (unlike a plain
+        QBoxLayout item, which does respect Ignored) — there's no public
+        flag to change that. So instead of fighting the stack's own hint,
+        this pins the stack itself to exactly the current page's height for
+        the moment adjustSize() measures the window, then releases it back
+        to flexible so it keeps filling the now-correctly-sized window."""
         self.setMinimumHeight(0)
         self.setMaximumHeight(16777215)
-        self.adjustSize()
-        self.setFixedHeight(self.sizeHint().height())
+        if self._stack is not None and self._stack.currentWidget() is not None:
+            page_h = self._stack.currentWidget().sizeHint().height()
+            self._stack.setMinimumHeight(page_h)
+            self._stack.setMaximumHeight(page_h)
+            # The stack's own updateGeometry() only marks *its* cache dirty —
+            # the intermediate "body" row (rail + stack, in a QHBoxLayout)
+            # caches its own sizeHint too and doesn't get told to recompute
+            # just because its child changed size, so it kept reporting
+            # whatever height was current the first time it was laid out.
+            body_layout = self._stack.parentWidget().layout()
+            if body_layout is not None:
+                body_layout.invalidate()
+                body_layout.activate()
+            self.adjustSize()
+            self.setFixedHeight(self.sizeHint().height())
+            self._stack.setMinimumHeight(0)
+            self._stack.setMaximumHeight(16777215)
+        else:
+            self.adjustSize()
+            self.setFixedHeight(self.sizeHint().height())
 
     def _setup_ui(self) -> None:
         root = QVBoxLayout(self)
         root.setSpacing(6)
         root.setContentsMargins(10, 10, 10, 10)
 
-        # Title
+        root.addWidget(self._make_header())
+        root.addWidget(_sep())
+
+        # Body: nav rail on the left, stacked pages on the right — replaces
+        # the old QTabWidget. The pages themselves are the same 4 builders.
+        body = QWidget()
+        body_hl = QHBoxLayout(body)
+        body_hl.setContentsMargins(0, 0, 0, 0)
+        body_hl.setSpacing(8)
+
+        rail = QWidget()
+        rail.setFixedWidth(104)
+        rail_vl = QVBoxLayout(rail)
+        rail_vl.setContentsMargins(0, 4, 0, 0)
+        rail_vl.setSpacing(2)
+        for i, name in enumerate(("Overlays", "Presets", "Stream", "Broadcast")):
+            btn = QPushButton(name)
+            btn.setCheckable(True)
+            btn.setStyleSheet(_SS_NAV)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda _, idx=i: self._on_nav(idx))
+            rail_vl.addWidget(btn)
+            self._nav_btns.append(btn)
+        rail_vl.addStretch()
+        body_hl.addWidget(rail)
+
+        vline = QFrame()
+        vline.setFrameShape(QFrame.Shape.VLine)
+        vline.setStyleSheet("color: rgba(255,255,255,0.08);")
+        body_hl.addWidget(vline)
+
+        stack = QStackedWidget()
+        stack.addWidget(self._make_overlays_tab())
+        stack.addWidget(self._make_presets_tab())
+        stack.addWidget(self._make_stream_tab())
+        stack.addWidget(self._make_broadcast_tab())
+        body_hl.addWidget(stack, 1)
+        self._stack = stack
+
+        root.addWidget(body)
+
+        root.addWidget(_sep())
+        root.addWidget(self._make_footer())
+
+        self._nav_btns[0].setChecked(True)
+
+    def _make_header(self) -> QWidget:
+        hdr = QWidget()
+        hl = QHBoxLayout(hdr)
+        hl.setContentsMargins(2, 0, 2, 2)
+        hl.setSpacing(8)
+
         title = QLabel("LMU APP")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        f = label_font(13)
-        title.setFont(f)
-        title.setStyleSheet(f"color: {T.ACCENT}; padding: 2px 0 4px 0;")
-        root.addWidget(title)
+        title.setFont(label_font(14))
+        title.setStyleSheet(f"color: {T.ACCENT};")
+        hl.addWidget(title)
 
-        tabs = QTabWidget()
-        tabs.addTab(self._make_overlays_tab(),     "Overlays")
-        tabs.addTab(self._make_presets_tab(),      "Presets")
-        tabs.addTab(self._make_stream_tab(),       "Stream")
-        tabs.addTab(self._make_broadcast_tab(),    "Broadcast")
-        root.addWidget(tabs)
-        self._tabs = tabs
-        tabs.currentChanged.connect(lambda _: self._resize_to_current_tab())
+        from lmu_app.main import APP_VERSION
+        ver = QLabel(f"v{APP_VERSION}")
+        ver.setStyleSheet(f"color: {T.DIM}; font-size: 10px;")
+        hl.addWidget(ver)
 
-    # ------------------------------------------------------------------ Tab 1
+        hl.addStretch()
+        # Preset switching lives at the bottom of the Overlays page only —
+        # having it here too was a duplicate control for the same thing.
+        return hdr
 
-    def _make_overlays_tab(self) -> QWidget:
-        w = QWidget()
-        vl = QVBoxLayout(w)
-        vl.setSpacing(4)
-        vl.setContentsMargins(6, 8, 6, 8)
+    def _make_footer(self) -> QWidget:
+        lbl = QLabel()
+        lbl.setStyleSheet(f"color: {T.DIM}; font-size: 10px; padding: 0 2px;")
+        lbl.setTextFormat(Qt.TextFormat.RichText)
+        self._status_lbl = lbl
+        return lbl
 
-        for key, widget in self._entries:
-            vl.addWidget(self._make_row(key, widget))
+    def _refresh_status_footer(self) -> None:
+        if self._status_lbl is None:
+            return
+        def dot(on: bool, good: str = T.GOOD) -> str:
+            return f"<span style='color:{good if on else T.DIM};'>●</span>"
+        game = realtime_state.game_running and realtime_state.connected
+        broadcast_on = self._config.broadcast_active
+        parts = [
+            f"{dot(game)} Game {'connected' if game else 'not running'}",
+            f"{dot(self._config.stream_active)} Stream {'on' if self._config.stream_active else 'off'}",
+            f"{dot(broadcast_on)} Broadcast {'on' if broadcast_on else 'off'}",
+        ]
+        self._status_lbl.setText("&nbsp;&nbsp;&nbsp;".join(parts))
+
+    def _on_nav(self, idx: int) -> None:
+        if self._stack is None:
+            return
+        for i, btn in enumerate(self._nav_btns):
+            btn.setChecked(i == idx)
+        self._stack.setCurrentIndex(idx)
+        # Deferred: right after setCurrentIndex(), the stack/pages haven't
+        # finished their own layout pass yet, so measuring sizeHint()
+        # synchronously here could still see the *previous* page's cached
+        # size — which read as "have to click twice" (the second click's
+        # resize call would pick up what the first one should have). Running
+        # after the pending events flush makes one click reliable.
+        QTimer.singleShot(0, self._resize_to_current_tab)
+
+    def _on_preset_switcher_changed(self, name: str) -> None:
+        if not name or name == self._config.current_preset:
+            return
+        self._load_preset(name)
+
+    def _update_preset_switcher(self) -> None:
+        combo = self._preset_switcher_combo
+        if combo is None:
+            return
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItems(self._config.preset_names())
+        idx = combo.findText(self._config.current_preset)
+        combo.setCurrentIndex(max(0, idx))
+        combo.blockSignals(False)
+
+    # ------------------------------------------------------------------ Tab 1 — Overlays
+
+    def _make_global_controls_group(self) -> QWidget:
+        group = QWidget()
+        group.setObjectName("globalControls")
+        group.setStyleSheet(
+            f"#globalControls {{ background: rgba(255,255,255,{T.CARD_BG_ALPHA}); "
+            f"border-radius: 6px; }}"
+        )
+        vl = QVBoxLayout(group)
+        vl.setContentsMargins(8, 6, 8, 8)
+        vl.setSpacing(6)
+
+        hdr = QLabel("GLOBAL CONTROLS")
+        hdr.setStyleSheet(
+            f"color: {T.DIM}; font-size: 10px; font-weight: bold; letter-spacing: 1px;"
+        )
+        vl.addWidget(hdr)
 
         fc = self._find_widget("fuel_calc")
         vc = self._find_widget("ve_calc")
         if fc and vc:
-            vl.addWidget(_sep())
             merge_row = QWidget()
             hl = QHBoxLayout(merge_row)
-            hl.setContentsMargins(0, 1, 0, 1)
+            hl.setContentsMargins(0, 0, 0, 0)
             hl.setSpacing(6)
             lbl = QLabel("Merge Fuel & VE calc")
             lbl.setStyleSheet(f"color: {T.DIM}; font-size: 11px;")
@@ -463,8 +443,6 @@ class MainWindow(QWidget):
             self._merge_btn.toggled.connect(self._on_merge_toggled)
             hl.addWidget(self._merge_btn)
             vl.addWidget(merge_row)
-
-        vl.addWidget(_sep())
 
         garage_row = QWidget()
         garage_hl  = QHBoxLayout(garage_row)
@@ -481,8 +459,6 @@ class MainWindow(QWidget):
         garage_hl.addWidget(self._garage_label, 1)
         vl.addWidget(garage_row)
 
-        vl.addWidget(_sep())
-
         lock_row = QWidget()
         lock_hl  = QHBoxLayout(lock_row)
         lock_hl.setContentsMargins(0, 0, 0, 0)
@@ -494,6 +470,20 @@ class MainWindow(QWidget):
         self._lock_label.setStyleSheet(f"color: {T.DIM}; font-size: 11px;")
         lock_hl.addWidget(self._lock_label, 1)
         vl.addWidget(lock_row)
+
+        return group
+
+    def _make_overlays_tab(self) -> QWidget:
+        w = QWidget()
+        vl = QVBoxLayout(w)
+        vl.setSpacing(4)
+        vl.setContentsMargins(6, 8, 6, 8)
+
+        vl.addWidget(self._make_global_controls_group())
+        vl.addWidget(_sep())
+
+        for key, widget in self._entries:
+            vl.addWidget(self._make_row(key, widget))
 
         vl.addWidget(_sep())
         vl.addWidget(self._make_preset_row())
@@ -512,9 +502,10 @@ class MainWindow(QWidget):
         title.setStyleSheet(f"color: {T.DIM}; font-size: 11px;")
         hl.addWidget(title)
 
-        self._preset_label = QLabel(self._config.current_preset or "—")
-        self._preset_label.setStyleSheet(f"color: {T.TEXT}; font-size: 11px; font-weight: bold;")
-        hl.addWidget(self._preset_label, 1)
+        combo = QComboBox()
+        combo.currentTextChanged.connect(self._on_preset_switcher_changed)
+        self._preset_switcher_combo = combo
+        hl.addWidget(combo, 1)
 
         save_btn = QPushButton("Save")
         save_btn.setFixedSize(48, 22)
@@ -622,9 +613,18 @@ class MainWindow(QWidget):
             if sw is not None:
                 sw.apply_params(self._params_clipboard)
 
-    def _refresh_preset_label(self) -> None:
-        if self._preset_label is not None:
-            self._preset_label.setText(self._config.current_preset or "—")
+    def _refresh_preset_chrome(self) -> None:
+        """Single point of truth for "what's the current preset" across the
+        UI: the switcher combo at the bottom of the Overlays page, and the
+        highlighted row in the Presets page list."""
+        current = self._config.current_preset
+        if self._preset_switcher_combo is not None:
+            self._preset_switcher_combo.blockSignals(True)
+            idx = self._preset_switcher_combo.findText(current)
+            if idx >= 0:
+                self._preset_switcher_combo.setCurrentIndex(idx)
+            self._preset_switcher_combo.blockSignals(False)
+        self._update_active_preset_highlight()
 
     def _save_current_preset(self) -> None:
         name = self._config.current_preset
@@ -665,7 +665,7 @@ class MainWindow(QWidget):
         self._config.current_preset = name
         self._config.save()
         self._hide_saveas_row()
-        self._refresh_preset_label()
+        self._refresh_preset_chrome()
         self._rebuild_preset_ui()
 
     # ------------------------------------------------------------------ Tab 2 — Presets
@@ -777,7 +777,37 @@ class MainWindow(QWidget):
             self._apply_preset_data(preset)
             self._config.current_preset = preset_name
             self._config.save()
-            self._refresh_preset_label()
+            self._refresh_preset_chrome()
+
+    def _wire_delete_button(self, btn: QPushButton, name: str) -> None:
+        """Delete confirmation via "click again", not a modal QMessageBox —
+        matches the app's existing micro-feedback pattern (buttons that
+        briefly show "✓ Copied"), just inverted: this arms a destructive
+        action instead of confirming a completed one, and stays armed longer
+        (2.5s) since it's waiting on a decision rather than acknowledging a
+        fact."""
+        state = {"armed": False}
+
+        def _revert() -> None:
+            if not state["armed"]:
+                return
+            state["armed"] = False
+            try:
+                btn.setStyleSheet(_SS_BTN_DANGER)
+                btn.setToolTip("Delete")
+            except RuntimeError:
+                pass   # button already destroyed by a full preset-list rebuild
+
+        def _click() -> None:
+            if not state["armed"]:
+                state["armed"] = True
+                btn.setStyleSheet(_SS_BTN_DANGER_ARMED)
+                btn.setToolTip("Click again to delete permanently")
+                QTimer.singleShot(2500, _revert)
+            else:
+                self._delete_preset(name)
+
+        btn.clicked.connect(_click)
 
     def _rebuild_preset_ui(self) -> None:
         if self._preset_list_layout is None:
@@ -788,6 +818,7 @@ class MainWindow(QWidget):
             item = self._preset_list_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
+        self._preset_row_labels.clear()
 
         insert_at = 0
 
@@ -803,6 +834,7 @@ class MainWindow(QWidget):
             lbl = QLabel(name)
             lbl.setStyleSheet(f"color: {T.TEXT}; font-size: 11px; background: transparent;")
             hl.addWidget(lbl, 1)
+            self._preset_row_labels[name] = lbl
 
             inline_edit = QLineEdit(name)
             inline_edit.setFixedHeight(20)
@@ -834,7 +866,7 @@ class MainWindow(QWidget):
             del_btn.setFixedSize(28, 24)
             del_btn.setStyleSheet(_SS_BTN_DANGER)
             del_btn.setToolTip("Delete")
-            del_btn.clicked.connect(lambda _, n=name: self._delete_preset(n))
+            self._wire_delete_button(del_btn, name)
             hl.addWidget(del_btn)
 
             # ---- inline rename wiring ----
@@ -846,7 +878,7 @@ class MainWindow(QWidget):
                     if self._config.current_preset == n:
                         self._config.current_preset = new
                     self._config.save()
-                    self._refresh_preset_label()
+                    self._refresh_preset_chrome()
                     self._rebuild_preset_ui()
                 else:
                     l.show()
@@ -881,6 +913,24 @@ class MainWindow(QWidget):
             insert_at += 1
 
         self._update_class_combos()
+        self._update_preset_switcher()
+        self._update_active_preset_highlight()
+
+    def _update_active_preset_highlight(self) -> None:
+        current = self._config.current_preset
+        for name, lbl in self._preset_row_labels.items():
+            try:
+                if name == current:
+                    lbl.setStyleSheet(
+                        f"color: {T.ACCENT}; font-size: 11px; font-weight: bold; "
+                        f"background: transparent;"
+                    )
+                else:
+                    lbl.setStyleSheet(
+                        f"color: {T.TEXT}; font-size: 11px; background: transparent;"
+                    )
+            except RuntimeError:
+                pass   # stale entry from a row deleted since this dict was populated
 
     def _load_preset(self, name: str) -> None:
         preset = self._config.preset_by_name(name)
@@ -888,7 +938,7 @@ class MainWindow(QWidget):
             self._apply_preset_data(preset)
             self._config.current_preset = name
             self._config.save()
-            self._refresh_preset_label()
+            self._refresh_preset_chrome()
 
     def _delete_preset(self, name: str) -> None:
         self._config.delete_preset(name)
@@ -896,7 +946,7 @@ class MainWindow(QWidget):
             names = self._config.preset_names()
             self._config.current_preset = names[0] if names else ""
         self._config.save()
-        self._refresh_preset_label()
+        self._refresh_preset_chrome()
         self._rebuild_preset_ui()
 
     def _capture_state(self) -> dict:
@@ -994,9 +1044,9 @@ class MainWindow(QWidget):
             self._apply_preset_data(preset)
             self._config.current_preset = preset_name
             self._config.save()
-            self._refresh_preset_label()
+            self._refresh_preset_chrome()
 
-    # ------------------------------------------------------------------ Tab 2 — Stream
+    # ------------------------------------------------------------------ Tab 3 — Streaming
 
     def _make_stream_tab(self) -> QWidget:
         w = QWidget()
@@ -1004,7 +1054,7 @@ class MainWindow(QWidget):
         vl.setSpacing(6)
         vl.setContentsMargins(6, 8, 6, 8)
 
-        # ── top row: Stream ON/OFF + port ──────────────────────────────
+        # ── master stream row ──────────────────────────────────────────
         ctrl = QWidget()
         hl = QHBoxLayout(ctrl)
         hl.setContentsMargins(0, 0, 0, 0)
@@ -1034,7 +1084,6 @@ class MainWindow(QWidget):
         hl.addWidget(spin)
         vl.addWidget(ctrl)
 
-        # ── server URL hint ───────────────────────────────────────────
         url_lbl = QLabel()
         url_lbl.setStyleSheet(f"color: {T.ACCENT}; font-size: 10px;")
         url_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -1043,21 +1092,18 @@ class MainWindow(QWidget):
 
         vl.addWidget(_sep())
 
-        # ── per-overlay rows ──────────────────────────────────────────
+        # ── per-overlay rows ─────────────────────────────────────────────
         rows_w = QWidget()
         rows_vl = QVBoxLayout(rows_w)
         rows_vl.setSpacing(4)
         rows_vl.setContentsMargins(0, 0, 0, 0)
         self._stream_rows_w = rows_w
-
         for key, widget in self._stream_entries:
             rows_vl.addWidget(self._make_stream_row(key, widget))
-
         vl.addWidget(rows_w)
 
         vl.addWidget(_sep())
 
-        _svg = (Path(__file__).parent.parent / "assets" / "check.svg").as_posix()
         _cb_ss = f"""
 QCheckBox {{ color: {T.TEXT}; font-family: '{T.F_TEXT}'; font-size: 12px; spacing: 9px; }}
 QCheckBox::indicator {{
@@ -1067,7 +1113,7 @@ QCheckBox::indicator {{
 }}
 QCheckBox::indicator:checked {{
     background: {T.ACCENT}; border-color: {T.ACCENT};
-    image: url({_svg});
+    image: url({_check_svg});
 }}
 """
         hig = QCheckBox("Hide in garage")
@@ -1079,6 +1125,18 @@ QCheckBox::indicator:checked {{
         vl.addStretch()
 
         self._refresh_stream_ui()
+        return w
+
+    def _make_broadcast_tab(self) -> QWidget:
+        w = QWidget()
+        vl = QVBoxLayout(w)
+        vl.setSpacing(6)
+        vl.setContentsMargins(6, 8, 6, 8)
+
+        self._build_broadcast_content(vl)
+
+        vl.addStretch()
+        self._refresh_bc_ui()
         return w
 
     def _make_stream_row(self, key: str, widget) -> QWidget:
@@ -1111,38 +1169,75 @@ QCheckBox::indicator:checked {{
 
         return row
 
+    def _broadcast_wants_server(self) -> bool:
+        """Whether the Broadcast side needs the shared OBS server up — the
+        master BROADCAST toggle by itself is enough (so the /broadcast link
+        works as soon as it's on, matching Stream's own toggle), and so is
+        any individual graphic turned on without the master switch."""
+        return (self._config.broadcast_active or self._config.bc_tower_enabled
+                or self._config.bc_battle_enabled or self._config.bc_driver_enabled
+                or self._config.bc_sectors_enabled)
+
+    def _sync_stream_server(self) -> None:
+        """The localhost OBS server is shared infrastructure between Stream
+        and Broadcast — it must run whenever either is in use, independently,
+        and only stop once neither is. Called after every toggle that could
+        change that union (Stream master, Broadcast master, and each of the
+        4 broadcast widgets)."""
+        if self._stream_manager is None:
+            return
+        should_run = self._config.stream_active or self._broadcast_wants_server()
+        running = self._stream_manager.is_running
+        if should_run and not running:
+            ok = self._stream_manager.start(self._config.stream_port)
+            if ok:
+                return
+            # Port conflict — every toggle that could have just turned on was
+            # false a moment ago (should_run was false, i.e. server was off),
+            # so reverting all of them is exactly reverting whichever one(s)
+            # just changed, nothing else.
+            if self._config.broadcast_active:
+                rest_merge.stop()
+            for tog, cfg_attr in (
+                (self._stream_main_toggle,  "stream_active"),
+                (self._bc_master_toggle,    "broadcast_active"),
+                (self._bc_tower_toggle,     "bc_tower_enabled"),
+                (self._bc_battle_toggle,    "bc_battle_enabled"),
+                (self._bc_driver_toggle,    "bc_driver_enabled"),
+                (self._bc_sectors_toggle,   "bc_sectors_enabled"),
+            ):
+                setattr(self._config, cfg_attr, False)
+                if tog is not None:
+                    tog.blockSignals(True)
+                    tog.setChecked(False)
+                    tog.blockSignals(False)
+            self._config.save()
+            if self._stream_url_lbl is not None:
+                self._stream_url_lbl.setText("Port already in use — choose another port")
+                self._stream_url_lbl.setVisible(True)
+            self._refresh_stream_ui()
+            self._refresh_bc_ui()
+        elif not should_run and running:
+            self._stream_manager.stop()
+
     def _refresh_stream_ui(self) -> None:
-        active = self._config.stream_active
-        port   = self._config.stream_port
+        stream_active  = self._config.stream_active
+        server_running = self._stream_manager.is_running if self._stream_manager else False
+        port = self._config.stream_port
         if self._stream_url_lbl:
             self._stream_url_lbl.setText(
-                f"http://localhost:{port}" if active else ""
+                f"http://localhost:{port}" if server_running else ""
             )
-            self._stream_url_lbl.setVisible(active)
+            self._stream_url_lbl.setVisible(server_running)
         if self._stream_port_spin:
-            self._stream_port_spin.setEnabled(not active)
+            self._stream_port_spin.setEnabled(not server_running)
         if self._stream_rows_w:
-            self._stream_rows_w.setEnabled(active)
+            self._stream_rows_w.setEnabled(stream_active)
 
     def _on_stream_toggle(self, checked: bool) -> None:
-        if checked:
-            if self._stream_manager is None:
-                self._stream_main_toggle.setChecked(False)
-                return
-            ok = self._stream_manager.start(self._config.stream_port)
-            if not ok:
-                self._stream_main_toggle.blockSignals(True)
-                self._stream_main_toggle.setChecked(False)
-                self._stream_main_toggle.blockSignals(False)
-                if self._stream_url_lbl:
-                    self._stream_url_lbl.setText("Port already in use — choose another port")
-                    self._stream_url_lbl.setVisible(True)
-                return
-        else:
-            if self._stream_manager:
-                self._stream_manager.stop()
         self._config.stream_active = checked
         self._config.save()
+        self._sync_stream_server()
         self._refresh_stream_ui()
         self._refresh_bc_ui()
 
@@ -1180,68 +1275,44 @@ QCheckBox::indicator:checked {{
             on_paste=lambda: self._paste_params(key, widget),
         ).exec()
 
-    # ------------------------------------------------------------------ Tab 4 — Broadcast
+    # ------------------------------------------------------------------ Streaming — Broadcast graphics
 
     def set_broadcast_state(self, state) -> None:
         """Called from main.py after MainWindow is constructed."""
         self._bc_state = state
         state.tower_parade_count = self._config.bc_tower_parade_count
 
-    def _make_broadcast_tab(self) -> QWidget:
-        w  = QWidget()
-        vl = QVBoxLayout(w)
-        vl.setSpacing(6)
-        vl.setContentsMargins(6, 8, 6, 8)
+    def _make_bc_section_header(self, title: str, enabled: bool) -> tuple[QWidget, _OnOffBtn]:
+        hdr = QWidget()
+        hl  = QHBoxLayout(hdr)
+        hl.setContentsMargins(0, 2, 0, 2)
+        hl.setSpacing(6)
+        lbl = QLabel(title)
+        lbl.setStyleSheet(
+            f"color: {T.DIM}; font-size: 10px; font-weight: bold; "
+            f"letter-spacing: 1px; text-transform: uppercase;"
+        )
+        hl.addWidget(lbl)
+        hl.addStretch()
+        tog = _OnOffBtn(enabled)
+        hl.addWidget(tog)
+        return hdr, tog
 
-        _svg = (Path(__file__).parent.parent / "assets" / "check.svg").as_posix()
-        _cb_ss = f"""
-QCheckBox {{ color: {T.TEXT}; font-family: '{T.F_TEXT}'; font-size: 11px; spacing: 8px; }}
-QCheckBox::indicator {{
-    width: 13px; height: 13px; border-radius: 3px;
-    border: 1px solid rgba(255,255,255,0.12);
-    background: rgba(255,255,255,0.03);
-}}
-QCheckBox::indicator:checked {{
-    background: {T.ACCENT}; border-color: {T.ACCENT};
-    image: url({_svg});
-}}
-"""
-
-        # ── Section helper ─────────────────────────────────────────────
-        def _section(title: str, toggle_attr: str, enabled: bool) -> tuple[QWidget, _OnOffBtn]:
-            hdr = QWidget()
-            hl  = QHBoxLayout(hdr)
-            hl.setContentsMargins(0, 2, 0, 2)
-            hl.setSpacing(6)
-            lbl = QLabel(title)
-            lbl.setStyleSheet(
-                f"color: {T.DIM}; font-size: 10px; font-weight: bold; "
-                f"letter-spacing: 1px; text-transform: uppercase;"
-            )
-            hl.addWidget(lbl)
-            hl.addStretch()
-            tog = _OnOffBtn(enabled)
-            setattr(self, toggle_attr, tog)
-            hl.addWidget(tog)
-            return hdr, tog
-
+    def _build_broadcast_content(self, layout: QVBoxLayout) -> None:
         # ── Master broadcast switch — REST (localhost:6397) still starts
         # automatically on launch on this build (unchanged), this just adds a
         # manual on/off on top of that, for parity with the without-rest-api
         # build where this same switch is the only thing that starts it.
-        master_hdr, master_tog = _section("Broadcast", "_bc_master_toggle",
-                                           self._config.broadcast_active)
+        master_hdr, master_tog = self._make_bc_section_header(
+            "Broadcast", self._config.broadcast_active)
+        self._bc_master_toggle = master_tog
         master_tog.toggled.connect(self._on_broadcast_toggle)
-        vl.addWidget(master_hdr)
-        vl.addWidget(_sep())
+        layout.addWidget(master_hdr)
+        layout.addWidget(_sep())
 
-        # ── Broadcast URL (visible only when stream is ON) ─────────────
-        no_stream = QLabel("Start stream in the Stream tab first.")
-        no_stream.setStyleSheet(f"color: {T.DIM}; font-size: 11px;")
-        no_stream.setWordWrap(True)
-        self._bc_no_stream_lbl = no_stream
-        vl.addWidget(no_stream)
-
+        # ── Broadcast URL — independent of the Stream section now: this
+        # shows as soon as the OBS server is up, whether that's because
+        # Stream is on, a broadcast widget below is on, or both.
         url_row = QWidget()
         url_hl  = QHBoxLayout(url_row)
         url_hl.setContentsMargins(0, 0, 0, 0)
@@ -1256,38 +1327,42 @@ QCheckBox::indicator:checked {{
         copy_btn.setStyleSheet(_SS_BTN)
         copy_btn.clicked.connect(self._copy_broadcast_url)
         url_hl.addWidget(copy_btn)
-        vl.addWidget(url_row)
+        layout.addWidget(url_row)
 
-        vl.addWidget(_sep())
+        layout.addWidget(_sep())
 
         # ── TOWER ──────────────────────────────────────────────────────
-        tower_hdr, tower_tog = _section("Tower", "_bc_tower_toggle",
-                                        self._config.bc_tower_enabled)
+        tower_hdr, tower_tog = self._make_bc_section_header(
+            "Tower", self._config.bc_tower_enabled)
+        self._bc_tower_toggle = tower_tog
         tower_tog.toggled.connect(self._on_bc_tower_toggle)
-        vl.addWidget(tower_hdr)
+        layout.addWidget(tower_hdr)
 
-        # Driver / Team name toggle — full-width buttons
-        name_row = QHBoxLayout(); name_row.setSpacing(4)
-        cur_show_team = getattr(self._bc_state, 'show_team', False) if self._bc_state else False
-        self._bc_name_drv_btn = QPushButton("Driver Name")
-        self._bc_name_drv_btn.setFixedHeight(22)
-        self._bc_name_drv_btn.setStyleSheet(_SS_SEG_ON if not cur_show_team else _SS_SEG_OFF)
-        self._bc_name_team_btn = QPushButton("Team Name")
-        self._bc_name_team_btn.setFixedHeight(22)
-        self._bc_name_team_btn.setStyleSheet(_SS_SEG_ON if cur_show_team else _SS_SEG_OFF)
-        self._bc_name_drv_btn.clicked.connect(lambda: self._on_bc_show_team(False))
-        self._bc_name_team_btn.clicked.connect(lambda: self._on_bc_show_team(True))
-        name_row.addWidget(self._bc_name_drv_btn)
-        name_row.addWidget(self._bc_name_team_btn)
-        vl.addLayout(name_row)
+        cur_show_team = getattr(self._bc_state, "show_team", False) if self._bc_state else False
+        name_seg = _SegmentedControl(
+            [("Driver Name", False), ("Team Name", True)], current=cur_show_team,
+        )
+        name_seg.currentChanged.connect(self._on_bc_show_team)
+        self._bc_name_seg = name_seg
+        layout.addWidget(name_seg)
 
-        # Tower options: 3 rows, one per mode — [button] [extras] ... [N spin]
         tower_opts = QWidget()
         to_vl = QVBoxLayout(tower_opts)
         to_vl.setContentsMargins(0, 0, 0, 0)
         to_vl.setSpacing(4)
 
         cur_mode = self._config.bc_tower_mode
+        mode_seg = _SegmentedControl(
+            [("Overall", 0), ("Multiclass", 1), ("Class", 2)], current=cur_mode,
+        )
+        mode_seg.currentChanged.connect(self._on_bc_tower_mode)
+        self._bc_tower_mode_seg = mode_seg
+        to_vl.addWidget(mode_seg)
+
+        def _dim_lbl(t: str) -> QLabel:
+            lbl2 = QLabel(t)
+            lbl2.setStyleSheet(f"color:{T.DIM};font-size:11px;")
+            return lbl2
 
         def _cnt_spin(attr_name: str, spin_attr: str, mn: int, mx: int, val: int) -> QSpinBox:
             sp = QSpinBox()
@@ -1298,26 +1373,13 @@ QCheckBox::indicator:checked {{
             setattr(self, spin_attr, sp)
             return sp
 
-        _dim_lbl = lambda t: (lambda l: (l.setStyleSheet(f"color:{T.DIM};font-size:11px;"), l)[1])(QLabel(t))
-
-        # Ligne de boutons horizontale — Overall / Multiclass / Class
-        btn_row = QHBoxLayout(); btn_row.setSpacing(4)
-        btns: list[QPushButton] = []
-        for i, label in enumerate(("Overall", "Multiclass", "Class")):
-            b = QPushButton(label); b.setFixedHeight(22)
-            b.setStyleSheet(_SS_SEG_ON if cur_mode == i else _SS_SEG_OFF)
-            b.clicked.connect(lambda _, idx=i: self._on_bc_tower_mode(idx))
-            btn_row.addWidget(b); btns.append(b)
-        to_vl.addLayout(btn_row)
-
-        # Lignes de spinner — une par mode, on affiche seulement celle du mode actif
-        def _spin_row(lbl: str, attr: str, spin_attr: str, mn: int, mx: int, val: int) -> QWidget:
-            w = QWidget()
-            hl = QHBoxLayout(w); hl.setContentsMargins(0, 0, 0, 0); hl.setSpacing(4)
-            hl.addWidget(_dim_lbl(lbl))
-            hl.addWidget(_cnt_spin(attr, spin_attr, mn, mx, val))
-            hl.addStretch()
-            return w
+        def _spin_row(lbl2: str, attr: str, spin_attr: str, mn: int, mx: int, val: int) -> QWidget:
+            row = QWidget()
+            hl2 = QHBoxLayout(row); hl2.setContentsMargins(0, 0, 0, 0); hl2.setSpacing(4)
+            hl2.addWidget(_dim_lbl(lbl2))
+            hl2.addWidget(_cnt_spin(attr, spin_attr, mn, mx, val))
+            hl2.addStretch()
+            return row
 
         spin0 = _spin_row("Number of drivers:", "bc_tower_count_overall",   "_bc_count_ovr_spin", 3, 30,
                           self._config.bc_tower_count_overall)
@@ -1334,57 +1396,55 @@ QCheckBox::indicator:checked {{
         spin_pc.setVisible(cur_mode in (0, 2))
         to_vl.addWidget(spin_pc)
 
-        self._bc_tower_mode_btns  = btns
-        self._bc_tower_spin_rows  = [spin0, spin1, spin2]
-        self._bc_parade_count_spin = spin_pc
-        vl.addWidget(tower_opts)
+        self._bc_tower_spin_rows = [spin0, spin1, spin2]
+        layout.addWidget(tower_opts)
 
         # Live Timing button
         lt_btn = QPushButton("Open Live Timing Panel")
         lt_btn.setFixedHeight(24)
         lt_btn.setStyleSheet(_SS_BTN)
         lt_btn.clicked.connect(self.open_live_timing.emit)
-        vl.addWidget(lt_btn)
-        vl.addWidget(_sep())
+        layout.addWidget(lt_btn)
+        layout.addWidget(_sep())
 
-        # ── BATTLE ─────────────────────────────────────────────────────
-        battle_hdr, battle_tog = _section("Battle", "_bc_battle_toggle",
-                                          self._config.bc_battle_enabled)
+        # ── BATTLE / DRIVER CARD / SECTORS — mutually exclusive ─────────
+        battle_hdr, battle_tog = self._make_bc_section_header(
+            "Battle", self._config.bc_battle_enabled)
+        self._bc_battle_toggle = battle_tog
         battle_tog.toggled.connect(self._on_bc_battle_toggle)
-        vl.addWidget(battle_hdr)
+        layout.addWidget(battle_hdr)
+        layout.addWidget(_sep())
 
-        vl.addWidget(_sep())
-
-        # ── DRIVER CARD ────────────────────────────────────────────────
-        driver_hdr, driver_tog = _section("Driver Card", "_bc_driver_toggle",
-                                          self._config.bc_driver_enabled)
+        driver_hdr, driver_tog = self._make_bc_section_header(
+            "Driver Card", self._config.bc_driver_enabled)
+        self._bc_driver_toggle = driver_tog
         driver_tog.toggled.connect(self._on_bc_driver_toggle)
-        vl.addWidget(driver_hdr)
+        layout.addWidget(driver_hdr)
+        layout.addWidget(_sep())
 
-        vl.addWidget(_sep())
-
-        # ── SECTORS (QUALIFYING) ────────────────────────────────────────
-        sectors_hdr, sectors_tog = _section("Sectors", "_bc_sectors_toggle",
-                                            self._config.bc_sectors_enabled)
+        sectors_hdr, sectors_tog = self._make_bc_section_header(
+            "Sectors", self._config.bc_sectors_enabled)
+        self._bc_sectors_toggle = sectors_tog
         sectors_tog.toggled.connect(self._on_bc_sectors_toggle)
-        vl.addWidget(sectors_hdr)
+        layout.addWidget(sectors_hdr)
 
-        vl.addStretch()
-        self._refresh_bc_ui()
-        return w
+        # Replaces the 3x-duplicated manual exclusivity that used to live
+        # inside _on_bc_battle_toggle / _on_bc_driver_toggle / _on_bc_sectors_toggle.
+        _ExclusiveOnOffGroup([battle_tog, driver_tog, sectors_tog])
 
     # ── Broadcast handlers ─────────────────────────────────────────────
 
     def _refresh_bc_ui(self) -> None:
-        active = self._config.stream_active
-        if self._bc_no_stream_lbl:
-            self._bc_no_stream_lbl.setVisible(not active)
+        server_running = self._stream_manager.is_running if self._stream_manager else False
         if self._bc_url_lbl:
             port = self._config.stream_port
             self._bc_url_lbl.setText(
-                f"http://localhost:{port}/broadcast" if active else ""
+                f"http://localhost:{port}/broadcast" if server_running else ""
             )
-            self._bc_url_lbl.setVisible(active)
+            self._bc_url_lbl.setVisible(server_running)
+        # Broadcast graphics are independent of Stream (see _sync_stream_server) —
+        # every section toggle here always works on its own, whether or not
+        # the Stream section is also on.
 
     def _copy_broadcast_url(self) -> None:
         url = f"http://localhost:{self._config.stream_port}/broadcast"
@@ -1401,54 +1461,51 @@ QCheckBox::indicator:checked {{
             rest_merge.start()
         else:
             rest_merge.stop()
+        self._sync_stream_server()
+        self._refresh_stream_ui()
+        self._refresh_bc_ui()
 
     def _on_bc_tower_toggle(self, checked: bool) -> None:
         self._config.bc_tower_enabled = checked
         self._config.save()
         if self._stream_manager:
             self._stream_manager.set_widget_enabled("bc_tower", checked)
+        self._sync_stream_server()
+        self._refresh_stream_ui()
+        self._refresh_bc_ui()
 
     def _on_bc_battle_toggle(self, checked: bool) -> None:
-        if checked:
-            if self._bc_driver_toggle  and self._bc_driver_toggle.isChecked():
-                self._bc_driver_toggle.setChecked(False)
-            if self._bc_sectors_toggle and self._bc_sectors_toggle.isChecked():
-                self._bc_sectors_toggle.setChecked(False)
         self._config.bc_battle_enabled = checked
         self._config.save()
         if self._stream_manager:
             self._stream_manager.set_widget_enabled("bc_battle", checked)
+        self._sync_stream_server()
+        self._refresh_stream_ui()
+        self._refresh_bc_ui()
 
     def _on_bc_driver_toggle(self, checked: bool) -> None:
-        if checked:
-            if self._bc_battle_toggle  and self._bc_battle_toggle.isChecked():
-                self._bc_battle_toggle.setChecked(False)
-            if self._bc_sectors_toggle and self._bc_sectors_toggle.isChecked():
-                self._bc_sectors_toggle.setChecked(False)
         self._config.bc_driver_enabled = checked
         self._config.save()
         if self._stream_manager:
             self._stream_manager.set_widget_enabled("bc_driver", checked)
+        self._sync_stream_server()
+        self._refresh_stream_ui()
+        self._refresh_bc_ui()
 
     def _on_bc_sectors_toggle(self, checked: bool) -> None:
-        if checked:
-            if self._bc_battle_toggle and self._bc_battle_toggle.isChecked():
-                self._bc_battle_toggle.setChecked(False)
-            if self._bc_driver_toggle  and self._bc_driver_toggle.isChecked():
-                self._bc_driver_toggle.setChecked(False)
         self._config.bc_sectors_enabled = checked
         self._config.save()
         if self._stream_manager:
             self._stream_manager.set_widget_enabled("bc_sectors", checked)
+        self._sync_stream_server()
+        self._refresh_stream_ui()
+        self._refresh_bc_ui()
 
     def _on_bc_tower_mode(self, idx: int) -> None:
-        if self._bc_tower_mode_btns:
-            for i, btn in enumerate(self._bc_tower_mode_btns):
-                btn.setStyleSheet(_SS_SEG_ON if i == idx else _SS_SEG_OFF)
         if self._bc_tower_spin_rows:
             for i, row in enumerate(self._bc_tower_spin_rows):
                 row.setVisible(i == idx)
-        if hasattr(self, "_bc_parade_count_spin"):
+        if self._bc_parade_count_spin is not None:
             self._bc_parade_count_spin.setVisible(idx in (0, 2))
         self._config.bc_tower_mode = idx
         self._config.save()
@@ -1467,9 +1524,6 @@ QCheckBox::indicator:checked {{
         self._config.bc_tower_show_team = show_team
         if self._bc_state:
             self._bc_state.show_team = show_team
-        if self._bc_name_drv_btn and self._bc_name_team_btn:
-            self._bc_name_drv_btn.setStyleSheet(_SS_SEG_ON if not show_team else _SS_SEG_OFF)
-            self._bc_name_team_btn.setStyleSheet(_SS_SEG_ON if show_team else _SS_SEG_OFF)
         self._config.save()
 
     def _on_bc_class_changed(self, _idx: int) -> None:
@@ -1581,11 +1635,3 @@ QCheckBox::indicator:checked {{
             fc.set_merge(enabled)
         if vc:
             vc.set_merge(enabled)
-
-
-def _sep() -> QFrame:
-    line = QFrame()
-    line.setFrameShape(QFrame.Shape.HLine)
-    line.setFrameShadow(QFrame.Shadow.Plain)
-    line.setStyleSheet("color: rgba(255,255,255,0.08);")
-    return line

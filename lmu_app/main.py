@@ -5,6 +5,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QApplication
 from lmu_app.api.reader import DataReader
+from lmu_app.calc.ext.rest_merge import rest_merge
 from lmu_app.config import AppConfig
 from lmu_app.widgets.speed import SpeedWidget
 from lmu_app.widgets.inputs import InputsWidget
@@ -30,7 +31,7 @@ _FONTS = [
     "SairaSemiCondensed-Bold.ttf",
 ]
 
-APP_VERSION = "0.8.0"
+APP_VERSION = "1.0.0"
 _LOGO = "lmu_app_logo.svg"
 LOG_PATH = None   # set by _log_handlers()
 
@@ -209,11 +210,12 @@ def main() -> int:
     reader.start()
 
     # REST (localhost:6397) starts unconditionally as part of reader.start()
-    # on this build (see calc/module_control.py) — keep the Broadcast tab's
-    # on/off switch honest about that from the first frame, regardless of
-    # whatever was last saved.
-    config.broadcast_active = True
-    config.save()
+    # (see calc/module_control.py) regardless of the Broadcast toggle — stop
+    # it again immediately if the user had it off last session, so the
+    # toggle's saved state actually persists instead of forcing it back on
+    # every launch (which is what used to happen here).
+    if not config.broadcast_active:
+        rest_merge.stop()
 
     fuel_calc_w = FuelCalcWidget(auto_hide=False)
     ve_calc_w   = VECalcWidget(auto_hide=False)
@@ -307,7 +309,17 @@ def main() -> int:
     stream_manager.set_widget_enabled("bc_driver",  config.bc_driver_enabled)
     stream_manager.set_widget_enabled("bc_sectors", config.bc_sectors_enabled)
 
-    if config.stream_active:
+    # The OBS server is shared infrastructure between Stream and Broadcast
+    # (see MainWindow._sync_stream_server) — resume it on launch if either
+    # was left on. Deliberately NOT keyed on config.broadcast_active: that
+    # flag is forced True a few lines above regardless of what was saved
+    # (see comment there), so using it here would start this server on every
+    # launch even for someone who never streams.
+    broadcast_graphics_enabled = (
+        config.bc_tower_enabled or config.bc_battle_enabled
+        or config.bc_driver_enabled or config.bc_sectors_enabled
+    )
+    if config.stream_active or broadcast_graphics_enabled:
         stream_manager.start(config.stream_port)
 
     main_win = MainWindow(config, widget_entries, reader=reader,

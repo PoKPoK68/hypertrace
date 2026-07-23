@@ -33,7 +33,14 @@
       "Read(//c/Users/matte/AppData/Local/Temp/claude/c--LMUApp-lmuapp/639c8267-0ab1-45d0-af52-a3bbd90e8bd6/scratchpad/tinypedal_ref/tinypedal/adapter/**)",
       "Read(//c/Users/matte/AppData/Local/Temp/claude/c--LMUApp-lmuapp/639c8267-0ab1-45d0-af52-a3bbd90e8bd6/scratchpad/tinypedal_ref/tinypedal/**)",
       "Bash(python -m py_compile lmu_app/calc/lmu_connector.py lmu_app/calc/api.py)",
-      "Read(//c/Users/matte/AppData/Local/Temp/claude/c--LMUApp-lmuapp/639c8267-0ab1-45d0-af52-a3bbd90e8bd6/scratchpad/tinypedal_ref/tinypedal/module/**)"
+      "Read(//c/Users/matte/AppData/Local/Temp/claude/c--LMUApp-lmuapp/639c8267-0ab1-45d0-af52-a3bbd90e8bd6/scratchpad/tinypedal_ref/tinypedal/module/**)",
+      "Bash(python -m py_compile lmu_app/ui/main_window_controls.py lmu_app/utils/theme.py)",
+      "Bash(python -m py_compile lmu_app/ui/main_window.py lmu_app/ui/main_window_controls.py lmu_app/utils/theme.py)",
+      "Bash(.venv/Scripts/python.exe \"C:/Users/matte/AppData/Local/Temp/claude/c--LMUApp-lmuapp/639c8267-0ab1-45d0-af52-a3bbd90e8bd6/scratchpad/render_mainwindow.py\")",
+      "Bash(python -m py_compile lmu_app/ui/main_window.py lmu_app/ui/main_window_controls.py)",
+      "Bash(python -m py_compile lmu_app/ui/main_window.py)",
+      "Bash(rm -rf build/LMUApp dist/LMUApp)",
+      "Bash(.venv/Scripts/pyinstaller.exe LMUApp.spec --noconfirm)"
     ],
     "additionalDirectories": [
       "\\mnt\\c\\LMUApp\\lmuapp\\lmu_app"

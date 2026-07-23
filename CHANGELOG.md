@@ -4,13 +4,27 @@ All notable changes to LMU App are documented here.
 
 ---
 
-## [0.8.0] — work in progress
+## [1.0.0] — work in progress
+
+*(0.8.0 was never released publicly — its changes are folded in below, all counted against 0.7.2.)*
 
 ### New: Damage overlay
 - **New "Damage" widget** — top-down car silhouette (design handoff: `design_handoff_damage_overlay`), 17 zones total: 4 body edges + 4 corners, 4 wheels, 4 suspension wishbones, and the rear wing as its own zone. Each zone is coloured on a 4-level severity scale (grey/amber/orange/bright red for the most severe level).
 - **Wheels** show detached/punctured state; **suspension** shows REST-only damage tiers; **body zones and the rear wing** are shared memory. No text or numeric readout — the silhouette is the whole display, matching the design spec.
 - Suspension damage is the one REST-only signal here — LMU has no shared-memory equivalent for it — so it's only available on this build; the without-rest-api build shows the same widget without that one zone lighting up (always neutral grey there).
 - **Not finished** — zone mapping still needs to be checked against real in-game damage before this is considered final.
+
+### Main window redesign
+- **Sidebar layout** — the window is now a wider (560px) panel with a navigation rail on the left (Overlays / Presets / Stream / Broadcast, active page marked with an amber bar) instead of the old top tabs, in the style of typical sim-racing companion apps.
+- **Header bar** — app name and version always visible at the top, on every page.
+- **Status footer** — a permanent strip at the bottom shows at a glance whether the game is connected, the stream is on, and broadcast is on.
+- **Global controls grouped** — Lock/Free, garage visibility and Merge Fuel & VE now live in a visually distinct "Global controls" card at the top of the Overlays page.
+- **One single preset control** — a dropdown to switch, plus Save / Save As, at the bottom of the Overlays page; the active preset is also highlighted in the Presets page list.
+- **Deleting a preset now asks for confirmation** — the trash button arms on first click (turns solid red, "click again to delete permanently") and only deletes on a second click within 2.5 seconds; it disarms by itself otherwise. No popup dialog.
+- The window now sizes itself to the actual content of the active page instead of always reserving the height of the tallest one.
+- **Stream and Broadcast are now fully independent** — separate pages, and turning on either one starts the local OBS server on its own right away; Broadcast no longer needs Stream to be on first, and each keeps its own on/off state.
+- **Fixed Broadcast settings resetting on every launch** — the app was force-resetting that toggle to on at startup regardless of what was saved; it now stays exactly as you left it.
+- Internal: the window's small custom controls moved to their own module (`main_window_controls.py`), the hand-rolled segmented buttons and the triple-duplicated Battle/Driver Card/Sectors exclusivity were replaced by two small reusable components, and the toggle colors moved into the central theme.
 
 ---
 
