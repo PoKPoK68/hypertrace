@@ -11,6 +11,7 @@ from lmu_app.widgets.inputs import InputsWidget
 from lmu_app.widgets.standings import StandingsWidget
 from lmu_app.widgets.relative import RelativeWidget
 from lmu_app.widgets.tyres import TyresWidget
+from lmu_app.widgets.damage import DamageWidget
 from lmu_app.widgets.fuel_calc import FuelCalcWidget
 from lmu_app.widgets.ve_calc import VECalcWidget
 from lmu_app.widgets.weather import WeatherWidget
@@ -30,7 +31,7 @@ _FONTS = [
     "SairaSemiCondensed-Bold.ttf",
 ]
 
-APP_VERSION = "0.7.2"
+APP_VERSION = "0.8.0"
 _LOGO = "lmu_app_logo.svg"
 LOG_PATH = None   # set by _log_handlers()
 
@@ -212,6 +213,7 @@ def main() -> int:
     ve_calc_w   = VECalcWidget(auto_hide=False)
 
     widget_entries: list[tuple[str, object]] = [
+        ("damage",     DamageWidget(auto_hide=False)),
         ("delta",      DeltaWidget(auto_hide=False)),
         ("fuel_calc",  fuel_calc_w),
         ("inputs",     InputsWidget(auto_hide=False)),
@@ -253,6 +255,7 @@ def main() -> int:
     stream_manager = StreamManager(reader)
 
     _stream_classes = [
+        ("damage",    DamageWidget),
         ("delta",     DeltaWidget),
         ("fuel_calc", FuelCalcWidget),
         ("inputs",    InputsWidget),

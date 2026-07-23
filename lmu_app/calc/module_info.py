@@ -142,6 +142,25 @@ class WheelsInfo:
 
 
 @dataclass
+class DamageInfo:
+    """Raw damage facts — the Damage widget maps these to its own 0-3
+    severity/colour scale itself, this stays close to the telemetry.
+
+    bodySeverity: 8 zones, ordered FL, FC, FR, CL, CR, RL, RC, RR (see
+    calc/api.py Damage.body_severity). wheelDetached/tyrePuncture/
+    rearWingDetached: shared memory. suspensionDamage (FL, FR, RL, RR
+    fractions): REST-only (calc/ext/rest_merge.py) — no shared-memory
+    equivalent exists for LMU (see project memory). -1.0 per wheel means
+    "no data yet" (REST off, or the build doesn't poll it), not "no damage".
+    """
+    bodySeverity: list[int] = field(default_factory=lambda: [0] * 8)
+    wheelDetached: list[bool] = field(default_factory=lambda: [False] * 4)
+    tyrePuncture: list[bool] = field(default_factory=lambda: [False] * 4)
+    rearWingDetached: bool = False
+    suspensionDamage: list[float] = field(default_factory=lambda: [-1.0] * 4)
+
+
+@dataclass
 class StintInfo:
     """`resetCount` increments on every detected session reset/restart —
     widgets store the last value they saw and compare with `!=` each tick,
@@ -178,6 +197,7 @@ class ModuleInfo:
     energy: EnergyInfo     = field(default_factory=EnergyInfo)
     hybrid: HybridInfo     = field(default_factory=HybridInfo)
     wheels: WheelsInfo     = field(default_factory=WheelsInfo)
+    damage: DamageInfo     = field(default_factory=DamageInfo)
     stint: StintInfo       = field(default_factory=StintInfo)
     session: SessionInfo   = field(default_factory=SessionInfo)
     player: PlayerTelemetryInfo = field(default_factory=PlayerTelemetryInfo)

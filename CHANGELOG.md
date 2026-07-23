@@ -4,6 +4,15 @@ All notable changes to LMU App are documented here.
 
 ---
 
+## [0.8.0] — work in progress
+
+### New: Damage overlay
+- **New "Damage" widget** — top-down car silhouette (design handoff: `design_handoff_damage_overlay`), 17 zones total: 4 body edges + 4 corners, 4 wheels, 4 suspension wishbones, and the rear wing as its own zone. Each zone is coloured on a 4-level severity scale (grey/amber/orange/bright red for the most severe level). No text or numeric readout — the silhouette is the whole display.
+- Body zones, wheels and the rear wing come from shared memory and always work. **Suspension damage is REST-only** (LMU has no shared-memory equivalent for it) — on this build REST is off by default, so those 4 zones stay neutral grey unless you turn the Broadcast tab's toggle on, same as weather forecast and Live Timing already work here.
+- **Not finished** — zone mapping still needs to be checked against real in-game damage before this is considered final.
+
+---
+
 ## [0.7.2]
 
 ### Widget settings
