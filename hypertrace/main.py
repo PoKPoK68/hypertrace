@@ -5,7 +5,6 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QApplication
 from hypertrace.api.reader import DataReader
-from hypertrace.calc.ext.rest_merge import rest_merge
 from hypertrace.config import AppConfig
 from hypertrace.widgets.speed import SpeedWidget
 from hypertrace.widgets.inputs import InputsWidget
@@ -210,12 +209,11 @@ def main() -> int:
     reader.start()
 
     # REST (localhost:6397) starts unconditionally as part of reader.start()
-    # (see calc/module_control.py) regardless of the Broadcast toggle — stop
-    # it again immediately if the user had it off last session, so the
-    # toggle's saved state actually persists instead of forcing it back on
-    # every launch (which is what used to happen here).
-    if not config.broadcast_active:
-        rest_merge.stop()
+    # (see calc/module_control.py) and stays on for the whole session — this
+    # is the full build, where REST enrichment (car numbers, team names,
+    # weather forecast, suspension damage) is always available regardless of
+    # whether Broadcast is on. The without-rest-api build is the one that
+    # only starts REST when Broadcast is on.
 
     fuel_calc_w = FuelCalcWidget(auto_hide=False)
     ve_calc_w   = VECalcWidget(auto_hide=False)
