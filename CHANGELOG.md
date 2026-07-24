@@ -4,7 +4,7 @@ All notable changes to HyperTrace (formerly LMU App) are documented here.
 
 ---
 
-## [1.0.0] — work in progress
+## [1.0.0] — Renamed to HyperTrace
 
 *(0.8.0 was never released publicly — its changes are folded in below, all counted against 0.7.2.)*
 
@@ -44,6 +44,10 @@ All notable changes to HyperTrace (formerly LMU App) are documented here.
 
 ### Class badges
 - **LMP2 and LMP3 now show their full names** instead of "P2"/"P3" wherever a class badge appears.
+
+### Under the hood
+- **REST enrichment no longer runs when there's nothing to enrich** — the background thread that queries LMU's local API (car numbers, team names, class gaps, weather forecast, suspension damage) used to send requests five times a second even with the game closed, on a loading screen or alt-tabbed. It now waits until a session is actually live.
+- **Third-party attribution** — the app now ships a `THIRD_PARTY_NOTICES.md` crediting the GPLv3 project the calc engine and the overlay update loop are adapted from.
 
 ---
 
