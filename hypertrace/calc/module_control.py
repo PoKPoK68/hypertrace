@@ -10,6 +10,11 @@ modules above, it's the one thing in this app that makes network calls
 forecast included — see widgets/weather.py's empty-forecast fallback). It's
 only ever needed by the broadcast/live-timing tooling, so its lifecycle is
 tied to the Stream tab's on/off toggle instead (main.py, main_window.py).
+
+For the same reason this build never calls `rest_merge.pin()` — that's the
+full build's way of making the Broadcast toggle's `stop()` a no-op, because
+there REST also feeds the desktop overlays. Here `stop()` must genuinely
+stop, so nothing is pinned and `force=True` below is merely explicit.
 """
 from __future__ import annotations
 
@@ -43,7 +48,7 @@ class ModuleControl:
         logger.info("calc: all modules started")
 
     def stop(self) -> None:
-        rest_merge.stop()
+        rest_merge.stop(force=True)   # nothing is pinned on this build — explicit for parity
         for inst in self._instances:
             inst.stop()
         state_control.stop()
