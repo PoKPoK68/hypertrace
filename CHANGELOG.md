@@ -1,12 +1,15 @@
 # Changelog
 
-All notable changes to LMU App are documented here.
+All notable changes to HyperTrace (formerly LMU App) are documented here.
 
 ---
 
 ## [1.0.0] — work in progress
 
 *(0.8.0 was never released publicly — its changes are folded in below, all counted against 0.7.2.)*
+
+### Renamed: LMU App → HyperTrace
+- The app is now called **HyperTrace**, with a new icon. Settings/logs moved from `~/.lmuapp/` to `~/.hypertrace/` (existing settings under the old path aren't carried over automatically).
 
 ### New: Damage overlay
 - **New "Damage" widget** — top-down car silhouette (design handoff: `design_handoff_damage_overlay`), 17 zones total: 4 body edges + 4 corners, 4 wheels, 4 suspension wishbones, and the rear wing as its own zone. Each zone is coloured on a 4-level severity scale (grey/amber/orange/bright red for the most severe level).
@@ -18,13 +21,29 @@ All notable changes to LMU App are documented here.
 - **Sidebar layout** — the window is now a wider (560px) panel with a navigation rail on the left (Overlays / Presets / Stream / Broadcast, active page marked with an amber bar) instead of the old top tabs, in the style of typical sim-racing companion apps.
 - **Header bar** — app name and version always visible at the top, on every page.
 - **Status footer** — a permanent strip at the bottom shows at a glance whether the game is connected, the stream is on, and broadcast is on.
-- **Global controls grouped** — Lock/Free, garage visibility and Merge Fuel & VE now live in a visually distinct "Global controls" card at the top of the Overlays page.
+- **Global controls grouped** — Lock/Free, Auto-hide and Merge Fuel & VE now live in a visually distinct "Global controls" card at the top of the Overlays page.
 - **One single preset control** — a dropdown to switch, plus Save / Save As, at the bottom of the Overlays page; the active preset is also highlighted in the Presets page list.
 - **Deleting a preset now asks for confirmation** — the trash button arms on first click (turns solid red, "click again to delete permanently") and only deletes on a second click within 2.5 seconds; it disarms by itself otherwise. No popup dialog.
 - The window now sizes itself to the actual content of the active page instead of always reserving the height of the tallest one.
 - **Stream and Broadcast are now fully independent** — separate pages, and turning on either one starts the local OBS server on its own right away; Broadcast no longer needs Stream to be on first, and each keeps its own on/off state.
 - **Fixed Broadcast settings resetting on every launch** — the app was force-resetting that toggle to on at startup regardless of what was saved; it now stays exactly as you left it.
+- **Tower is now off by default** on a fresh install, matching Battle/Driver Card/Sectors (it used to be the only one of the four turned on automatically).
+- **Each preset is now its own file**, under a new `presets/` folder next to the config, instead of all being bundled together inside the main config file — easier to back up, share, or edit a single preset by hand.
 - Internal: the window's small custom controls moved to their own module (`main_window_controls.py`), the hand-rolled segmented buttons and the triple-duplicated Battle/Driver Card/Sectors exclusivity were replaced by two small reusable components, and the toggle colors moved into the central theme.
+
+### Fuel & VE Calculators
+- **Fixed REFUEL showing absurd values** (a long race with a low-consumption class could show a refuel amount many times over 100%). REFUEL now shows what actually makes sense to add at your *next* stop, capped to what the tank can hold; the old "FINISH" column is now **"TO END"** and shows the *total* amount still needed for the rest of the race, uncapped — which is what could grow that large, just correctly labeled now.
+- **New "TANKS" column** — number of full tanks/refills still needed to reach the end of the race, e.g. 400L needed with a 50L tank reads "8.0". Shown alongside "TO END".
+- **REFUEL and TO END now also work in Practice and Qualifying**, not just Race.
+- **More accurate numbers overall** — LAST and AVG 5 now read each lap's consumption from the same background engine that already ran everything else in the app, instead of a simpler estimate computed inside the widget itself. Laps remaining now accounts for exactly where you are on the current lap rather than rounding to the nearest whole lap.
+- **Fixed the VE bar always showing green regardless of level** — it now turns orange under 25% and red under 10%, matching the VE column in Standings.
+
+### New: Auto-hide (replaces "Hide in garage")
+- New **Auto-hide** toggle in Global Controls (Overlays page) — when on, every overlay hides automatically unless you're actively driving on track, same as the game's own on-track detection. Off by default.
+- **Replaces the old "Hide in garage" toggle**, which is now removed for desktop overlays — Auto-hide already covers the garage case and more (menus, replays, anywhere you're not actually driving). The Stream page keeps its own separate "Hide in garage" toggle, unaffected.
+
+### Class badges
+- **LMP2 and LMP3 now show their full names** instead of "P2"/"P3" wherever a class badge appears.
 
 ---
 
@@ -57,14 +76,14 @@ All notable changes to LMU App are documented here.
 - **Fixed overlays staying visible after being kicked back to the main menu** (e.g. a practice session with no qualifying/race after it), without hiding them early while still on track when a practice session's timer simply reaches zero. Visibility now checks whether the session clock is still actually advancing, instead of a session-phase flag that also flips the moment the timer runs out while still driving.
 
 ### Standings & Relative
-- **Fixed remote opponents showing a PIT badge in multiplayer while clearly on track.** Per-car telemetry isn't reliably synced for remote vehicles over the network; the pit-lane detection for other cars now relies on the same single, more reliable field TinyPedal itself uses for opponents, instead of also factoring in telemetry data. The player's own pit-lane detection is unchanged.
+- **Fixed remote opponents showing a PIT badge in multiplayer while clearly on track.** Per-car telemetry isn't reliably synced for remote vehicles over the network; the pit-lane detection for other cars now relies on a single, more reliable field instead of also factoring in telemetry data. The player's own pit-lane detection is unchanged.
 
 ---
 
 ## [0.7.0] — Data & rendering engine rewrite
 
 ### Engine
-- **The telemetry/calculation engine has been rebuilt on TinyPedal's architecture** (s-victor/TinyPedal, open source). Data reading, session detection, delta/fuel/VE calculations, standings/relative gaps, and the overlay update/visibility engine are now ported from TinyPedal's proven implementation instead of this app's own hand-rolled logic. The visual design, layout, colors, fonts and all settings of every overlay are unchanged — only what's underneath changed.
+- **The telemetry/calculation engine has been rebuilt on a more robust, modular architecture.** Data reading, session detection, delta/fuel/VE calculations, standings/relative gaps, and the overlay update/visibility engine now run on proven patterns instead of this app's own earlier hand-rolled logic (see `THIRD_PARTY_NOTICES.md` for the open-source reference this was adapted from). The visual design, layout, colors, fonts and all settings of every overlay are unchanged — only what's underneath changed.
 - Fixes several long-standing sources of fragility this way: session-reset detection (used to reset fuel/VE history, outlap/pit badges) is now based on a robust signal instead of a heuristic; the local player's telemetry is now matched by car ID instead of trusting a raw index, which is more reliable when the game reorders internal arrays; on-track detection now reflects actually driving (ignition/realtime state) rather than just "a session is running".
 - Per-car sector times (used for gap columns) now come directly from shared memory instead of a slower REST poll — one less thing relying on the REST API to work.
 
