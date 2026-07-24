@@ -335,7 +335,11 @@ class MainWindow(QWidget):
         body_hl.setSpacing(8)
 
         rail = QWidget()
-        rail.setFixedWidth(104)
+        # 116, not 104: "BROADCAST" at 11px bold uppercase with 1px letter
+        # spacing needs 82px, and the nav button spends 22px on padding plus a
+        # 3px accent border-left — 104 left only 79px and clipped the word once
+        # the main window switched from JetBrains Mono to the wider Montserrat.
+        rail.setFixedWidth(116)
         rail_vl = QVBoxLayout(rail)
         rail_vl.setContentsMargins(0, 4, 0, 0)
         rail_vl.setSpacing(2)
@@ -565,7 +569,7 @@ class MainWindow(QWidget):
         save_btn.clicked.connect(self._save_current_preset)
         hl.addWidget(save_btn)
 
-        saveas_btn = QPushButton("Save As…")
+        saveas_btn = QPushButton("Save As")
         saveas_btn.setFixedSize(72, 22)
         saveas_btn.setStyleSheet(_SS_BTN)
         saveas_btn.clicked.connect(self._toggle_saveas_row)
@@ -832,12 +836,12 @@ class MainWindow(QWidget):
             self._refresh_preset_chrome()
 
     def _wire_delete_button(self, btn: QPushButton, name: str) -> None:
-        """Delete confirmation via "click again", not a modal QMessageBox —
-        matches the app's existing micro-feedback pattern (buttons that
-        briefly show "✓ Copied"), just inverted: this arms a destructive
-        action instead of confirming a completed one, and stays armed longer
-        (2.5s) since it's waiting on a decision rather than acknowledging a
-        fact."""
+        """Two-step delete, no modal QMessageBox. First click arms the button:
+        the trash icon becomes a check (✓) that says "confirm" instead of the
+        same trash asking to be clicked again — the swap makes the second click
+        read as a deliberate confirmation, not a repeat. Stays armed 2.5s, then
+        reverts to the trash on its own. Same micro-feedback family as the
+        "✓ Copied" buttons, inverted to arm a destructive action."""
         state = {"armed": False}
 
         def _revert() -> None:
@@ -845,6 +849,7 @@ class MainWindow(QWidget):
                 return
             state["armed"] = False
             try:
+                btn.setIcon(QIcon(_trash_svg))
                 btn.setStyleSheet(_SS_BTN_DANGER)
                 btn.setToolTip("Delete")
             except RuntimeError:
@@ -853,8 +858,9 @@ class MainWindow(QWidget):
         def _click() -> None:
             if not state["armed"]:
                 state["armed"] = True
+                btn.setIcon(QIcon(_check_svg))
                 btn.setStyleSheet(_SS_BTN_DANGER_ARMED)
-                btn.setToolTip("Click again to delete permanently")
+                btn.setToolTip("Click the check to delete permanently")
                 QTimer.singleShot(2500, _revert)
             else:
                 self._delete_preset(name)
@@ -899,7 +905,7 @@ class MainWindow(QWidget):
             hl.addWidget(inline_edit, 1)
 
             load_btn = QPushButton("Load")
-            load_btn.setFixedSize(44, 22)
+            load_btn.setFixedSize(54, 22)   # 44 clipped in Montserrat (padding+border eat 18px)
             load_btn.setStyleSheet(_SS_BTN)
             load_btn.clicked.connect(lambda _, n=name: self._load_preset(n))
             hl.addWidget(load_btn)
