@@ -46,6 +46,7 @@ _WEATHER_URL = f"{_REST_BASE}/rest/sessions/weather"
 _WEATHER_NODES = ["START", "NODE_25", "NODE_50", "NODE_75", "FINISH"]
 _DAMAGE_INTERVAL = 0.5
 _DAMAGE_URL = f"{_REST_BASE}/rest/garage/UIScreen/RepairAndRefuel"
+_IDLE_INTERVAL = 1.0        # while not live — see the gate in _loop()
 
 
 def _weather_outer_key(session_type: int) -> str:
@@ -120,6 +121,18 @@ class RestMerge:
         wx_last_session: int | None = None
 
         while self._running:
+            # Same gate every calc module uses (realtime_state.live), for the
+            # same reason plus one of its own: there is nothing to enrich
+            # while module_vehicles isn't refreshing `minfo.vehicles.dataSet`
+            # either, and on the full build this thread starts with the app —
+            # so without this it would hit localhost:6397 five times a second
+            # for as long as the app sits open with LMU closed. `live` rather
+            # than `active`: enrichment must keep flowing in the garage and
+            # in the pits, exactly like the modules it feeds.
+            if not realtime_state.live:
+                time.sleep(_IDLE_INTERVAL)
+                continue
+
             now = time.monotonic()
 
             try:
