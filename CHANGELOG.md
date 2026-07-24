@@ -9,7 +9,7 @@ All notable changes to HyperTrace (formerly LMU App) are documented here.
 *(0.8.0 was never released publicly — its changes are folded in below, all counted against 0.7.2.)*
 
 ### Renamed: LMU App → HyperTrace
-- The app is now called **HyperTrace**, with a new icon. Settings/logs moved from `~/.lmuapp/` to `~/.hypertrace/` (existing settings under the old path aren't carried over automatically).
+- The app is now called **HyperTrace**, with a new icon. Settings/logs moved from `~/.lmuapp/` to `~/.hypertrace/` — **nothing is carried over automatically**: you'll start with default overlay positions and **your presets need to be recreated**. Once you're set up, the old `~/.lmuapp` folder is no longer used and can be safely deleted.
 
 ### New: Damage overlay
 - **New "Damage" widget** — top-down car silhouette (design handoff: `design_handoff_damage_overlay`), 17 zones total: 4 body edges + 4 corners, 4 wheels, 4 suspension wishbones, and the rear wing as its own zone. Each zone is coloured on a 4-level severity scale (grey/amber/orange/bright red for the most severe level).
@@ -20,7 +20,7 @@ All notable changes to HyperTrace (formerly LMU App) are documented here.
 ### Main window redesign
 - **Sidebar layout** — the window is now a wider (560px) panel with a navigation rail on the left (Overlays / Presets / Stream / Broadcast, active page marked with an amber bar) instead of the old top tabs, in the style of typical sim-racing companion apps.
 - **Header bar** — app name and version always visible at the top, on every page.
-- **Status footer** — a permanent strip at the bottom shows at a glance whether the game is connected, the stream is on, and broadcast is on.
+- **Status footer** — a permanent strip at the bottom shows at a glance whether the game is connected, REST enrichment is active, the stream is on, and broadcast is on.
 - **Global controls grouped** — Lock/Free, Auto-hide and Merge Fuel & VE now live in a visually distinct "Global controls" card at the top of the Overlays page.
 - **One single preset control** — a dropdown to switch, plus Save / Save As, at the bottom of the Overlays page; the active preset is also highlighted in the Presets page list.
 - **Deleting a preset now asks for confirmation** — the trash button arms on first click (turns solid red, "click again to delete permanently") and only deletes on a second click within 2.5 seconds; it disarms by itself otherwise. No popup dialog.

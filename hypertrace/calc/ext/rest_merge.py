@@ -74,6 +74,30 @@ class RestMerge:
     def __init__(self) -> None:
         self._running = False
         self._thread: threading.Thread | None = None
+        self._pinned = False
+
+    @property
+    def running(self) -> bool:
+        """Whether the REST polling thread is currently active."""
+        return self._running
+
+    def pin(self) -> None:
+        """Full build only: keep REST running for the whole session.
+
+        The Broadcast master switch (ui/main_window.py) calls stop() on its
+        way off. That is correct on the without-rest-api build, where REST
+        exists *only* to serve Broadcast — but wrong here: on this build REST
+        starts with the calc modules and feeds the desktop overlays too (car
+        number, team name, class gap, weather forecast, suspension damage),
+        none of which have anything to do with Broadcast. Turning Broadcast
+        off would silently blank all of them for the rest of the session.
+
+        Pinning makes stop() a no-op so the shared UI code stays correct on
+        both branches — the difference lives in calc/module_control.py, which
+        is one of the two files allowed to diverge. Shutdown still stops the
+        thread, via stop(force=True) from module_control.
+        """
+        self._pinned = True
 
     def start(self) -> None:
         if self._running:
@@ -82,7 +106,9 @@ class RestMerge:
         self._thread = threading.Thread(target=self._loop, name="LMURestMerge", daemon=True)
         self._thread.start()
 
-    def stop(self) -> None:
+    def stop(self, force: bool = False) -> None:
+        if self._pinned and not force:
+            return
         self._running = False
         if self._thread:
             self._thread.join(timeout=1.0)

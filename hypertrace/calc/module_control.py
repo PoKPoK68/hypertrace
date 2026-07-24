@@ -34,11 +34,15 @@ class ModuleControl:
         state_control.start()
         for inst in self._instances:
             inst.start()
+        # Full build: REST enriches the desktop overlays, not just Broadcast,
+        # so it stays on for the whole session — pin() makes the Broadcast
+        # toggle's stop() a no-op here (see calc/ext/rest_merge.py).
+        rest_merge.pin()
         rest_merge.start()
         logger.info("calc: all modules started")
 
     def stop(self) -> None:
-        rest_merge.stop()
+        rest_merge.stop(force=True)   # shutdown overrides the pin
         for inst in self._instances:
             inst.stop()
         state_control.stop()

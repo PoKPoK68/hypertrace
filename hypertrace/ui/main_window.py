@@ -426,6 +426,7 @@ class MainWindow(QWidget):
         broadcast_on = self._config.broadcast_active
         parts = [
             f"{dot(game)} Game {'connected' if game else 'not running'}",
+            f"{dot(rest_merge.running)} REST {'active' if rest_merge.running else 'off'}",
             f"{dot(self._config.stream_active)} Stream {'on' if self._config.stream_active else 'off'}",
             f"{dot(broadcast_on)} Broadcast {'on' if broadcast_on else 'off'}",
         ]
