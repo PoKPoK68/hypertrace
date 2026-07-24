@@ -75,7 +75,7 @@ def _num_px_cached(px: int) -> QFont:
 
 
 def _num_px(px: int) -> QFont:
-    """Saira SemiCondensed Bold at an explicit pixel size — DPI-independent.
+    """T.F_NUM (Montserrat) Bold at an explicit pixel size — DPI-independent.
     Own font builder (doesn't go through theme.py's num_font), so it needs
     its own cache — a py-spy profile showed this constructing a fresh QFont
     every paintEvent call, bypassing the caching added there."""

@@ -21,13 +21,13 @@ from hypertrace.ui.main_window import MainWindow
 from hypertrace.widgets.broadcast import BroadcastBattle, BroadcastDriverCard, BroadcastSectors, BroadcastState, BroadcastTower
 
 
+# Montserrat is the app's only typeface — text and numbers alike, overlays and
+# windows alike. The JetBrains Mono and Saira SemiCondensed files that used to
+# ship alongside it were dead weight: every one of them loaded at startup, none
+# was ever selected (Montserrat is first here and wins), and together they cost
+# about a megabyte in the release zip.
 _FONTS = [
     "Montserrat-Bold.ttf",
-    "JetBrainsMono-Regular.ttf",
-    "JetBrainsMono-Medium.ttf",
-    "JetBrainsMono-Bold.ttf",
-    "SairaSemiCondensed-SemiBold.ttf",
-    "SairaSemiCondensed-Bold.ttf",
 ]
 
 APP_VERSION = "1.0.0"
@@ -126,8 +126,6 @@ def _load_fonts() -> None:
     from PySide6.QtGui import QFontDatabase
     from hypertrace.utils import theme
     fonts_dir = Path(__file__).parent / "assets" / "fonts"
-    _num_set = False
-    _text_set = False
     for name in _FONTS:
         path = fonts_dir / name
         fid = QFontDatabase.addApplicationFont(str(path))
@@ -138,21 +136,16 @@ def _load_fonts() -> None:
         logging.debug("Loaded font %s → fid=%d families=%s", name, fid, families)
         if not families:
             continue
-        family = families[0]
-        # Take the first file's registered name only — subsequent weights of the
-        # same typeface may register under "Family Bold" / "Family Medium" as
-        # separate families; we want the base family that covers all weights.
-        # Montserrat everywhere. It is proportional, but num_font() enables the
-        # OpenType "tnum" feature so digits keep a fixed advance and columns
-        # stay aligned. JetBrains Mono is only a fallback if it fails to load.
-        if "Montserrat" in name and not _text_set:
-            theme.T.F_TEXT = family
-            theme.T.F_NUM  = family
-            _text_set = _num_set = True
-        elif "JetBrains" in name and not _num_set:
-            theme.T.F_TEXT = family
-            theme.T.F_NUM  = family
-            _num_set = True
+        # Take the first registered name only — further weights of the same
+        # typeface may register under "Family Bold" / "Family Medium" as
+        # separate families; we want the base family that covers them all.
+        # Montserrat is proportional, but num_font() enables the OpenType
+        # "tnum" feature so digits keep a fixed advance and columns stay
+        # aligned. Nothing else is loaded, so nothing else can be picked: if
+        # this ever fails the theme tokens keep naming Montserrat and Qt
+        # substitutes a system font, rather than silently switching the app to
+        # a second bundled typeface that looked deliberate but wasn't.
+        theme.T.F_TEXT = theme.T.F_NUM = families[0]
     logging.debug("Active font tokens — F_TEXT=%r  F_NUM=%r", theme.T.F_TEXT, theme.T.F_NUM)
 
 
