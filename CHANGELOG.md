@@ -22,7 +22,7 @@ All notable changes to HyperTrace (formerly LMU App) are documented here.
 - **Status footer** — a permanent strip at the bottom shows at a glance whether the game is connected, REST enrichment is active, the stream is on, and broadcast is on.
 - **Global controls grouped** — Lock/Free, Auto-hide and Merge Fuel & VE now live in a visually distinct "Global controls" card at the top of the Overlays page.
 - **One single preset control** — a dropdown to switch, plus Save / Save As, at the bottom of the Overlays page; the active preset is also highlighted in the Presets page list.
-- **Deleting a preset now asks for confirmation** — the trash button arms on first click (turns solid red, "click again to delete permanently") and only deletes on a second click within 2.5 seconds; it disarms by itself otherwise. No popup dialog.
+- **Deleting a preset now asks for confirmation** — the trash button turns into a check on first click; clicking the check confirms the deletion, and it reverts to a trash on its own after a couple of seconds if you don't. No popup dialog.
 - The window now sizes itself to the actual content of the active page instead of always reserving the height of the tallest one.
 - **Stream and Broadcast are now fully independent** — separate pages, and turning on either one starts the local OBS server on its own right away; Broadcast no longer needs Stream to be on first, and each keeps its own on/off state.
 - **Fixed Broadcast settings resetting on every launch** — the app was force-resetting that toggle to on at startup regardless of what was saved; it now stays exactly as you left it.

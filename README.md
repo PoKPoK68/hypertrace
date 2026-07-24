@@ -48,6 +48,13 @@ Two builds exist:
 2. Run `HyperTrace.exe`. No Python install needed — everything is bundled.
 3. Launch (or already be in) an LMU session. Overlays appear automatically once the game is on track.
 
+### Which build to download
+
+Two builds are published side by side:
+
+- **Standard** — the full app. Use this one.
+- **`without-rest-api`** — identical, except it never contacts LMU's local REST API and reads the game through shared memory only. It exists for players who get **game freezes/stutters** with the standard build: a few setups saw the extra local requests interfere with the game. It's the fallback if that happens to you. The trade-off is that the handful of details only the REST API provides go blank — car numbers, team names and class gaps in the standings, the weather forecast, and suspension damage in the Damage overlay. Everything else is the same.
+
 Settings, positions and the enabled/disabled state of each overlay are saved to `%USERPROFILE%\.hypertrace\config.json` and persist between launches. Logs go to `%USERPROFILE%\.hypertrace\hypertrace.log` — check there first if something doesn't come up (e.g. the app started before LMU, or LMU is running elevated while the app isn't).
 
 ---
@@ -73,6 +80,8 @@ A status strip along the bottom always shows whether the game is connected and w
 ---
 
 ## Stream mode
+
+> **In development.** Stream and Broadcast are still being worked on and aren't as polished or as thoroughly tested as the desktop overlays — expect rough edges.
 
 Each overlay can be served as a live PNG over HTTP for use as a **Browser Source** in OBS (or anything that can load a URL). Turn it on from the **Stream** page; each overlay gets its own URL at `http://localhost:<port>/<overlay>` (default port `8765`, configurable). Stream overlays are configured independently of the desktop ones, so you can size and lay them out for your scene without touching your on-screen setup.
 
