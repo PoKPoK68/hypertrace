@@ -1,4 +1,4 @@
-# LMU App
+# HyperTrace
 
 Real-time telemetry overlay app for **Le Mans Ultimate**, built with Python and PySide6.
 
@@ -35,11 +35,11 @@ Two additional pieces exist for broadcast-style production, currently on hold (s
 
 ## Download & run
 
-1. Grab the latest `LMUApp_x.x.x.zip` and extract it anywhere.
-2. Run `LMUApp.exe`. No Python install needed — everything is bundled.
+1. Grab the latest `HyperTrace_x.x.x.zip` and extract it anywhere.
+2. Run `HyperTrace.exe`. No Python install needed — everything is bundled.
 3. Launch (or already be in) an LMU session. Overlays appear automatically once the game is on track.
 
-Settings, positions and the enabled/disabled state of each overlay are saved to `%USERPROFILE%\.lmuapp\config.json` and persist between launches. Logs go to `%USERPROFILE%\.lmuapp\lmuapp.log` — check there first if something doesn't come up (e.g. the app started before LMU, or LMU is running elevated while the app isn't).
+Settings, positions and the enabled/disabled state of each overlay are saved to `%USERPROFILE%\.hypertrace\config.json` and persist between launches. Logs go to `%USERPROFILE%\.hypertrace\hypertrace.log` — check there first if something doesn't come up (e.g. the app started before LMU, or LMU is running elevated while the app isn't).
 
 ---
 
@@ -65,21 +65,21 @@ For development only — end users should use the packaged `.exe` above.
 
 ```bash
 git clone <repo-url>
-cd lmuapp
+cd hypertrace
 
 python -m venv .venv
 .venv\Scripts\activate
 
 pip install -e ".[dev]"
 
-python -m lmu_app          # add --hz <n> to change the shared-memory poll rate (default 50)
+python -m hypertrace          # add --hz <n> to change the shared-memory poll rate (default 50)
                             # add --verbose for debug-level logging
 ```
 
 To build the standalone executable:
 
 ```bash
-pyinstaller LMUApp.spec --noconfirm --clean
+pyinstaller HyperTrace.spec --noconfirm --clean
 ```
 
-The result is written to `dist/LMUApp/LMUApp.exe`.
+The result is written to `dist/HyperTrace/HyperTrace.exe`.

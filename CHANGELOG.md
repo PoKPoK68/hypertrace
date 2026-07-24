@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to LMU App are documented here.
+All notable changes to HyperTrace are documented here.
 
 ---
 
@@ -142,7 +142,7 @@ This is a foundational change — please report anything that looks off, especia
 ### Shared memory
 - **Fixed the app never receiving data when started before LMU.** `mmap` with a tag name *creates* the mapping when it is missing, so the app attached to its own empty mapping, reported a successful connection and read zeros forever. The mapping's existence is now probed first, and a mapping that only ever reads zeros is dropped and reconnected. Launch order no longer matters.
 - Failures now report the Windows error code, distinguishing "LMU is not publishing" from "access denied" (elevation mismatch).
-- Added a rotating log file in `~/.lmuapp/lmuapp.log`: the packaged app has no console, so nothing was diagnosable on a machine without Python. Each overlay also logs why it is shown or hidden.
+- Added a rotating log file in `~/.hypertrace/hypertrace.log`: the packaged app has no console, so nothing was diagnosable on a machine without Python. Each overlay also logs why it is shown or hidden.
 
 ### Standings
 - **Status badges (PIT / GAR / OUT / L*n*) now have their own column** instead of being drawn over the end of the name column, where they truncated long names. It can be reordered like any other column.
@@ -193,7 +193,7 @@ This is a foundational change — please report anything that looks off, especia
 ### App icon
 - The application logo is now used for the **window title bar** and the **taskbar**.
 - Windows: an explicit AppUserModelID is set so the app no longer inherits the Python icon and gets its own taskbar entry when run from source.
-- A `.ico` is generated from the logo and embedded in the executable, giving `LMUApp.exe` its own icon in Explorer and when pinned.
+- A `.ico` is generated from the logo and embedded in the executable, giving `HyperTrace.exe` its own icon in Explorer and when pinned.
 
 ### Fuel & VE calculators
 - Units are no longer separated from the value: `58.0%` and `58.0L` instead of `58.0 %` / `58.0 L`.

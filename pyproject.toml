@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "lmu-app"
+name = "hypertrace"
 version = "0.8.0"
 description = "A modern telemetry overlay for Le Mans Ultimate"
 requires-python = ">=3.11"
@@ -21,7 +21,7 @@ dev = [
 ]
 
 [project.scripts]
-lmu-app = "lmu_app.main:main"
+hypertrace = "hypertrace.main:main"
 
 [tool.ruff]
 line-length = 100
@@ -29,4 +29,4 @@ target-version = "py311"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["lmu_app*"]
+include = ["hypertrace*"]
