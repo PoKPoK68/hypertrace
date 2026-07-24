@@ -5,6 +5,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QApplication
 from hypertrace.api.reader import DataReader
+from hypertrace.calc.ext.rest_merge import rest_merge
 from hypertrace.config import AppConfig
 from hypertrace.widgets.speed import SpeedWidget
 from hypertrace.widgets.inputs import InputsWidget
@@ -16,7 +17,6 @@ from hypertrace.widgets.fuel_calc import FuelCalcWidget
 from hypertrace.widgets.ve_calc import VECalcWidget
 from hypertrace.widgets.weather import WeatherWidget
 from hypertrace.widgets.delta import DeltaWidget
-from hypertrace.calc.ext.rest_merge import rest_merge
 from hypertrace.stream.server import StreamManager
 from hypertrace.ui.main_window import MainWindow
 from hypertrace.widgets.broadcast import BroadcastBattle, BroadcastDriverCard, BroadcastSectors, BroadcastState, BroadcastTower
@@ -31,7 +31,7 @@ _FONTS = [
     "SairaSemiCondensed-Bold.ttf",
 ]
 
-APP_VERSION = "0.8.0"
+APP_VERSION = "1.0.0"
 _LOGO = "hypertrace_icon.ico"
 LOG_PATH = None   # set by _log_handlers()
 
@@ -209,6 +209,15 @@ def main() -> int:
     reader = DataReader(update_hz=args.hz)
     reader.start()
 
+    # without-rest-api build: REST (localhost:6397) is NOT started with the
+    # calc modules (see calc/module_control.py — it deliberately omits
+    # rest_merge.start()). It's only ever needed by the broadcast overlays and
+    # the Live Timing panel, so it's started here on demand, tied to the
+    # Broadcast toggle. The 9 primary desktop overlays never need it, and the
+    # REST-only extras (suspension damage, etc.) simply stay blank when it's off.
+    if config.broadcast_active:
+        rest_merge.start()
+
     fuel_calc_w = FuelCalcWidget(auto_hide=False)
     ve_calc_w   = VECalcWidget(auto_hide=False)
 
@@ -242,7 +251,7 @@ def main() -> int:
             return _cb
 
         widget._on_position_changed = _make_pos_cb(key)
-        widget.set_hide_in_garage(config.hide_in_garage)
+        widget.set_auto_hide(config.auto_hide)
 
         saved_params = config.widget_params(key)
         if saved_params:
@@ -301,16 +310,18 @@ def main() -> int:
     stream_manager.set_widget_enabled("bc_driver",  config.bc_driver_enabled)
     stream_manager.set_widget_enabled("bc_sectors", config.bc_sectors_enabled)
 
-    if config.stream_active:
+    # The OBS server is shared infrastructure between Stream and Broadcast
+    # (see MainWindow._sync_stream_server) — resume it on launch if either
+    # was left on. Deliberately NOT keyed on config.broadcast_active: that
+    # flag is forced True a few lines above regardless of what was saved
+    # (see comment there), so using it here would start this server on every
+    # launch even for someone who never streams.
+    broadcast_graphics_enabled = (
+        config.bc_tower_enabled or config.bc_battle_enabled
+        or config.bc_driver_enabled or config.bc_sectors_enabled
+    )
+    if config.stream_active or broadcast_graphics_enabled:
         stream_manager.start(config.stream_port)
-
-    # REST (localhost:6397) is only ever needed by the broadcast overlays and
-    # the Live Timing panel — see calc/module_control.py's docstring — not by
-    # any of the 9 primary overlays (even served over stream), so it's tied
-    # to the Broadcast tab's own on/off toggle, independent of the stream
-    # server itself.
-    if config.broadcast_active:
-        rest_merge.start()
 
     main_win = MainWindow(config, widget_entries, reader=reader,
                           stream_manager=stream_manager,
@@ -337,9 +348,8 @@ def main() -> int:
     # by this session's steady per-tick allocations only has to look at
     # actual new garbage, not re-walk the whole app's permanent object graph
     # each time. This is a real technique for long-running GUI apps with
-    # allocation churn, not something copied from TinyPedal (it doesn't do
-    # this) — untested against the actual freeze, since that needs the game
-    # running to reproduce.
+    # allocation churn, original to this app — untested against the actual
+    # freeze, since that needs the game running to reproduce.
     gc.collect()
     gc.freeze()
     gc.disable()

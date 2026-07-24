@@ -74,6 +74,18 @@ class T:
     GAR_BG, GAR_FG = "#4A4A4A", "#C8C8C8"
     LAP_BG, LAP_FG = "#FFD700", "#111111"   # pit lap badge: yellow / black
 
+    # main window — ON/OFF pills, lock toggle, danger actions (centralized out
+    # of hypertrace/ui/main_window_controls.py, same values as before — no visual
+    # change, just one place to look them up)
+    TOGGLE_ON        = "#00A040"
+    TOGGLE_ON_HOVER  = "#00B848"
+    TOGGLE_OFF       = "#CC0000"
+    TOGGLE_OFF_HOVER = "#E00000"
+    LOCK_TRACK_OFF    = (38, 38, 38)        # _LockToggle rail color at the "FREE" end
+    LOCK_TRACK_BORDER = (255, 255, 255, 30)
+    CARD_BG_ALPHA     = 10                  # ~0.04 alpha white — grouped-section cards
+    DANGER            = "#FF7070"           # delete buttons + armed confirm state
+
     # vehicle classes (mirror utils/class_colors.py defaults)
     CLASS = {
         "HYPERCAR": "#CC0000", "LMP2": "#1050C8", "LMP3": "#7020C0",

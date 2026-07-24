@@ -1,9 +1,10 @@
 """hypertrace/widgets/base.py — Base class for all overlay widgets.
 
-Update/visibility engine ported from TinyPedal's `tinypedal/widget/_base.py`
-(s-victor/TinyPedal, GPLv3): a QBasicTimer instead of QTimer, paused/resumed
-and shown/hidden from the shared `realtime_state` singleton (calc/realtime_state.py)
-instead of each widget pulling its own snapshot and recomputing game state.
+Update/visibility engine adapted from an established reference
+implementation (see THIRD_PARTY_NOTICES.md): a QBasicTimer instead of
+QTimer, paused/resumed and shown/hidden from the shared `realtime_state`
+singleton (calc/realtime_state.py) instead of each widget pulling its own
+snapshot and recomputing game state.
 
 Drag/snap/lock and all drawing code are this app's own and untouched by the
 port — see the `_snapped()` docstring for the magnetic-snap fix from earlier
@@ -53,13 +54,6 @@ def _session_category(session_type: int) -> str:
     return "practice"
 
 
-def _player_in_garage() -> bool:
-    # Computed once per module_vehicles.py scan, not re-scanned here — this
-    # used to loop over every car on every call, and it's called by all 9
-    # widgets independently each tick.
-    return minfo.vehicles.playerInGarage
-
-
 class BaseWidget(QWidget):
     """Frameless, always-on-top overlay widget with drag-to-move and auto-hide."""
 
@@ -77,7 +71,6 @@ class BaseWidget(QWidget):
         self._dragging = False
         self._drag_offset = QPoint()
         self._locked = False
-        self._hide_in_garage = False
         self._on_position_changed: Callable[[int, int], None] | None = None
         self._opacity: int = 85
         self._show_practice   = True
@@ -118,8 +111,8 @@ class BaseWidget(QWidget):
         self._dragging = False
         self._locked = locked
 
-    def set_hide_in_garage(self, hide: bool) -> None:
-        self._hide_in_garage = hide
+    def set_auto_hide(self, enabled: bool) -> None:
+        self._auto_hide = enabled
 
     def _apply_session_visibility(self, params: dict) -> None:
         """Call from apply_params() — reads the SESSION_VISIBILITY_SCHEMA
@@ -279,7 +272,7 @@ class BaseWidget(QWidget):
         self._update()
 
     def _update(self) -> None:
-        # `active` alone (TinyPedal's own approach) isn't enough for LMU:
+        # `active` alone (the reference implementation's own approach) isn't enough for LMU:
         # mInRealtime/ignition apparently don't get reset when kicked back to
         # the main menu, so `active` can stay stuck true there. What DOES
         # reliably change is whether the session clock is still advancing —
@@ -303,22 +296,14 @@ class BaseWidget(QWidget):
                 self.hide()
             return
 
-        # Checked unconditionally (not just when _auto_hide is set) — every
-        # desktop overlay is constructed with auto_hide=False (see main.py),
-        # so gating this behind _auto_hide meant it never actually applied.
+        # Checked unconditionally (not just when _auto_hide is set) — session
+        # visibility (practice/qualifying/race) is independent of whether
+        # auto-hide is on.
         if not self._session_visible():
             self._log_state("hidden: this session type is disabled in settings")
             if self.isVisible():
                 self.hide()
             return
-
-        if self._hide_in_garage and _player_in_garage():
-            self._log_state("hidden: player_in_garage and 'hide in garage' is on")
-            if self.isVisible():
-                self.hide()
-            return
-        elif self._hide_in_garage and not self.isVisible():
-            self.show()
 
         if self._auto_hide:
             if realtime_state.active:

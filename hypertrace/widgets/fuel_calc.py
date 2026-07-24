@@ -27,7 +27,7 @@ def _widget_w(n_data_cols: int) -> int:
     table = _LABEL_W + _CG + n_data_cols * _MIN_COL_W + (n_data_cols - 1) * _CG
     return max(_MIN_W, 2 * _PAD + table)
 
-BASE_W = _widget_w(4)  # 240 — used as default / maximum
+BASE_W = _widget_w(5)  # used as default / maximum
 
 
 # ── Shared helpers ──────────────────────────────────────────────────────────
@@ -63,27 +63,6 @@ def _draw_level(p: QPainter, x: int, y: int, w: int, h: int,
                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight, val_str)
 
 
-def _laps_remaining(player) -> float:
-    """Laps left in the SESSION (not fuel-tank laps left — see minfo.fuel.estimatedLaps
-    for that). Everything sourced from minfo — never touch shared memory
-    directly from a widget (that's the calc modules' job, on their own
-    background threads, not the GUI thread this runs on)."""
-    s = minfo.session
-    if s.sessionType < 10:
-        return 0.0
-    if not player:
-        return 0.0
-    if s.maxLaps > 0:
-        return max(0.0, s.maxLaps - player.total_laps)
-    if s.timeRemaining > 0:
-        avg_lap = player.estimated_lap_time
-        if avg_lap <= 0:
-            bests = [v.best_lap for v in minfo.vehicles.dataSet if v.best_lap > 10]
-            avg_lap = min(bests) if bests else 120.0
-        return s.timeRemaining / avg_lap
-    return 0.0
-
-
 def _fuel_col(ratio: float) -> tuple[QColor, QColor]:
     if ratio < 0.10:
         c = QColor(T.CRIT); return c, c.lighter(120)
@@ -92,25 +71,40 @@ def _fuel_col(ratio: float) -> tuple[QColor, QColor]:
     return QColor(T.FUEL_LO), QColor(T.FUEL_HI)
 
 
-def _calc(rate: float, current: float, rem: float, safety: float):
-    """(laps_on_current, refuel_needed, finish_level) — refuel/finish None outside race."""
+def _calc(rate: float, current: float, rem: float, safety: float, cap: float):
+    """(laps_on_current, refuel_next_stop, needed_to_end).
+
+    `needed_to_end` is the total additional amount needed to cover the rest
+    of the race (laps remaining + safety margin) — not capped to what a
+    single tank can hold, so on a long race it can legitimately be several
+    times the tank capacity (several full refills' worth).
+
+    `refuel_next_stop` is what actually makes sense to put in at the next
+    stop: the full `needed_to_end` if that already fits in the tank (this
+    is your last stop), otherwise fill up to capacity (there will be at
+    least one more stop regardless of exactly how much goes in now).
+
+    Both None outside a race or before there's a consumption rate yet.
+    """
     laps_on = (current / rate) if rate > 0 else None
     if rem > 0 and rate > 0:
-        refuel = max(0., (rem + safety) * rate - current)
-        finish = max(0., current - rem * rate) if refuel < 0.005 else None
-        return laps_on, refuel, finish
+        needed_to_end = max(0., (rem + safety) * rate - current)
+        refuel_next_stop = min(needed_to_end, max(0., cap - current))
+        return laps_on, refuel_next_stop, needed_to_end
     return laps_on, None, None
 
 
 def _table_layout(refs: dict[str, str], show_usage: bool, show_laps: bool,
-                  show_refuel: bool, show_finish: bool) -> tuple[int, dict[str, tuple[int, int]]]:
+                  show_refuel: bool, show_finish: bool, show_tanks: bool
+                  ) -> tuple[int, dict[str, tuple[int, int]]]:
     """Return (widget_width, {key: (x, width)}) with each column sized to its
     own content — the widest of its header and its reference value — instead of
     splitting the width equally. Avoids dead space on short columns while
     guaranteeing long values (e.g. "XX.X%") still fit.
     """
     vis = [k for k, v in [("usage", show_usage), ("laps", show_laps),
-                          ("refuel", show_refuel), ("finish", show_finish)] if v]
+                          ("refuel", show_refuel), ("finish", show_finish),
+                          ("tanks", show_tanks)] if v]
     if not vis:
         return _MIN_W, {"label": (_PAD, _LABEL_W)}
 
@@ -142,13 +136,23 @@ def _fmt_ref_fuel(v: float) -> str:
     return f"+{v:.0f}L" if v >= 100 else f"+{v:.1f}L"
 
 
-_HDR_NAMES = {"usage": "USAGE", "laps": "LAPS", "refuel": "REFUEL", "finish": "FINISH"}
+def _fmt_tanks(v: float) -> str:
+    """TO END expressed as a number of full tanks/refills instead of a raw
+    amount — e.g. a 50L tank and 400L needed to finish reads as "8.0"."""
+    return f"{v:.1f}"
+
+
+_HDR_NAMES = {"usage": "USAGE", "laps": "LAPS", "refuel": "REFUEL", "finish": "TO END", "tanks": "TANKS"}
 
 # Widest value each column must be able to render, used to size the columns.
 # Fuel Calculator sizes its table off _VE_REFS too (not fuel-specific strings)
 # so both widgets always compute the same widget width — "%" renders a few
 # px wider than "L", so sizing off "99.9L" etc. made this widget narrower.
-_VE_REFS = {"usage": "99.9%", "laps": "99.9", "refuel": "+99.9%", "finish": "99.9%"}
+# "finish" (TO END) is sized for up to 5 digits, not REFUEL's "+99.9%" —
+# unlike REFUEL (capped to what a tank can hold), TO END is the *total*
+# amount left for the rest of the race, uncapped, and can run into the
+# thousands on a long/fuel-thirsty combo (e.g. "+2400L", "+1500%").
+_VE_REFS = {"usage": "99.9%", "laps": "99.9", "refuel": "+99.9%", "finish": "+99999%", "tanks": "99.9"}
 
 _VE_ENTRY_KEYS = {"HYPERCAR", "GT3"}
 
@@ -184,7 +188,8 @@ class FuelCalcWidget(BaseWidget):
         {"key": "show_usage",  "label": "USAGE col",  "type": "bool", "default": True},
         {"key": "show_laps",   "label": "LAPS col",   "type": "bool", "default": True},
         {"key": "show_refuel", "label": "REFUEL col", "type": "bool", "default": True},
-        {"key": "show_finish", "label": "FINISH col", "type": "bool", "default": True},
+        {"key": "show_finish", "label": "TO END col", "type": "bool", "default": True},
+        {"key": "show_tanks",  "label": "TANKS col",  "type": "bool", "default": True},
     ]
 
     def __init__(self, **kw):
@@ -196,17 +201,15 @@ class FuelCalcWidget(BaseWidget):
         self._show_laps       = True
         self._show_refuel     = True
         self._show_finish     = True
+        self._show_tanks      = True
 
         self._scale        = DEFAULT_SCALE / 100.0
         self._safety_laps  = 1.0
         self._merge        = False
 
-        self._last_total_laps   = -1
-        self._fuel_at_lap_start = -1.0
-        self._fuel_prev_tick    = -1.0
+        self._last_lap_fuel        = 0.0
+        self._last_amount_used     = -1.0
         self._fuel_history: deque[float] = deque(maxlen=5)
-        self._last_lap_fuel     = 0.0
-        self._last_reset_count  = -1
 
         self._current_fuel   = 0.0
         self._fuel_cap       = 100.0
@@ -254,7 +257,8 @@ class FuelCalcWidget(BaseWidget):
 
         vis_data = [k for k, v in [
             ("usage", self._show_usage), ("laps", self._show_laps),
-            ("refuel", self._show_refuel), ("finish", self._show_finish)
+            ("refuel", self._show_refuel), ("finish", self._show_finish),
+            ("tanks", self._show_tanks)
         ] if v]
         vis_rows = (1 if self._show_last else 0) + (1 if self._show_avg5 else 0)
         has_table = vis_rows > 0 and len(vis_data) > 0
@@ -265,7 +269,7 @@ class FuelCalcWidget(BaseWidget):
         if has_table:
             self._w, self._col_pos = _table_layout(
                 _VE_REFS, self._show_usage, self._show_laps,
-                self._show_refuel, self._show_finish)
+                self._show_refuel, self._show_finish, self._show_tanks)
         else:
             self._w, self._col_pos = _widget_w(0), {"label": (_PAD, _LABEL_W)}
         self._bw         = self._w - 2 * _PAD
@@ -289,51 +293,34 @@ class FuelCalcWidget(BaseWidget):
         self._show_laps       = bool(params.get("show_laps",   True))
         self._show_refuel     = bool(params.get("show_refuel", True))
         self._show_finish     = bool(params.get("show_finish", True))
+        self._show_tanks      = bool(params.get("show_tanks",  True))
 
         self._apply_session_visibility(params)
         self._refresh_layout()
         self.update()
 
     def on_data(self) -> None:
-        # New session / restart → clear fuel history. module_stint.py bumps
-        # resetCount on any detected reset; comparing with != survives this
-        # widget polling at a different cadence than that module's own tick.
-        if minfo.stint.resetCount != self._last_reset_count:
-            self._last_reset_count = minfo.stint.resetCount
-            self._last_total_laps   = -1
-            self._fuel_history.clear()
-            self._last_lap_fuel     = 0.0
-            self._fuel_at_lap_start = -1.0
+        # Consumption, laps-remaining and estimates all come straight from
+        # module_fuel.py — a background-thread, position-interpolated
+        # estimate (updates continuously through the lap, not just at lap
+        # end) and a laps-remaining figure precise to the current on-track
+        # position, not just to the lap.
+        self._current_fuel  = minfo.fuel.amountCurrent
+        self._fuel_cap       = max(1.0, minfo.fuel.capacity)
+        self._laps_remaining = minfo.fuel.lapsRemaining
 
-        self._current_fuel = minfo.fuel.amountCurrent
-        self._fuel_cap     = max(1.0, minfo.fuel.capacity)
+        # AVG 5 = rolling average of the last 5 completed laps' consumption.
+        # amountUsedLast only changes at a lap boundary (module_fuel.py holds
+        # it steady the rest of the lap), so a change is exactly a new
+        # completed-lap reading — push it into the history. First reading
+        # after a reset is a baseline, not a lap, so it's never pushed.
+        used_last = minfo.fuel.amountUsedLast
+        if used_last != self._last_amount_used:
+            if self._last_amount_used >= 0 and 0.05 < used_last < self._fuel_cap * 0.8:
+                self._fuel_history.append(used_last)
+            self._last_amount_used = used_last
+        self._last_lap_fuel = used_last
 
-        player = next((v for v in minfo.vehicles.dataSet if v.is_player), None)
-        if player:
-            # Tracked locally from the widget's own fuel readings rather than
-            # minfo.fuel.amountUsedLast — that field is updated by
-            # module_fuel.py's own independent lap-boundary detection, on its
-            # own background thread; relying on it here raced against this
-            # widget's total_laps-based trigger and could read a stale value.
-            if self._fuel_prev_tick >= 0 and (self._current_fuel - self._fuel_prev_tick) > 2.0:
-                self._fuel_at_lap_start = self._current_fuel  # mid-lap refuel — restart the delta
-
-            total_laps = player.total_laps
-            if self._last_total_laps < 0:
-                self._last_total_laps   = total_laps
-                self._fuel_at_lap_start = self._current_fuel
-            elif total_laps > self._last_total_laps:
-                if self._fuel_at_lap_start >= 0:
-                    consumed = self._fuel_at_lap_start - self._current_fuel
-                    if 0.05 < consumed < self._fuel_cap * 0.8:
-                        self._fuel_history.append(consumed)
-                        self._last_lap_fuel = consumed
-                self._fuel_at_lap_start = self._current_fuel
-                self._last_total_laps   = total_laps
-
-        self._fuel_prev_tick = self._current_fuel
-
-        self._laps_remaining = _laps_remaining(player)
         self.update()
 
     def _avg5(self) -> float:
@@ -385,11 +372,11 @@ class FuelCalcWidget(BaseWidget):
         rem  = self._laps_remaining
         sfty = self._safety_laps
         rows = []
-        if self._show_last: rows.append(("LAST",  self._last_lap_fuel))
+        if self._show_last: rows.append(("LAST", self._last_lap_fuel))
         if self._show_avg5: rows.append(("AVG 5", self._avg5()))
 
         for lbl, rate in rows:
-            laps_on, refuel, finish = _calc(rate, self._current_fuel, rem, sfty)
+            laps_on, refuel, to_end = _calc(rate, self._current_fuel, rem, sfty, self._fuel_cap)
 
             cx, cw = self._col_pos["label"]
             p.setFont(label_font(8))
@@ -425,12 +412,26 @@ class FuelCalcWidget(BaseWidget):
             if "finish" in self._col_pos:
                 cx, cw = self._col_pos["finish"]
                 p.setFont(num_font(9))
-                if finish is None:
+                if to_end is None:
                     p.setPen(QColor(T.TEXT)); fin_str = "-"
+                elif to_end < 0.005:
+                    p.setPen(QColor(T.GOOD)); fin_str = "OK"
                 else:
-                    p.setPen(QColor(T.TEXT)); fin_str = _fmt_fuel(finish)
+                    p.setPen(QColor(T.TEXT)); fin_str = _fmt_ref_fuel(to_end)
                 p.drawText(cx, y, cw, _RH,
                            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight, fin_str)
+
+            if "tanks" in self._col_pos:
+                cx, cw = self._col_pos["tanks"]
+                p.setFont(num_font(9))
+                if to_end is None:
+                    p.setPen(QColor(T.TEXT)); tanks_str = "-"
+                elif to_end < 0.005:
+                    p.setPen(QColor(T.GOOD)); tanks_str = "OK"
+                else:
+                    p.setPen(QColor(T.TEXT)); tanks_str = _fmt_tanks(to_end / self._fuel_cap)
+                p.drawText(cx, y, cw, _RH,
+                           Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight, tanks_str)
 
             y += _RH
 

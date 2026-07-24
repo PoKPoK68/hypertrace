@@ -1,16 +1,16 @@
 """hypertrace/calc/modules/module_fuel.py — Fuel + Virtual Energy consumption.
 
-Simplified port of TinyPedal's `tinypedal/module/module_fuel.py`
-(s-victor/TinyPedal, GPLv3). Same two simplifications as module_delta.py: raw
+Simplified adaptation of an established reference implementation (see
+THIRD_PARTY_NOTICES.md). Same two simplifications as module_delta.py: raw
 `api.read.lap.distance()` instead of GPS-position-sync, and no cross-session
 file persistence of the last-lap-consumption trace (in-memory only).
 
 Fuel and Virtual Energy are computed by the same generator, run twice —
 fuel in litres (tank capacity), VE in percent (capacity fixed at 100) —
-exactly like TinyPedal treats them as the same shape of problem. The
-fuel/VE ratio (`minfo.hybrid.fuelEnergyRatio`) is set here too, not in a
-separate hybrid module — no widget in this app shows battery drain/regen
-or motor state, so that half of TinyPedal's hybrid module was not ported.
+treating them as the same shape of problem. The fuel/VE ratio
+(`minfo.hybrid.fuelEnergyRatio`) is set here too, not in a separate hybrid
+module — no widget in this app shows battery drain/regen or motor state, so
+that part of the reference implementation's hybrid module was not adapted.
 """
 from __future__ import annotations
 
@@ -153,6 +153,7 @@ def _calc_consumption(output: FuelInfo, telemetry_func: Callable[[], tuple[float
         output.estimatedMinutes  = est_runmins
         output.neededRelative    = amount_need_rel
         output.amountEndStint    = amount_end
+        output.lapsRemaining     = laps_left
 
 
 class Realtime(DataModule):

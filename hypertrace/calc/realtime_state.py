@@ -1,11 +1,11 @@
 """hypertrace/calc/realtime_state.py — Session-liveness signal + connection control.
 
 `RealtimeState` is the shared flag every calc module and widget reads to
-decide active-vs-idle behavior (port of TinyPedal's `realtime_state` +
-`OverlayControl.__updating`, tinypedal/overlay_control.py).
+decide active-vs-idle behavior (adapted from an established reference
+implementation, see THIRD_PARTY_NOTICES.md).
 
 Connection handling (probe-before-connect, reconnect-on-all-zeros) is our own
-addition, not present in TinyPedal's connector — proven necessary this app:
+addition, not present in the reference implementation's connector — proven necessary this app:
 Windows' `mmap()` CREATES the named mapping if it doesn't exist yet, so an
 app started before LMU attaches to its own empty mapping and would otherwise
 read zeros forever with no way to recover once the game actually starts.
@@ -21,7 +21,7 @@ from hypertrace.calc.api import api
 
 logger = logging.getLogger(__name__)
 
-_POLL_INTERVAL = 0.2       # matches TinyPedal's OverlayControl poll rate
+_POLL_INTERVAL = 0.2       # matches the reference implementation's poll rate
 _ZERO_RECONNECT_AFTER = 3.0  # seconds of all-zero reads before dropping the mapping
 
 

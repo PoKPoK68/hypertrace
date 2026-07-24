@@ -81,7 +81,7 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 
 _COLS       = ["P", "C", "#", "Driver / Team", "Cls",
                "Best Lap", "Last Lap", "S1", "S2", "S3", "Gap", "Status", "TV", "WS", "CP"]
-_COL_WIDTHS = [28, 28, 42, 160, 40, 80, 80, 58, 58, 58, 70, 55, 30, 30, 30]
+_COL_WIDTHS = [28, 28, 42, 160, 46, 80, 80, 58, 58, 58, 70, 55, 30, 30, 30]
 _COL_TV     = 12
 _COL_WS     = 13   # Windshield
 _COL_CP     = 14   # Cockpit

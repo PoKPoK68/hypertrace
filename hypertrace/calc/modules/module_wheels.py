@@ -1,8 +1,9 @@
 """hypertrace/calc/modules/module_wheels.py — Tyre wear/temperature/pressure.
 
-Not a full port of TinyPedal's `module_wheels.py` (which also estimates
-wear-rate-per-lap and suspension/cornering data nothing in this app displays)
-— just a direct passthrough of live per-wheel telemetry into `minfo.wheels`,
+Not a full adaptation of the reference implementation's wheels module
+(which also estimates wear-rate-per-lap and suspension/cornering data
+nothing in this app displays) — just a direct passthrough of live per-wheel
+telemetry into `minfo.wheels`,
 matching exactly what the Tyres widget already shows. The colour-by-offset-
 from-`mOptimalTemp` logic stays in the widget's own paint code, unchanged.
 """

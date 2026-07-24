@@ -1,7 +1,7 @@
 """hypertrace/calc/modules/_base.py — Data module base.
 
-Port of TinyPedal's `tinypedal/module/_base.py` (s-victor/TinyPedal, GPLv3),
-adapted to this app's simpler per-module config (fixed active/idle intervals
+Adapted from an established reference implementation (see
+THIRD_PARTY_NOTICES.md) to this app's simpler per-module config (fixed active/idle intervals
 per module instead of a full per-module settings dict — this app doesn't
 expose per-module update-rate settings to the user).
 """

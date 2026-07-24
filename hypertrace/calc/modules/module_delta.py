@@ -1,9 +1,9 @@
 """hypertrace/calc/modules/module_delta.py — Best/last/session delta.
 
-Simplified port of TinyPedal's `tinypedal/module/module_delta.py`
-(s-victor/TinyPedal, GPLv3). Two deliberate simplifications from the original:
+Simplified adaptation of an established reference implementation (see
+THIRD_PARTY_NOTICES.md). Two deliberate simplifications from the original:
   - Position along the lap comes straight from `api.read.lap.distance()`
-    (mLapDist) instead of TinyPedal's GPS-position-sync smoothing generator —
+    (mLapDist) instead of a GPS-position-sync smoothing generator —
     our tick rate is high enough that raw distance doesn't need it.
   - "All-time best" delta lives in memory for this run only, not persisted to
     disk per track/class combo — this app never had that feature before, so
@@ -27,7 +27,7 @@ from hypertrace.calc.module_info import minfo
 from hypertrace.calc.modules._base import DataModule
 from hypertrace.calc.realtime_state import realtime_state
 
-_EMA_SAMPLES = 15   # smoothing window; no per-user setting for this, unlike TinyPedal
+_EMA_SAMPLES = 15   # smoothing window; no per-user setting for this
 
 
 class Realtime(DataModule):

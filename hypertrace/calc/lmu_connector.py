@@ -1,7 +1,7 @@
 """hypertrace/calc/lmu_connector.py — Shared-memory sync layer.
 
-Ported from TinyPedal's `tinypedal/adapter/lmu_connector.py` (s-victor/TinyPedal,
-GPLv3), trimmed to what this app needs: no player-index override (LMU always
+Adapted from an established reference implementation (see
+THIRD_PARTY_NOTICES.md), trimmed to what this app needs: no player-index override (LMU always
 tells us who the local player is via mIsPlayer) and no results-stream parsing
 (incident/track-cut history, unused by any of our widgets).
 
@@ -188,7 +188,7 @@ class SyncData:
 
             if data_freezed:
                 if freezed_version != last_version_update:
-                    # TinyPedal itself uses 0.01 (100 Hz) here. Every iteration
+                    # The reference implementation uses 0.01 (100 Hz) here. Every iteration
                     # does two full scans over every car on track — a linear
                     # search for the player's index (local_scoring_index) and
                     # a full mID->index dict rebuild (__update_tele_indexes) —
@@ -222,10 +222,11 @@ class LMUInfo:
     def start(self) -> None:
         # Direct access: the mmap is read in place, no periodic copy. Matches
         # the old reader's SimInfo exactly, which always used direct access.
-        # Copy access (TinyPedal's own default) re-copies the ENTIRE ~325 KB
-        # struct on every sync-loop iteration — up to ~100 Hz once the game
-        # is actively updating (update_delay drops to 0.01s), i.e. up to
-        # ~32 MB/s of continuous memcpy that never existed before this port.
+        # Copy access (the reference implementation's own default) re-copies
+        # the ENTIRE ~325 KB struct on every sync-loop iteration — up to
+        # ~100 Hz once the game is actively updating (update_delay drops to
+        # 0.01s), i.e. up to ~32 MB/s of continuous memcpy that never existed
+        # before this port.
         # That's a new, substantial, sustained cost — and unlike a CPU-time
         # cost, restricting the app to specific cores (which is what fixed
         # freezes before) doesn't isolate memory-bandwidth/cache contention,

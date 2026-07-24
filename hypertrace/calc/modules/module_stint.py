@@ -1,14 +1,14 @@
 """hypertrace/calc/modules/module_stint.py — Canonical session-reset signal.
 
-Not a full port of TinyPedal's `module_stint.py` (that one builds a
-lap-by-lap stint history log nothing in this app's widgets displays) — this
-is the piece of it that matters here: a single, reliable "did the session
-just reset" flag, replacing the old hand-rolled heuristic in reader.py
-(`session_type changed OR current_et jumped back by >2s`), which every
-per-session-state widget (fuel/VE history, relative outlap/pit badges,
-standings pit-badge memory) used to duplicate slightly differently.
+Not a full adaptation of the reference implementation's stint module (that
+one builds a lap-by-lap stint history log nothing in this app's widgets
+displays) — this is the piece of it that matters here: a single, reliable
+"did the session just reset" flag, replacing the old hand-rolled heuristic
+in reader.py (`session_type changed OR current_et jumped back by >2s`),
+which every per-session-state widget (fuel/VE history, relative outlap/pit
+badges, standings pit-badge memory) used to duplicate slightly differently.
 
-Two signals, matching what TinyPedal itself uses in different places:
+Two signals, matching what the reference implementation uses in different places:
   - `api.read.session.identifier()` monotonicity check, done once per
     idle→active transition (catches session-type changes, restarts).
   - a cheap live per-tick check — session elapsed time going backwards —

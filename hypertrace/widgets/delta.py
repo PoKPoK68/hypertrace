@@ -99,8 +99,8 @@ class DeltaWidget(BaseWidget):
         # Sourced from the game's own per-car scoring fields (mBestLapTime /
         # mLastLapTime / mDeltaBest), not this app's own re-derived
         # minfo.delta — that value is tracked independently from scratch by
-        # our simplified port of TinyPedal's delta module (no GPS-position
-        # sync, in-memory only) and can disagree with what the game itself
+        # our simplified adaptation of the reference delta module (no
+        # GPS-position sync, in-memory only) and can disagree with what the game itself
         # already computes and publishes directly. Same source standings.py
         # already uses successfully for best/last lap.
         player = next((v for v in minfo.vehicles.dataSet if v.is_player), None)

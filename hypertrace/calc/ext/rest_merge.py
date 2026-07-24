@@ -1,10 +1,9 @@
 """hypertrace/calc/ext/rest_merge.py — LMU REST API enrichment.
 
-Not part of TinyPedal's port — this is specific to LMU's own REST API
-(localhost:6397), which TinyPedal doesn't use at all (it targets multiple
-sims, most without an equivalent). Kept exactly as it worked in the old
-reader.py, just relocated and re-targeted to write into `minfo` instead of
-the old `LMUSnapshot`.
+This is specific to LMU's own REST API (localhost:6397) and entirely
+original to this app. Kept exactly as it worked in the old reader.py, just
+relocated and re-targeted to write into `minfo` instead of the old
+`LMUSnapshot`.
 
 Per this app's standing security rule: REST is only ever touched here, in a
 background thread — never from a widget. Reader.py used to also merge

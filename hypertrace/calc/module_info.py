@@ -1,11 +1,11 @@
 """hypertrace/calc/module_info.py — Shared `minfo` singleton.
 
-Ported from TinyPedal's `tinypedal/module_info.py` pattern: each calc module
-(calc/modules/module_*.py) owns one of these dataclasses and writes onto its
-fields every tick; widgets only ever read from `minfo`, never from shared
-memory directly. Plain mutable objects, no locking — same tradeoff TinyPedal
-makes (a widget reading a half-updated tick just repaints one frame stale,
-never inconsistent enough to matter at these update rates).
+Follows an established shared-info-singleton pattern (see
+THIRD_PARTY_NOTICES.md): each calc module (calc/modules/module_*.py) owns
+one of these dataclasses and writes onto its fields every tick; widgets only
+ever read from `minfo`, never from shared memory directly. Plain mutable
+objects, no locking — a widget reading a half-updated tick just repaints one
+frame stale, never inconsistent enough to matter at these update rates.
 """
 from __future__ import annotations
 
@@ -61,9 +61,9 @@ class VehicleData:
         calc/modules/module_vehicles.py). Remote vehicles (control==2) only
         ever use mInPits: per-car telemetry isn't reliably synced for remote
         cars over the network, which showed up as every remote opponent
-        flashing PIT while clearly on track in multiplayer — TinyPedal
-        itself (tinypedal/module/module_vehicles.py, in_paddock) never uses
-        telemetry-derived pit-lane detection for other cars, only mInPits."""
+        flashing PIT while clearly on track in multiplayer — the reference
+        implementation never uses telemetry-derived pit-lane detection for
+        other cars either, only mInPits."""
         if self.control == 2:
             return self.in_pits
         return self.pitlane or self.pit_state >= 2 or self.in_pits
@@ -96,12 +96,13 @@ class DeltaInfo:
 class FuelInfo:
     amountCurrent: float      = 0.0
     amountUsedLast: float     = 0.0
-    amountUsedAvg: float      = 0.0    # rolling avg over last 5 laps
+    amountUsedAvg: float      = 0.0    # live estimate: last valid lap + delta vs. reference lap so far
     estimatedLaps: float      = 0.0    # laps left on current avg consumption
     estimatedMinutes: float   = 0.0
     neededRelative: float     = 0.0    # additional amount needed to the end (0 if enough)
     amountEndStint: float     = 0.0    # amount left at the end of the current lap
     capacity: float           = 100.0
+    lapsRemaining: float      = 0.0    # laps left in the session, precise to current on-track position
 
 
 @dataclass

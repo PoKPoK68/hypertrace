@@ -1,7 +1,7 @@
 """hypertrace/calc/_calc_util.py — Small numeric/session helpers shared by calc modules.
 
-Ported from TinyPedal's `tinypedal/calculation.py` and `tinypedal/validator.py`
-(s-victor/TinyPedal, GPLv3) — only the handful of functions our modules use.
+Adapted from an established reference implementation (see
+THIRD_PARTY_NOTICES.md) — only the handful of functions our modules use.
 """
 from __future__ import annotations
 

@@ -3,11 +3,32 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-CONFIG_PATH = Path.home() / ".hypertrace" / "config.json"
+CONFIG_PATH  = Path.home() / ".hypertrace" / "config.json"
+PRESETS_DIR  = CONFIG_PATH.parent / "presets"
+
+_WINDOWS_RESERVED = {
+    "CON", "PRN", "AUX", "NUL",
+    *(f"COM{i}" for i in range(1, 10)),
+    *(f"LPT{i}" for i in range(1, 10)),
+}
+
+
+def _slugify(name: str) -> str:
+    """Filesystem-safe filename (no extension) for a preset name — strips
+    characters Windows forbids in filenames, trailing dots/spaces (Windows
+    silently drops them, which would otherwise make two different-looking
+    names collide), and dodges reserved device names like "CON"."""
+    safe = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", name).strip().rstrip(". ")
+    if not safe:
+        return f"preset_{abs(hash(name)) % 100000}"
+    if safe.upper() in _WINDOWS_RESERVED:
+        safe = f"_{safe}"
+    return safe
 
 _DEFAULTS: dict = {
     "locked": False,
@@ -28,6 +49,8 @@ _DEFAULTS: dict = {
 class AppConfig:
     def __init__(self) -> None:
         self._data: dict = {}
+        self._presets: list[dict] = []
+        self._preset_paths: dict[str, Path] = {}   # preset name -> its file
         self.load()
 
     def load(self) -> None:
@@ -36,10 +59,33 @@ class AppConfig:
                 with open(CONFIG_PATH, encoding="utf-8") as f:
                     self._data = json.load(f)
                 logger.info("Config chargée depuis %s", CONFIG_PATH)
-                return
             except Exception as e:
                 logger.warning("Erreur config: %s — valeurs par défaut", e)
-        self._data = json.loads(json.dumps(_DEFAULTS))
+                self._data = json.loads(json.dumps(_DEFAULTS))
+        else:
+            self._data = json.loads(json.dumps(_DEFAULTS))
+        self._load_presets()
+
+    def _load_presets(self) -> None:
+        """Each preset is its own file under PRESETS_DIR — cheaper than
+        rewriting every preset to disk on every config.save() (which used to
+        happen constantly, since save() fires after nearly every setting
+        change), and easier to back up/share a single preset."""
+        PRESETS_DIR.mkdir(parents=True, exist_ok=True)
+        self._presets = []
+        self._preset_paths = {}
+        for path in sorted(PRESETS_DIR.glob("*.json")):
+            try:
+                with open(path, encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception as e:
+                logger.warning("Preset illisible %s: %s", path, e)
+                continue
+            name = data.get("name")
+            if not name:
+                continue
+            self._presets.append(data)
+            self._preset_paths[name] = path
 
     def save(self) -> None:
         CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -56,12 +102,12 @@ class AppConfig:
         self._data["locked"] = v
 
     @property
-    def hide_in_garage(self) -> bool:
-        return bool(self._data.get("hide_in_garage", False))
+    def auto_hide(self) -> bool:
+        return bool(self._data.get("auto_hide", False))
 
-    @hide_in_garage.setter
-    def hide_in_garage(self, v: bool) -> None:
-        self._data["hide_in_garage"] = v
+    @auto_hide.setter
+    def auto_hide(self, v: bool) -> None:
+        self._data["auto_hide"] = v
 
     def _w(self, key: str) -> dict:
         return self._data.setdefault("widgets", {}).setdefault(key, {})
@@ -101,26 +147,65 @@ class AppConfig:
     # ------------------------------------------------------------------
 
     def presets(self) -> list[dict]:
-        return list(self._data.get("presets", []))
+        return list(self._presets)
 
     def preset_names(self) -> list[str]:
-        return [p["name"] for p in self._data.get("presets", [])]
+        return [p["name"] for p in self._presets]
 
     def preset_by_name(self, name: str) -> dict | None:
-        return next((p for p in self._data.get("presets", []) if p.get("name") == name), None)
+        return next((p for p in self._presets if p.get("name") == name), None)
+
+    def _unique_preset_path(self, name: str) -> Path:
+        """Path for a *new* preset file — disambiguated if another preset's
+        name happens to sanitize to the same filename."""
+        base = _slugify(name)
+        taken = set(self._preset_paths.values())
+        path = PRESETS_DIR / f"{base}.json"
+        n = 2
+        while path in taken:
+            path = PRESETS_DIR / f"{base}-{n}.json"
+            n += 1
+        return path
 
     def upsert_preset(self, name: str, data: dict) -> None:
-        ps = self._data.setdefault("presets", [])
-        for i, p in enumerate(ps):
+        payload = {"name": name, **data}
+        path = self._preset_paths.get(name) or self._unique_preset_path(name)
+        try:
+            PRESETS_DIR.mkdir(parents=True, exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, indent=2)
+        except Exception as e:
+            logger.warning("Impossible d'écrire le preset %s: %s", name, e)
+            return
+        self._preset_paths[name] = path
+        for i, p in enumerate(self._presets):
             if p.get("name") == name:
-                ps[i] = {"name": name, **data}
-                return
-        ps.append({"name": name, **data})
+                self._presets[i] = payload
+                break
+        else:
+            self._presets.append(payload)
 
     def rename_preset(self, old_name: str, new_name: str) -> None:
-        for p in self._data.get("presets", []):
+        old_path = self._preset_paths.get(old_name)
+        data = self.preset_by_name(old_name)
+        if old_path is None or data is None:
+            return
+        new_data = dict(data)
+        new_data["name"] = new_name
+        new_path = self._unique_preset_path(new_name)
+        try:
+            with open(new_path, "w", encoding="utf-8") as f:
+                json.dump(new_data, f, indent=2)
+        except Exception as e:
+            logger.warning("Impossible de renommer le preset %s: %s", old_name, e)
+            return
+        if old_path.exists() and old_path != new_path:
+            old_path.unlink()
+        del self._preset_paths[old_name]
+        self._preset_paths[new_name] = new_path
+        for i, p in enumerate(self._presets):
             if p.get("name") == old_name:
-                p["name"] = new_name
+                self._presets[i] = new_data
                 break
         cp = self._data.get("class_presets", {})
         for k, v in list(cp.items()):
@@ -128,7 +213,13 @@ class AppConfig:
                 cp[k] = new_name
 
     def delete_preset(self, name: str) -> None:
-        self._data["presets"] = [p for p in self._data.get("presets", []) if p.get("name") != name]
+        path = self._preset_paths.pop(name, None)
+        if path is not None and path.exists():
+            try:
+                path.unlink()
+            except Exception as e:
+                logger.warning("Impossible de supprimer le preset %s: %s", name, e)
+        self._presets = [p for p in self._presets if p.get("name") != name]
         cp = self._data.get("class_presets", {})
         for k in list(cp.keys()):
             if cp[k] == name:
@@ -213,7 +304,7 @@ class AppConfig:
 
     @property
     def bc_tower_enabled(self) -> bool:
-        return bool(self._bc().get("tower_enabled", True))
+        return bool(self._bc().get("tower_enabled", False))
 
     @bc_tower_enabled.setter
     def bc_tower_enabled(self, v: bool) -> None:

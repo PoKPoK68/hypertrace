@@ -736,7 +736,7 @@ class StandingsWidget(BaseWidget):
             if e.get("is_class_header"):
                 if not self._show_class_badge:
                     continue
-                abbrev  = e.get("abbrev", "???")[:3]
+                abbrev  = e.get("abbrev", "???")[:4]
                 cls_col = e.get("cls_color")
                 bdg_w   = len(abbrev) * _char_px(fs) + 8
                 bdg_x, bdg_y, bdg_h = 4, y + 1, CLS_H - 2

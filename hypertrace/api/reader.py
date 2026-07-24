@@ -7,7 +7,7 @@ tyres, weather, speed, pedals) no longer use this module — they read
 This stays as a thin adapter for what hasn't been migrated: the stream-only
 broadcast graphics (`widgets/broadcast.py`) and the live-timing panel
 (`widgets/live_timing.py`) — both already documented as on-hold/paused
-features, not part of the TinyPedal-architecture migration — plus
+features, not part of the calc-engine migration — plus
 `stream/server.py`'s own per-tick game-state checks. `DataReader.get()`
 builds a fresh `LMUSnapshot` from the calc engine's shared singletons on
 every call. There is only one live shared-memory connection in the app,

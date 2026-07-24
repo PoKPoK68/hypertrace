@@ -11,8 +11,9 @@ from hypertrace.utils.theme import T, label_font, num_font, draw_panel
 from hypertrace.widgets.base import BaseWidget, DEFAULT_SCALE
 from hypertrace.widgets.fuel_calc import (
     _BH, _LVL_H, _PAD, _HDR, _RH, _LABEL_W,
-    _draw_bar, _draw_level, _laps_remaining, _fuel_col, _calc,
+    _draw_bar, _draw_level, _fuel_col, _calc,
     _table_layout, _widget_w, _HDR_NAMES, _VE_REFS, _class_has_ve, _fmt_fuel,
+    _fmt_tanks,
 )
 
 
@@ -23,6 +24,16 @@ def _fmt_ve(v: float) -> str:
 
 def _fmt_ref_ve(v: float) -> str:
     return f"+{v:.0f}%" if v >= 100 else f"+{v:.1f}%"
+
+
+def _ve_col(ratio: float) -> tuple[QColor, QColor]:
+    """Same thresholds as the VE column in Standings: red under 10%, orange
+    under 25%, green otherwise."""
+    if ratio < 0.10:
+        c = QColor(T.CRIT); return c, c.lighter(120)
+    if ratio < 0.25:
+        c = QColor(T.WARN); return c, c.lighter(120)
+    return QColor(T.VE_LO), QColor(T.VE_HI)
 
 
 class VECalcWidget(BaseWidget):
@@ -46,7 +57,8 @@ class VECalcWidget(BaseWidget):
         {"key": "show_usage",  "label": "USAGE col",  "type": "bool", "default": True},
         {"key": "show_laps",   "label": "LAPS col",   "type": "bool", "default": True},
         {"key": "show_refuel", "label": "REFUEL col", "type": "bool", "default": True},
-        {"key": "show_finish", "label": "FINISH col", "type": "bool", "default": True},
+        {"key": "show_finish", "label": "TO END col", "type": "bool", "default": True},
+        {"key": "show_tanks",  "label": "TANKS col",  "type": "bool", "default": True},
         {"key": "show_ratio",  "label": "Fuel ratio", "type": "bool", "default": True},
     ]
 
@@ -61,30 +73,25 @@ class VECalcWidget(BaseWidget):
         self._show_laps       = True
         self._show_refuel     = True
         self._show_finish     = True
+        self._show_tanks      = True
         self._show_ratio      = True
 
         self._scale        = DEFAULT_SCALE / 100.0
         self._safety_laps  = 1.0
         self._merge        = False
 
-        self._last_total_laps   = -1
-        self._ve_at_lap_start   = -1.0
-        self._fuel_at_lap_start = -1.0
-        self._fuel_prev_tick    = -1.0
-        self._last_reset_count  = -1
+        self._fuel_ratio    = 0.0
 
-        self._ve_history:  deque[float] = deque(maxlen=5)
-        self._last_lap_ratio = 0.0
-
-        self._last_lap_ve   = 0.0
-        self._last_lap_fuel = 0.0
+        self._last_lap_ve       = 0.0
+        self._last_amount_used  = -1.0
+        self._ve_history: deque[float] = deque(maxlen=5)
 
         self._current_ve   = 0.0
         self._current_fuel = 0.0
         self._fuel_cap     = 100.0
         self._laps_remaining = 0.0
 
-        self._w          = _widget_w(4)
+        self._w          = _widget_w(5)
         self._bw         = self._w - 2 * _PAD
         self._layout_h   = 147
         self._ve_sec_h   = _BH
@@ -130,7 +137,8 @@ class VECalcWidget(BaseWidget):
 
         vis_data = [k for k, v in [
             ("usage", self._show_usage), ("laps", self._show_laps),
-            ("refuel", self._show_refuel), ("finish", self._show_finish)
+            ("refuel", self._show_refuel), ("finish", self._show_finish),
+            ("tanks", self._show_tanks)
         ] if v]
         vis_rows = (1 if self._show_last else 0) + (1 if self._show_avg5 else 0)
         has_table = vis_rows > 0 and len(vis_data) > 0
@@ -143,7 +151,7 @@ class VECalcWidget(BaseWidget):
         if has_table or ratio_h > 0:
             self._w, self._col_pos = _table_layout(
                 _VE_REFS, self._show_usage, self._show_laps,
-                self._show_refuel, self._show_finish)
+                self._show_refuel, self._show_finish, self._show_tanks)
         else:
             self._w, self._col_pos = _widget_w(0), {"label": (_PAD, _LABEL_W)}
         self._bw         = self._w - 2 * _PAD
@@ -175,6 +183,7 @@ class VECalcWidget(BaseWidget):
         self._show_laps       = bool(params.get("show_laps",   True))
         self._show_refuel     = bool(params.get("show_refuel", True))
         self._show_finish     = bool(params.get("show_finish", True))
+        self._show_tanks      = bool(params.get("show_tanks",  True))
         self._show_ratio      = bool(params.get("show_ratio",  True))
 
         self._apply_session_visibility(params)
@@ -182,56 +191,25 @@ class VECalcWidget(BaseWidget):
         self.update()
 
     def on_data(self) -> None:
-        if minfo.stint.resetCount != self._last_reset_count:
-            self._last_reset_count  = minfo.stint.resetCount
-            self._last_total_laps   = -1
-            self._ve_history.clear()
-            self._last_lap_ve       = 0.0
-            self._last_lap_fuel     = 0.0
-            self._last_lap_ratio    = 0.0
-            self._ve_at_lap_start   = -1.0
-            self._fuel_at_lap_start = -1.0
+        # Laps-remaining and the live fuel/VE ratio come straight from the
+        # background calc (module_fuel.py) — see fuel_calc.py's on_data()
+        # for the full rationale.
+        self._current_ve     = minfo.energy.amountCurrent / 100.0
+        self._current_fuel   = minfo.fuel.amountCurrent
+        self._fuel_cap        = max(1.0, minfo.fuel.capacity)
+        self._laps_remaining  = minfo.energy.lapsRemaining
+        self._fuel_ratio      = minfo.hybrid.fuelEnergyRatio
 
-        self._current_ve   = minfo.energy.amountCurrent / 100.0
-        self._current_fuel = minfo.fuel.amountCurrent
-        self._fuel_cap     = max(1.0, minfo.fuel.capacity)
+        # AVG 5 = rolling average of the last 5 completed laps' VE
+        # consumption. amountUsedLast only changes at a lap boundary, so a
+        # change is exactly a new completed-lap reading.
+        used_last = minfo.energy.amountUsedLast
+        if used_last != self._last_amount_used:
+            if self._last_amount_used >= 0 and 0.001 < used_last < 100.0:
+                self._ve_history.append(used_last)
+            self._last_amount_used = used_last
+        self._last_lap_ve = used_last
 
-        player = next((v for v in minfo.vehicles.dataSet if v.is_player), None)
-        if player:
-            # Tracked locally from the widget's own VE/fuel readings rather
-            # than minfo.*.amountUsedLast — those fields are updated by
-            # module_fuel.py's own independent lap-boundary detection, on its
-            # own background thread; relying on them here raced against this
-            # widget's total_laps-based trigger and could read a stale value.
-            if self._fuel_prev_tick >= 0 and (self._current_fuel - self._fuel_prev_tick) > 2.0:
-                self._fuel_at_lap_start = self._current_fuel  # mid-lap refuel
-            if self._ve_at_lap_start >= 0 and (self._current_ve - self._ve_at_lap_start) > 0.05:
-                self._ve_at_lap_start = self._current_ve       # mid-lap "refuel"
-
-            total_laps = player.total_laps
-            if self._last_total_laps < 0:
-                self._last_total_laps   = total_laps
-                self._ve_at_lap_start   = self._current_ve
-                self._fuel_at_lap_start = self._current_fuel
-            elif total_laps > self._last_total_laps:
-                ve_consumed   = self._ve_at_lap_start - self._current_ve
-                fuel_consumed = self._fuel_at_lap_start - self._current_fuel
-
-                self._ve_history.append(ve_consumed)
-                self._last_lap_ve = ve_consumed
-
-                if fuel_consumed > 0.05:
-                    self._last_lap_fuel = fuel_consumed
-
-                if ve_consumed > 0.001 and fuel_consumed > 0.05:
-                    self._last_lap_ratio = fuel_consumed / (ve_consumed * 100.0)
-
-                self._ve_at_lap_start   = self._current_ve
-                self._fuel_at_lap_start = self._current_fuel
-                self._last_total_laps   = total_laps
-
-        self._fuel_prev_tick = self._current_fuel
-        self._laps_remaining = _laps_remaining(player)
         self.update()
 
     def _avg5_ve(self) -> float:
@@ -246,17 +224,18 @@ class VECalcWidget(BaseWidget):
 
         y = _PAD
         fuel_col = _fuel_col(self._current_fuel / self._fuel_cap)
+        ve_col   = _ve_col(self._current_ve)
 
         # ── VE bar / level ─────────────────────────────────────────────────
         if self._show_ve_bar:
             _draw_bar(p, _PAD, y, self._bw, _BH, self._current_ve,
-                      QColor(T.VE_LO), QColor(T.VE_HI),
+                      ve_col[0], ve_col[1],
                       "VE", _fmt_ve(self._current_ve * 100),
                       show_val=self._show_ve_level)
             y += _BH
         elif self._show_ve_level:
             _draw_level(p, _PAD, y, self._bw, _LVL_H,
-                        "VE", _fmt_ve(self._current_ve * 100), QColor(T.VE_LO))
+                        "VE", _fmt_ve(self._current_ve * 100), ve_col[0])
             y += _LVL_H
 
         if self._inter_h:
@@ -301,12 +280,12 @@ class VECalcWidget(BaseWidget):
             cur_pct = self._current_ve * 100.
 
             rows = []
-            if self._show_last: rows.append(("LAST",  self._last_lap_ve))
+            if self._show_last: rows.append(("LAST", self._last_lap_ve))
             if self._show_avg5: rows.append(("AVG 5", self._avg5_ve()))
 
-            for lbl, ve_frac in rows:
-                ve_pct = ve_frac * 100.
-                laps_on, refuel_pct, finish_pct = _calc(ve_pct, cur_pct, rem, sfty)
+            for lbl, ve_pct in rows:
+                # VE has no liter tank — its "capacity" is always 100%.
+                laps_on, refuel_pct, to_end_pct = _calc(ve_pct, cur_pct, rem, sfty, 100.0)
 
                 cx, cw = self._col_pos["label"]
                 p.setFont(label_font(8)); p.setPen(QColor(T.DIM))
@@ -342,20 +321,35 @@ class VECalcWidget(BaseWidget):
                 if "finish" in self._col_pos:
                     cx, cw = self._col_pos["finish"]
                     p.setFont(num_font(9))
-                    if finish_pct is None:
+                    if to_end_pct is None:
                         p.setPen(QColor(T.TEXT)); fin_str = "-"
+                    elif to_end_pct < 0.05:
+                        p.setPen(QColor(T.GOOD)); fin_str = "OK"
                     else:
-                        p.setPen(QColor(T.TEXT)); fin_str = _fmt_ve(finish_pct)
+                        p.setPen(QColor(T.TEXT)); fin_str = _fmt_ref_ve(to_end_pct)
                     p.drawText(cx, y, cw, _RH,
                                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
                                fin_str)
+
+                if "tanks" in self._col_pos:
+                    cx, cw = self._col_pos["tanks"]
+                    p.setFont(num_font(9))
+                    if to_end_pct is None:
+                        p.setPen(QColor(T.TEXT)); tanks_str = "-"
+                    elif to_end_pct < 0.05:
+                        p.setPen(QColor(T.GOOD)); tanks_str = "OK"
+                    else:
+                        p.setPen(QColor(T.TEXT)); tanks_str = _fmt_tanks(to_end_pct / 100.0)
+                    p.drawText(cx, y, cw, _RH,
+                               Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
+                               tanks_str)
 
                 y += _RH
 
         # ── Fuel ratio row ─────────────────────────────────────────────────
         if self._ratio_h:
             y += 5
-            ratio = self._last_lap_ratio
+            ratio = self._fuel_ratio
             ratio_str = f"{math.ceil(ratio * 100) / 100:.2f}" if ratio > 0 else "-"
             p.setFont(label_font(8)); p.setPen(QColor(T.DIM))
             p.drawText(_PAD, y, self._bw // 2, _RH, Qt.AlignmentFlag.AlignVCenter, "FUEL RATIO")

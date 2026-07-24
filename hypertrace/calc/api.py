@@ -1,7 +1,7 @@
 """hypertrace/calc/api.py — Semantic shared-memory accessor.
 
-Ported from TinyPedal's `tinypedal/adapter/lmu_reader.py` (s-victor/TinyPedal,
-GPLv3), trimmed to the domains this app's widgets/modules actually read
+Adapted from an established reference implementation (see
+THIRD_PARTY_NOTICES.md), trimmed to the domains this app's widgets/modules actually read
 (state, lap, session, timing, tyre, vehicle, engine fuel/energy, pedal
 inputs, bodywork/wheel damage). Anything LMU-specific not used here (brakes,
 electric-motor detail, switches/assists, exact aero/suspension damage % —
@@ -284,8 +284,7 @@ class Damage(_Adapter):
         front-to-rear, left-to-right: FL, FC, FR, CL, CR, RL, RC, RR.
 
         mDentSeverity's raw 8 slots don't come in that visual order — this
-        reorders them the same way TinyPedal's LMU adapter does (verified
-        against real telemetry there). Unlike TinyPedal, the rear-center slot
+        reorders them into the verified visual layout. The rear-center slot
         is NOT overridden when the rear wing detaches — the design widget
         shows the wing as its own separate zone (see rear_wing_detached()),
         so this stays the genuine dent value underneath it.

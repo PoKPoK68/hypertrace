@@ -1,7 +1,8 @@
 """hypertrace/calc/modules/module_vehicles.py — Standings/relative dataset.
 
-Not a full port of TinyPedal's `module_vehicles.py` — that one computes gaps
-manually (needed for sims whose shared memory doesn't provide them). LMU's
+Not a full adaptation of the reference implementation's vehicles module —
+that one computes gaps manually (needed for sims whose shared memory doesn't
+provide them). LMU's
 shared memory already publishes `mTimeBehindLeader`/`mTimeBehindNext` and
 their lap-count equivalents directly, per car, so this module is mostly a
 straight reorganization of the scoring+telemetry arrays into `minfo.vehicles`

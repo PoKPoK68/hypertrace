@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hypertrace"
-version = "0.8.0"
+version = "1.0.0"
 description = "A modern telemetry overlay for Le Mans Ultimate"
 requires-python = ">=3.11"
 dependencies = [
