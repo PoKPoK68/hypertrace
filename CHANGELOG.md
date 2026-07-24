@@ -12,10 +12,9 @@ All notable changes to HyperTrace (formerly LMU App) are documented here.
 - The app is now called **HyperTrace**, with a new icon. Settings/logs moved from `~/.lmuapp/` to `~/.hypertrace/` — **nothing is carried over automatically**: you'll start with default overlay positions and **your presets need to be recreated**. Once you're set up, the old `~/.lmuapp` folder is no longer used and can be safely deleted.
 
 ### New: Damage overlay
-- **New "Damage" widget** — top-down car silhouette (design handoff: `design_handoff_damage_overlay`), 17 zones total: 4 body edges + 4 corners, 4 wheels, 4 suspension wishbones, and the rear wing as its own zone. Each zone is coloured on a 4-level severity scale (grey/amber/orange/bright red for the most severe level).
+- **New "Damage" widget** — top-down car silhouette , 17 zones total: 4 body edges + 4 corners, 4 wheels, 4 suspension wishbones, and the rear wing as its own zone. Each zone is coloured on a 4-level severity scale (grey/amber/orange/bright red for the most severe level).
 - **Wheels** show detached/punctured state; **suspension** shows REST-only damage tiers; **body zones and the rear wing** are shared memory. No text or numeric readout — the silhouette is the whole display, matching the design spec.
-- Suspension damage is the one REST-only signal here — LMU has no shared-memory equivalent for it — so it's only available on this build; the without-rest-api build shows the same widget without that one zone lighting up (always neutral grey there).
-- **Not finished** — zone mapping still needs to be checked against real in-game damage before this is considered final.
+- Suspension damage is the one REST-only signal here — LMU has no shared-memory equivalent for it — so it only lights up in the full build; in the without-rest-api build that zone stays neutral grey.
 
 ### Main window redesign
 - **Sidebar layout** — the window is now a wider (560px) panel with a navigation rail on the left (Overlays / Presets / Stream / Broadcast, active page marked with an amber bar) instead of the old top tabs, in the style of typical sim-racing companion apps.
@@ -46,6 +45,7 @@ All notable changes to HyperTrace (formerly LMU App) are documented here.
 - **LMP2 and LMP3 now show their full names** instead of "P2"/"P3" wherever a class badge appears.
 
 ### Under the hood
+- **One typeface across the whole app** — the Live Timing panel was still drawn in the system font, and its session clock in a third font again, while everything else used Montserrat; all of it now matches. The unused JetBrains Mono and Saira SemiCondensed files are no longer bundled either, which takes about a megabyte off the download.
 - **REST enrichment no longer runs when there's nothing to enrich** — the background thread that queries LMU's local API (car numbers, team names, class gaps, weather forecast, suspension damage) used to send requests five times a second even with the game closed, on a loading screen or alt-tabbed. It now waits until a session is actually live.
 - **Third-party attribution** — the app now ships a `THIRD_PARTY_NOTICES.md` crediting the GPLv3 project the calc engine and the overlay update loop are adapted from.
 

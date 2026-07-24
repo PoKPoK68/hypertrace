@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from hypertrace.utils.class_colors import class_abbrev, class_color
-from hypertrace.utils.theme import T
+from hypertrace.utils.theme import T, num_font
 
 if TYPE_CHECKING:
     from hypertrace.api.reader import DataReader
@@ -275,8 +275,13 @@ class LiveTimingPanel(QWidget):
         self._timer.stop()
 
     def _apply_dark(self) -> None:
+        # font-family belongs here, on the panel's own root: this is a
+        # top-level window, so it inherits nothing from the main window's
+        # stylesheet. Without it the whole panel — table, headers, labels —
+        # fell back to the system font while the rest of the app was
+        # Montserrat. Children that set only font-size keep this family.
         self.setStyleSheet(
-            "QWidget { background: #13151a; color: #ddd; }"
+            f"QWidget {{ background: #13151a; color: #ddd; font-family: '{T.F_TEXT}'; }}"
             f"QLabel {{ color: {T.DIM}; font-size: 11px; }}"
         )
 
@@ -295,8 +300,12 @@ class LiveTimingPanel(QWidget):
         hdr.addSpacing(6)
 
         self._lbl_clock = QLabel("—:——:——")
-        self._lbl_clock.setStyleSheet(
-            f"color: {T.TEXT}; font-size: 12px; font-family: monospace;")
+        # Was hardcoded to `monospace`, i.e. whatever the system picked — a
+        # third typeface in an app that has one. Montserrat with the tabular
+        # figures num_font() enables keeps the clock from jittering as digits
+        # change, which is what the monospace was there for.
+        self._lbl_clock.setFont(num_font(9))
+        self._lbl_clock.setStyleSheet(f"color: {T.TEXT};")
         hdr.addWidget(self._lbl_clock)
 
         self._lbl_track = QLabel("")

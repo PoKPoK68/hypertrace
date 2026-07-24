@@ -93,8 +93,12 @@ class T:
     }
 
     # ---- type -----------------------------------------------------------
-    F_TEXT = "JetBrains Mono"          # names, labels, titles, headers
-    F_NUM  = "JetBrains Mono"          # speed, gear, gaps, lap times, %, °
+    # The app's single typeface, for every window and every overlay. Both
+    # tokens are rewritten at startup by main.py's _load_fonts() with the name
+    # Qt actually registered for the bundled file; these values are what they
+    # name if that ever fails, so they must stay Montserrat too.
+    F_TEXT = "Montserrat"              # names, labels, titles, headers
+    F_NUM  = "Montserrat"              # speed, gear, gaps, lap times, %, °
     # No letter tracking: it visibly spaced out short codes (GT3, GAR) and
     # pushed centred single glyphs off-centre.
 
