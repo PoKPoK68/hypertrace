@@ -48,8 +48,13 @@ Chaque zone a un `data-zone`, un niveau `0..3`, et une géométrie fixe (coords 
 |---|---|---|
 | `body-front` | Carrosserie AV | `M91,34 L139,34` |
 | `body-rear`  | Carrosserie AR | `M91,266 L139,266` |
-| `body-left`  | Flanc gauche   | `M58,67 L58,233` |
-| `body-right` | Flanc droit    | `M172,67 L172,233` |
+| `body-left`  | Flanc gauche   | `M58,117 L58,183` |
+| `body-right` | Flanc droit    | `M172,117 L172,183` |
+
+Le flanc n'est **plus une ligne continue** : il est interrompu (deux extrémités séparées,
+aucun tracé) à l'endroit de chaque passage de roue avant/arrière — pas une encoche qui
+contourne la roue, un vrai trou dans la carrosserie, avec ~4 unités de dégagement de
+chaque côté de la roue pour ne pas la toucher.
 
 **Coins (4)** — mêmes réglages de trait, arcs de rayon 28 :
 | id | label | path |
@@ -65,19 +70,28 @@ ils ne se touchent jamais.
 **Roues (4)** — `<rect>` **pleins** (remplissage opaque), `rx:5`, `width:22 height:42`, `stroke-width:2.5` :
 | id | label | x | y |
 |---|---|---|---|
-| `wheel-fl` | Roue AV-G | 16 | 71 |
-| `wheel-fr` | Roue AV-D | 192 | 71 |
-| `wheel-rl` | Roue AR-G | 16 | 187 |
-| `wheel-rr` | Roue AR-D | 192 | 187 |
+| `wheel-fl` | Roue AV-G | 52 | 66 |
+| `wheel-fr` | Roue AV-D | 156 | 66 |
+| `wheel-rl` | Roue AR-G | 52 | 192 |
+| `wheel-rr` | Roue AR-D | 156 | 192 |
+
+Les roues sont positionnées **à fleur de la carrosserie** : leur bord extérieur affleure
+le flanc (avec un léger débord vers l'extérieur, ~6 unités), et elles sont centrées
+verticalement sur le trou découpé dans le flanc (voir ci-dessus), pas sur l'ancien repère
+de la ligne de carrosserie.
 
 **Suspensions (4)** — wishbone à deux branches, `stroke-width:4`, `fill:none`, `stroke-linecap:round`.
 Elles **frôlent** la carrosserie et la roue sans les chevaucher :
 | id | label | path |
 |---|---|---|
-| `susp-fl` | Susp. AV-G | `M53,84 L41,92 M53,102 L41,92` |
-| `susp-fr` | Susp. AV-D | `M177,84 L189,92 M177,102 L189,92` |
-| `susp-rl` | Susp. AR-G | `M53,200 L41,208 M53,218 L41,208` |
-| `susp-rr` | Susp. AR-D | `M177,200 L189,208 M177,218 L189,208` |
+| `susp-fl` | Susp. AV-G | `M89,79 L77,87 M89,97 L77,87` |
+| `susp-fr` | Susp. AV-D | `M141,79 L153,87 M141,97 L153,87` |
+| `susp-rl` | Susp. AR-G | `M89,205 L77,213 M89,223 L77,213` |
+| `susp-rr` | Susp. AR-D | `M141,205 L153,213 M141,223 L153,213` |
+
+Chaque suspension est un chevron à deux branches dont la **pointe reste accrochée à la
+roue** (convergent vers un point côté roue) et dont l'écartement est ancré côté châssis ;
+translatée en bloc avec sa roue, la forme/le sens ne changent jamais, seule la position glisse.
 
 **Aileron arrière (1)** — élément **en plus** du pare-chocs arrière (ne le remplace pas).
 Forme **pleine** (classe `dz-wing`, `stroke:none`, couleur appliquée au `fill`), arrondi
