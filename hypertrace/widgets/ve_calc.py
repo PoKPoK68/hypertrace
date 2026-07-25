@@ -47,6 +47,12 @@ class VECalcWidget(BaseWidget):
         {"type": "separator", "label": "Calculation"},
         {"key": "safety_laps",  "label": "Safety margin (laps)", "type": "float",
          "min": 0.0, "max": 5.0, "step": 0.5, "default": 1.0},
+        {"key": "avg5_reset",   "label": "Reset AVG 5",          "type": "choice",
+         "default": "never", "options": [
+             {"label": "Never",            "value": "never"},
+             {"label": "At session start", "value": "session"},
+             {"label": "On pit exit",      "value": "pit_exit"},
+         ]},
         {"type": "separator", "label": "Display"},
         {"key": "show_ve_bar",     "label": "VE bar",     "type": "bool", "default": True},
         {"key": "show_ve_level",   "label": "VE level",   "type": "bool", "default": True},
@@ -85,6 +91,11 @@ class VECalcWidget(BaseWidget):
         self._last_lap_ve       = 0.0
         self._last_amount_used  = -1.0
         self._ve_history: deque[float] = deque(maxlen=5)
+
+        # AVG-5 auto-reset — see fuel_calc.py for the rationale.
+        self._avg5_reset       = "never"
+        self._last_reset_count = None
+        self._prev_in_pit      = False
 
         self._current_ve   = 0.0
         self._current_fuel = 0.0
@@ -172,6 +183,7 @@ class VECalcWidget(BaseWidget):
         self._scale       = int(params.get("scale", DEFAULT_SCALE)) / 100.0
         self._opacity     = max(0, min(100, int(params.get("opacity", 85))))
         self._safety_laps = float(params.get("safety_laps", 1.0))
+        self._avg5_reset  = str(params.get("avg5_reset", "never"))
 
         self._show_ve_bar     = bool(params.get("show_ve_bar",     True))
         self._show_ve_level   = bool(params.get("show_ve_level",   True))
@@ -200,6 +212,10 @@ class VECalcWidget(BaseWidget):
         self._laps_remaining  = minfo.energy.lapsRemaining
         self._fuel_ratio      = minfo.hybrid.fuelEnergyRatio
 
+        if self._avg5_reset_triggered():
+            self._ve_history.clear()
+            self._last_amount_used = -1.0
+
         # AVG 5 = rolling average of the last 5 completed laps' VE
         # consumption. amountUsedLast only changes at a lap boundary, so a
         # change is exactly a new completed-lap reading.
@@ -211,6 +227,24 @@ class VECalcWidget(BaseWidget):
         self._last_lap_ve = used_last
 
         self.update()
+
+    def _avg5_reset_triggered(self) -> bool:
+        """See FuelCalcWidget._avg5_reset_triggered — same logic, VE history."""
+        triggered = False
+
+        reset_count = minfo.stint.resetCount
+        if reset_count != self._last_reset_count:
+            if self._avg5_reset == "session" and self._last_reset_count is not None:
+                triggered = True
+            self._last_reset_count = reset_count
+
+        player = next((v for v in minfo.vehicles.dataSet if v.is_player), None)
+        in_pit = player.in_pit_lane if player else False
+        if self._avg5_reset == "pit_exit" and self._prev_in_pit and not in_pit:
+            triggered = True
+        self._prev_in_pit = in_pit
+
+        return triggered
 
     def _avg5_ve(self) -> float:
         return sum(self._ve_history) / len(self._ve_history) if self._ve_history else 0.0

@@ -180,6 +180,12 @@ class FuelCalcWidget(BaseWidget):
         {"type": "separator", "label": "Calculation"},
         {"key": "safety_laps",  "label": "Safety margin (laps)", "type": "float",
          "min": 0.0, "max": 5.0, "step": 0.5, "default": 1.0},
+        {"key": "avg5_reset",   "label": "Reset AVG 5",          "type": "choice",
+         "default": "never", "options": [
+             {"label": "Never",            "value": "never"},
+             {"label": "At session start", "value": "session"},
+             {"label": "On pit exit",      "value": "pit_exit"},
+         ]},
         {"type": "separator", "label": "Display"},
         {"key": "show_fuel_bar",   "label": "Fuel bar",   "type": "bool", "default": True},
         {"key": "show_fuel_level", "label": "Fuel level", "type": "bool", "default": True},
@@ -210,6 +216,13 @@ class FuelCalcWidget(BaseWidget):
         self._last_lap_fuel        = 0.0
         self._last_amount_used     = -1.0
         self._fuel_history: deque[float] = deque(maxlen=5)
+
+        # AVG-5 auto-reset: "never" | "session" | "pit_exit". Tracks the two
+        # trigger signals continuously (so switching mode mid-run never fires a
+        # stale one), and only clears the rolling history on the selected one.
+        self._avg5_reset       = "never"
+        self._last_reset_count = None   # None until first seen, so startup never counts as a reset
+        self._prev_in_pit      = False
 
         self._current_fuel   = 0.0
         self._fuel_cap       = 100.0
@@ -284,6 +297,7 @@ class FuelCalcWidget(BaseWidget):
         self._scale       = int(params.get("scale", DEFAULT_SCALE)) / 100.0
         self._opacity     = max(0, min(100, int(params.get("opacity", 85))))
         self._safety_laps = float(params.get("safety_laps", 1.0))
+        self._avg5_reset  = str(params.get("avg5_reset", "never"))
 
         self._show_fuel_bar   = bool(params.get("show_fuel_bar",   True))
         self._show_fuel_level = bool(params.get("show_fuel_level", True))
@@ -309,6 +323,13 @@ class FuelCalcWidget(BaseWidget):
         self._fuel_cap       = max(1.0, minfo.fuel.capacity)
         self._laps_remaining = minfo.fuel.lapsRemaining
 
+        # Auto-reset the rolling average on the configured trigger. Also drop
+        # the last-used baseline so the first lap after the reset seeds a fresh
+        # history instead of being diffed against a pre-reset reading.
+        if self._avg5_reset_triggered():
+            self._fuel_history.clear()
+            self._last_amount_used = -1.0
+
         # AVG 5 = rolling average of the last 5 completed laps' consumption.
         # amountUsedLast only changes at a lap boundary (module_fuel.py holds
         # it steady the rest of the lap), so a change is exactly a new
@@ -322,6 +343,27 @@ class FuelCalcWidget(BaseWidget):
         self._last_lap_fuel = used_last
 
         self.update()
+
+    def _avg5_reset_triggered(self) -> bool:
+        """Whether the AVG-5 history should be cleared this tick. Both signals
+        are tracked every tick regardless of the selected mode, so the first
+        tick (and a mode switch) never counts as a trigger; only the mode in
+        effect actually clears."""
+        triggered = False
+
+        reset_count = minfo.stint.resetCount
+        if reset_count != self._last_reset_count:
+            if self._avg5_reset == "session" and self._last_reset_count is not None:
+                triggered = True
+            self._last_reset_count = reset_count
+
+        player = next((v for v in minfo.vehicles.dataSet if v.is_player), None)
+        in_pit = player.in_pit_lane if player else False
+        if self._avg5_reset == "pit_exit" and self._prev_in_pit and not in_pit:
+            triggered = True
+        self._prev_in_pit = in_pit
+
+        return triggered
 
     def _avg5(self) -> float:
         return sum(self._fuel_history) / len(self._fuel_history) if self._fuel_history else 0.0
