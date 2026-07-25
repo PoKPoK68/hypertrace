@@ -11,6 +11,7 @@ from hypertrace.widgets.inputs import InputsWidget
 from hypertrace.widgets.standings import StandingsWidget
 from hypertrace.widgets.relative import RelativeWidget
 from hypertrace.widgets.tyres import TyresWidget
+from hypertrace.widgets.battery import BatteryWidget
 from hypertrace.widgets.damage import DamageWidget
 from hypertrace.widgets.fuel_calc import FuelCalcWidget
 from hypertrace.widgets.ve_calc import VECalcWidget
@@ -212,6 +213,7 @@ def main() -> int:
     ve_calc_w   = VECalcWidget(auto_hide=False)
 
     widget_entries: list[tuple[str, object]] = [
+        ("battery",    BatteryWidget(auto_hide=False)),
         ("damage",     DamageWidget(auto_hide=False)),
         ("delta",      DeltaWidget(auto_hide=False)),
         ("fuel_calc",  fuel_calc_w),
@@ -254,6 +256,7 @@ def main() -> int:
     stream_manager = StreamManager(reader)
 
     _stream_classes = [
+        ("battery",   BatteryWidget),
         ("damage",    DamageWidget),
         ("delta",     DeltaWidget),
         ("fuel_calc", FuelCalcWidget),

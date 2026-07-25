@@ -16,6 +16,7 @@ from PySide6.QtWidgets import QSizePolicy
 
 from hypertrace.calc.module_info import minfo
 from hypertrace.utils.class_colors import class_color
+from hypertrace.utils.logos import get_logo as _get_logo
 from hypertrace.utils.theme import T, draw_bold, label_font, num_font, text_font
 from hypertrace.widgets.base import BaseWidget, DEFAULT_SCALE
 
@@ -56,6 +57,11 @@ def _pos_col_w(font_size: int) -> int:
     return _POS_CHIP_X + _pos_chip_w(font_size) + _POS_CHIP_R
 
 
+_LOGO_COL_W = 22   # fixed width for the manufacturer logo column — matches
+                   # Standings' own convention (pos | logo | name), sized
+                   # slightly smaller for this widget's tighter rows.
+
+
 _BADGE_PAD = 5   # inner horizontal padding on each side of a badge label
 
 
@@ -94,11 +100,13 @@ def _lastlap_col_w(font_size: int) -> int:
 
 
 def _widget_w(name_width: int, font_size: int = 9, decimals: int = 1,
-             show_last_lap: bool = True) -> int:
+             show_last_lap: bool = True, show_logo: bool = True) -> int:
     w = (_pos_col_w(font_size) + name_width + _GAP_PAD_L
          + _gap_col_w(font_size, decimals) + _MARGIN)
     if show_last_lap:
         w += _GAP_PAD_L + _lastlap_col_w(font_size)
+    if show_logo:
+        w += _LOGO_COL_W
     return w
 
 
@@ -178,6 +186,7 @@ class RelativeWidget(BaseWidget):
         {"key": "interval_decimals", "label": "Gap decimals",   "type": "int",
          "min": 0, "max": 3,  "step": 1, "default": 1},
         {"type": "separator", "label": "Names"},
+        {"key": "show_logo",         "label": "Brand logo",  "type": "bool", "default": True},
         {"key": "name_format",       "label": "Format", "type": "choice",
          "options": [
              {"value": "full",    "label": "First Last"},
@@ -224,12 +233,14 @@ class RelativeWidget(BaseWidget):
                  header_info:        str = "session",
                  font_size:          int = 11,
                  show_last_lap:      bool = True,
+                 show_logo:          bool = True,
                  **kw):
         self._ahead              = drivers_ahead
         self._behind             = drivers_behind
         self._interval_decimals  = interval_decimals
         self._show_badges        = show_badges
         self._show_last_lap      = show_last_lap
+        self._show_logo          = show_logo
         self._name_width = name_width
         self._name_format         = name_format
         self._name_case           = name_case
@@ -254,7 +265,7 @@ class RelativeWidget(BaseWidget):
         self._temp_pm_sz  = 0
         self._opacity = 85
         super().__init__(update_hz=10, **kw)
-        self.setFixedSize(int(_widget_w(name_width, self._font_size, self._interval_decimals, show_last_lap) * self._scale),
+        self.setFixedSize(int(_widget_w(name_width, self._font_size, self._interval_decimals, show_last_lap, show_logo) * self._scale),
                           int(_widget_h(drivers_ahead, drivers_behind, self._font_size, show_session_bar) * self._scale))
 
     def setup_ui(self):
@@ -270,6 +281,7 @@ class RelativeWidget(BaseWidget):
         self._interval_decimals = int(params.get("interval_decimals", 1))
         self._show_badges       = bool(params.get("show_badges", True))
         self._show_last_lap     = bool(params.get("show_last_lap", True))
+        self._show_logo         = bool(params.get("show_logo", True))
         self._name_width = int(params.get("name_width", 150))
         self._name_format         = str(params.get("name_format", "full"))
         self._name_case           = str(params.get("name_case", "upper"))
@@ -283,7 +295,7 @@ class RelativeWidget(BaseWidget):
         _c.setAlpha(round(255 * max(0, min(100, int(params.get("player_color_alpha", 20)))) / 100))
         self._player_color = _c
         self._apply_session_visibility(params)
-        self.setFixedSize(int(_widget_w(self._name_width, self._font_size, self._interval_decimals, self._show_last_lap) * self._scale),
+        self.setFixedSize(int(_widget_w(self._name_width, self._font_size, self._interval_decimals, self._show_last_lap, self._show_logo) * self._scale),
                           int(_widget_h(self._ahead, self._behind, self._font_size, self._show_session_bar) * self._scale))
         self.update()
 
@@ -370,6 +382,7 @@ class RelativeWidget(BaseWidget):
                 "is_player": False,
                 "badge":     badge,
                 "cls":       v.vehicle_class,
+                "vehicle_name": v.vehicle_name,
                 "last_lap":  v.last_lap,
                 "is_pb":     v.last_lap > 0 and v.best_lap > 0 and v.last_lap <= v.best_lap,
             }
@@ -398,13 +411,14 @@ class RelativeWidget(BaseWidget):
             "is_player": True,
             "badge":     p_badge,
             "cls":       player.vehicle_class,
+            "vehicle_name": player.vehicle_name,
             "last_lap":  player.last_lap,
             "is_pb":     player.last_lap > 0 and player.best_lap > 0 and player.last_lap <= player.best_lap,
         }
 
         # Pad ahead list to always have self._ahead rows
         empty = {"pos": 0, "name_raw": "", "gap": 0.0, "is_player": False, "badge": "", "cls": "",
-                 "last_lap": -1.0, "is_pb": False}
+                 "vehicle_name": "", "last_lap": -1.0, "is_pb": False}
         ahead_padded  = [empty] * max(0, self._ahead - len(ahead_entries)) + ahead_entries
         behind_padded = behind_entries + [empty] * max(0, self._behind - len(behind_entries))
 
@@ -415,13 +429,15 @@ class RelativeWidget(BaseWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.scale(self._scale, self._scale)
-        W    = _widget_w(self._name_width, self._font_size, self._interval_decimals, self._show_last_lap)
+        W    = _widget_w(self._name_width, self._font_size, self._interval_decimals, self._show_last_lap, self._show_logo)
         _show_bar = self._show_session_bar and self._header_info != "none"
         H    = _widget_h(self._ahead, self._behind, self._font_size, _show_bar)
         ncw  = self._name_width
         bdg  = _badge_px(self._font_size)
         pos_w  = _pos_col_w(self._font_size)
         chip_w = _pos_chip_w(self._font_size)
+        logo_w = _LOGO_COL_W if self._show_logo else 0
+        name_x = pos_w + logo_w
         gap_w  = _gap_col_w(self._font_size, self._interval_decimals)
         last_w = _lastlap_col_w(self._font_size)
         _sbh = _session_bar_h(self._font_size) if _show_bar else 0
@@ -511,6 +527,23 @@ class RelativeWidget(BaseWidget):
                 p.setPen(QColor(T.TEXT))
                 p.drawText(_POS_CHIP_X, y, chip_w, rh, Qt.AlignmentFlag.AlignCenter, str(row["pos"]))
 
+            # Manufacturer logo — own small column between the position chip
+            # and the name, same convention as Standings (pos | logo | name).
+            if self._show_logo and row["pos"] > 0:
+                s  = self._scale
+                pw = max(10, round((_LOGO_COL_W - 4) * s))
+                ph = max(6,  round((rh - 4) * s))
+                logo = _get_logo(row.get("vehicle_name", ""), pw, ph)
+                if logo:
+                    max_lw = float(_LOGO_COL_W - 4)
+                    max_lh = float(rh - 4)
+                    sc  = min(max_lw / logo.width(), max_lh / logo.height())
+                    dw  = logo.width()  * sc
+                    dh  = logo.height() * sc
+                    lx  = pos_w + (logo_w - dw) / 2
+                    ly  = y + (rh - dh) / 2
+                    p.drawPixmap(QRectF(lx, ly, dw, dh), logo, QRectF(logo.rect()))
+
             # Driver name — elided to the column width: a character count no
             # longer maps to a width now that the text font is proportional.
             name_col = QColor(T.TEXT)
@@ -518,7 +551,7 @@ class RelativeWidget(BaseWidget):
             p.setPen(name_col)
             avail = ncw - _NAME_PAD_L - (bdg + 2 if badge else 0)
             shown = p.fontMetrics().elidedText(name, Qt.TextElideMode.ElideRight, max(10, avail))
-            p.drawText(pos_w + _NAME_PAD_L, y, ncw - _NAME_PAD_L, rh,
+            p.drawText(name_x + _NAME_PAD_L, y, ncw - _NAME_PAD_L, rh,
                        Qt.AlignmentFlag.AlignVCenter, shown)
 
             # Badge overlaid at right edge of name zone
@@ -527,7 +560,7 @@ class RelativeWidget(BaseWidget):
                     bg_c, fg_c = _badge_map[badge]
                 else:
                     bg_c, fg_c = QColor(T.LAP_BG), QColor(T.LAP_FG)
-                bx2, by2 = pos_w + ncw - bdg, y + 3
+                bx2, by2 = name_x + ncw - bdg, y + 3
                 p.setBrush(bg_c); p.setPen(Qt.PenStyle.NoPen)
                 p.drawRoundedRect(bx2, by2, bdg, rh - 6, 2, 2)
                 p.setFont(num_font(fss)); p.setPen(fg_c)
@@ -537,7 +570,7 @@ class RelativeWidget(BaseWidget):
             # Gap — fixed-width column now that Last Lap can trail it (used to
             # span to the widget's right edge, back when it was always the
             # last thing drawn on the row).
-            gx = pos_w + ncw + _GAP_PAD_L
+            gx = name_x + ncw + _GAP_PAD_L
             if not is_p and row["pos"] > 0:
                 p.setFont(num_font(fs))
                 p.setPen(QColor(T.TEXT))

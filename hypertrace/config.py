@@ -42,6 +42,7 @@ _DEFAULTS: dict = {
         "damage":     {"enabled": True,  "x": 600, "y": 390},
         "fuel_calc":  {"enabled": True,  "x": 50,  "y": 540},
         "ve_calc":    {"enabled": True,  "x": 280, "y": 540},
+        "battery":    {"enabled": True,  "x": 510, "y": 540},
     },
 }
 
