@@ -5,12 +5,14 @@ THIRD_PARTY_NOTICES.md). Same two simplifications as module_delta.py: raw
 `api.read.lap.distance()` instead of GPS-position-sync, and no cross-session
 file persistence of the last-lap-consumption trace (in-memory only).
 
-Fuel and Virtual Energy are computed by the same generator, run twice —
-fuel in litres (tank capacity), VE in percent (capacity fixed at 100) —
-treating them as the same shape of problem. The fuel/VE ratio
-(`minfo.hybrid.fuelEnergyRatio`) is set here too, not in a separate hybrid
-module — no widget in this app shows battery drain/regen or motor state, so
-that part of the reference implementation's hybrid module was not adapted.
+Fuel, Virtual Energy and hybrid battery SoC are computed by the same
+generator, run three times — fuel in litres (tank capacity), VE and SoC in
+percent (capacity fixed at 100) — treating them as the same shape of problem.
+The generator already separates a rising reading (regen) from a falling one
+(burn/deployment) — see its own comment on amount_diff — so it needed no
+battery-specific branch, just a third telemetry source. The fuel/VE ratio and
+the live-only hybrid readings (regen kW, deployment map) are set here too, not
+in a separate hybrid module — there's no per-lap tracking involved for those.
 """
 from __future__ import annotations
 
@@ -38,6 +40,10 @@ def _telemetry_fuel() -> tuple[float, float]:
 
 def _telemetry_energy() -> tuple[float, float]:
     return 100.0, api.read.engine.virtual_energy() * 100.0
+
+
+def _telemetry_battery() -> tuple[float, float]:
+    return 100.0, api.read.engine.state_of_charge()
 
 
 def _reference_laptime() -> float:
@@ -149,6 +155,7 @@ def _calc_consumption(output: FuelInfo, telemetry_func: Callable[[], tuple[float
         output.amountCurrent     = amount_curr
         output.amountUsedLast    = used_last_raw
         output.amountUsedAvg     = used_last_valid + delta_amount
+        output.amountUsedCurrent = used_curr
         output.estimatedLaps     = est_runlaps
         output.estimatedMinutes  = est_runmins
         output.neededRelative    = amount_need_rel
@@ -165,7 +172,7 @@ class Realtime(DataModule):
         reset = False
         interval = self.idle_interval
 
-        gen_fuel = gen_energy = None
+        gen_fuel = gen_energy = gen_battery = None
 
         while not _event_wait(interval):
             if not realtime_state.live:
@@ -180,10 +187,12 @@ class Realtime(DataModule):
 
             if not reset:
                 reset = True
-                gen_fuel = _calc_consumption(minfo.fuel, _telemetry_fuel)
-                gen_energy = _calc_consumption(minfo.energy, _telemetry_energy)
+                gen_fuel    = _calc_consumption(minfo.fuel, _telemetry_fuel)
+                gen_energy  = _calc_consumption(minfo.energy, _telemetry_energy)
+                gen_battery = _calc_consumption(minfo.battery, _telemetry_battery)
                 next(gen_fuel)   # prime to the first `yield`
                 next(gen_energy)
+                next(gen_battery)
 
             next(gen_fuel)
 
@@ -193,3 +202,13 @@ class Realtime(DataModule):
                 minfo.hybrid.fuelEnergyRatio = fuel_to_energy_ratio(
                     minfo.fuel.amountUsedAvg, minfo.energy.amountUsedAvg)
             minfo.hybrid.batteryCharge = api.read.engine.battery_charge()
+
+            # Hypercar-only hybrid readings — SoC via the same per-lap
+            # consumption tracking as fuel/VE above; regen/deployment are
+            # live-only (no per-lap tracking needed, so read directly).
+            has_soc = api.read.engine.state_of_charge() > 0
+            if has_soc:
+                next(gen_battery)
+                minfo.hybrid.regenKw    = api.read.engine.regen()
+                minfo.hybrid.motorMap   = api.read.engine.motor_map()
+                minfo.hybrid.motorMapMax = api.read.engine.motor_map_max()

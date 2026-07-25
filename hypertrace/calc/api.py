@@ -400,6 +400,24 @@ class Engine(_Adapter):
     def battery_charge(self, index: int | None = None) -> float:
         return rmnan(self.shmm.lmuTeleVeh(index).mBatteryChargeFraction)
 
+    def state_of_charge(self, index: int | None = None) -> float:
+        """Hybrid battery state of charge, percent (0-100) — Hypercar only,
+        0 elsewhere. Distinct from battery_charge()/mBatteryChargeFraction
+        (a generic rF2-lineage fraction field, unused by this app): mStateOfCharge
+        is LMU's own Hypercar-specific reading, already in percent."""
+        return rmnan(self.shmm.lmuTeleVeh(index).mStateOfCharge)
+
+    def regen(self, index: int | None = None) -> float:
+        """Configured regen power target, kW — Hypercar only."""
+        return rmnan(self.shmm.lmuTeleVeh(index).mRegen)
+
+    def motor_map(self, index: int | None = None) -> int:
+        """Selected power-deployment map, 0..motor_map_max() — Hypercar only."""
+        return int(self.shmm.lmuTeleVeh(index).mMotorMap)
+
+    def motor_map_max(self, index: int | None = None) -> int:
+        return int(self.shmm.lmuTeleVeh(index).mMotorMapMax)
+
     def delta_best(self, index: int | None = None) -> float:
         return rmnan(self.shmm.lmuTeleVeh(index).mDeltaBest)
 

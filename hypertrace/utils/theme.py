@@ -63,6 +63,8 @@ class T:
     FUEL_HI = "#4A90E8"
     VE_LO   = "#1C9A4A"
     VE_HI   = "#3FD06A"
+    BATTERY_LO = "#7A2CD6"
+    BATTERY_HI = "#A85CF0"
 
     # gaps (relative)
     GAP_AHEAD = "#5AB6FF"

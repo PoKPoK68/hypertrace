@@ -97,6 +97,7 @@ class FuelInfo:
     amountCurrent: float      = 0.0
     amountUsedLast: float     = 0.0
     amountUsedAvg: float      = 0.0    # live estimate: last valid lap + delta vs. reference lap so far
+    amountUsedCurrent: float  = 0.0    # running total used so far on the current, still-in-progress lap
     estimatedLaps: float      = 0.0    # laps left on current avg consumption
     estimatedMinutes: float   = 0.0
     neededRelative: float     = 0.0    # additional amount needed to the end (0 if enough)
@@ -108,6 +109,17 @@ class FuelInfo:
 @dataclass
 class EnergyInfo(FuelInfo):
     """Virtual Energy — same shape as fuel, tracked in percent (0-100) not liters."""
+
+
+@dataclass
+class BatteryInfo(FuelInfo):
+    """Hybrid battery SoC — same shape as fuel/VE again (capacity fixed at
+    100%), tracked and averaged per lap through the same _calc_consumption()
+    generator in module_fuel.py. That generator already distinguishes a rising
+    reading (regen) from a falling one (deployment) — see its own comment on
+    amount_diff — so amountUsedLast/amountUsedCurrent here are *net* per lap:
+    a lap that regens more than it deploys nets negative, same math, no
+    battery-specific branch needed. Hypercar only; stays at defaults otherwise."""
 
 
 @dataclass
@@ -126,8 +138,11 @@ class PlayerTelemetryInfo:
 
 @dataclass
 class HybridInfo:
-    batteryCharge: float      = 0.0   # fraction 0-1
+    batteryCharge: float      = 0.0   # fraction 0-1 — generic rF2-lineage field, unused (see BatteryInfo)
     fuelEnergyRatio: float    = 0.0   # fuel used / VE used, for hybrid strategy calc
+    regenKw: float            = 0.0   # configured regen power target (mRegen), Hypercar only
+    motorMap: int             = 0     # selected power-deployment map (mMotorMap)
+    motorMapMax: int          = 0     # top of that dial's range (mMotorMapMax)
 
 
 @dataclass
@@ -196,6 +211,7 @@ class ModuleInfo:
     delta: DeltaInfo       = field(default_factory=DeltaInfo)
     fuel: FuelInfo         = field(default_factory=FuelInfo)
     energy: EnergyInfo     = field(default_factory=EnergyInfo)
+    battery: BatteryInfo   = field(default_factory=BatteryInfo)
     hybrid: HybridInfo     = field(default_factory=HybridInfo)
     wheels: WheelsInfo     = field(default_factory=WheelsInfo)
     damage: DamageInfo     = field(default_factory=DamageInfo)

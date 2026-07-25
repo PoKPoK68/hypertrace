@@ -6,6 +6,9 @@ All notable changes to HyperTrace (formerly LMU App) are documented here.
 
 ## [1.1.0]
 
+### New: Battery overlay
+- **New "Battery" widget** — hybrid state-of-charge management for Hypercar, hidden automatically in every other class. SoC bar (same gauge style as the Fuel/VE calculators, more compact), plus LAST LAP and THIS LAP net usage, the selected power-deployment map, and the configured regen power.
+
 ### Damage overlay
 - **Reworked car silhouette** — the wheels are now tucked flush against the bodywork instead of standing well clear of it, with the flanks broken open at each wheel arch, and the suspension arms moved in to match. Purely visual; the zones and what they show are unchanged.
 
@@ -14,6 +17,7 @@ All notable changes to HyperTrace (formerly LMU App) are documented here.
 
 ### Relative
 - **New "LAST LAP" column** — shows each driver's last lap time, including your own, in the same format as Standings. Green when it's that driver's personal best. Optional, on by default.
+- **New brand logo column** — same manufacturer logos as Standings, between the position and the name. Optional, on by default.
 
 ### Tyres
 - **The cold end of the temperature gradient is darker and starts later** — the fully-cold plateau now begins at -30°C below optimal (was -25°C) and is a visibly darker blue; the hot side (+25°C, full red) is unchanged.
