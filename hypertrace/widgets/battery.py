@@ -6,10 +6,9 @@ this only ever shows one resource (SoC) with no REFUEL/TO END/TANKS concepts
 _draw_bar from fuel_calc.py so it reads as the same kind of gauge as the
 calculators; everything else here is its own compact layout.
 
-Not auto-hidden by vehicle class — LMU's hybrid fields (SoC, motor map) are
-only meaningful for Hypercar, so a non-Hypercar car just reads 0%/0% here
-rather than the widget hiding itself; toggle it off by hand if that's not
-wanted.
+Not auto-hidden by vehicle class — LMU's hybrid SoC field is only meaningful
+for Hypercar, so a non-Hypercar car just reads 0% here rather than the widget
+hiding itself; toggle it off by hand if that's not wanted.
 """
 from __future__ import annotations
 
@@ -34,15 +33,17 @@ def _fmt_soc(v: float) -> str:
 
 def _fmt_soc_delta(v: float) -> str:
     """Signed — negative while draining, positive while regenerating, resets
-    to 0 crossing the line (see BatteryInfo.amountUsedCurrent's own reset)."""
-    return f"{v:+.1f}%"
+    to 0 crossing the line (see BatteryInfo.amountUsedCurrent's own reset).
 
-
-def _fmt_map(cur: int, mx: int) -> str:
-    """mMotorMap/mMotorMapMax are both power ceilings in kW (not a step
-    index out of a step count, despite being plain uint8 in the struct) —
-    shows the currently configured deployment cap against the car's own max."""
-    return f"{cur:.0f}/{mx:.0f}kW" if mx > 0 else "-"
+    Rounds first and re-zeroes the result: a value that's negative but rounds
+    to 0.0 at one decimal (or is a literal -0.0, e.g. straight off a net-zero
+    lap) otherwise keeps its sign in an f-string — "-0.0%" — which reads as a
+    real negative to a driver even though it isn't one.
+    """
+    r = round(v, 1)
+    if r == 0:
+        r = 0.0
+    return f"{r:+.1f}%"
 
 
 def _soc_col(ratio: float) -> tuple[QColor, QColor]:
@@ -74,7 +75,6 @@ class BatteryWidget(BaseWidget):
         {"key": "show_soc_bar",  "label": "SoC bar",       "type": "bool", "default": True},
         {"key": "show_last_lap", "label": "LAST LAP row",  "type": "bool", "default": True},
         {"key": "show_this_lap", "label": "THIS LAP row",  "type": "bool", "default": True},
-        {"key": "show_map",      "label": "MAP row",       "type": "bool", "default": True},
     ]
 
     def __init__(self, **kw):
@@ -83,13 +83,10 @@ class BatteryWidget(BaseWidget):
         self._show_soc_bar  = True
         self._show_last_lap = True
         self._show_this_lap = True
-        self._show_map       = True
 
         self._soc            = 0.0
         self._last_lap_used   = 0.0
         self._this_lap_used   = 0.0
-        self._motor_map       = 0
-        self._motor_map_max   = 0
 
         self._layout_h = 0
         super().__init__(update_hz=5, **kw)
@@ -100,7 +97,7 @@ class BatteryWidget(BaseWidget):
 
     def _refresh_layout(self) -> None:
         bar_h = _BH + _ROW_GAP if self._show_soc_bar else 0
-        n_rows = sum((self._show_last_lap, self._show_this_lap, self._show_map))
+        n_rows = sum((self._show_last_lap, self._show_this_lap))
         self._layout_h = _PAD * 2 + bar_h + n_rows * _RH
         self.setFixedSize(int(_WIDGET_W * self._scale), int(self._layout_h * self._scale))
 
@@ -110,14 +107,12 @@ class BatteryWidget(BaseWidget):
         self._show_soc_bar  = bool(params.get("show_soc_bar",  True))
         self._show_last_lap = bool(params.get("show_last_lap", True))
         self._show_this_lap = bool(params.get("show_this_lap", True))
-        self._show_map       = bool(params.get("show_map",      True))
         self._apply_session_visibility(params)
         self._refresh_layout()
         self.update()
 
     def on_data(self) -> None:
         b = minfo.battery
-        h = minfo.hybrid
         self._soc            = b.amountCurrent
         # BatteryInfo.amountUsedLast/amountUsedCurrent are positive-when-used
         # (same "amount consumed" convention fuel/VE use) — negated here so
@@ -125,8 +120,6 @@ class BatteryWidget(BaseWidget):
         # regenerating, matching how a driver actually reads a power meter.
         self._last_lap_used   = -b.amountUsedLast
         self._this_lap_used   = -b.amountUsedCurrent
-        self._motor_map       = h.motorMap
-        self._motor_map_max   = h.motorMapMax
         self.update()
 
     def paintEvent(self, _):
@@ -150,8 +143,6 @@ class BatteryWidget(BaseWidget):
             rows.append(("LAST LAP", _fmt_soc_delta(self._last_lap_used), _delta_col(self._last_lap_used)))
         if self._show_this_lap:
             rows.append(("THIS LAP", _fmt_soc_delta(self._this_lap_used), _delta_col(self._this_lap_used)))
-        if self._show_map:
-            rows.append(("MAP", _fmt_map(self._motor_map, self._motor_map_max), QColor(T.TEXT)))
 
         for label, val, col in rows:
             _draw_level(p, _PAD, y, bw, _RH, label, val, col)
