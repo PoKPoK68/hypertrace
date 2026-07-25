@@ -84,9 +84,22 @@ def _gap_col_w(font_size: int, decimals: int) -> int:
     return QFontMetrics(num_font(font_size)).horizontalAdvance(ref) + 4
 
 
-def _widget_w(name_width: int, font_size: int = 9, decimals: int = 1) -> int:
-    return (_pos_col_w(font_size) + name_width + _GAP_PAD_L
-            + _gap_col_w(font_size, decimals) + _MARGIN)
+@lru_cache(maxsize=64)
+def _lastlap_col_w(font_size: int) -> int:
+    """Widest lap time the column must fit — "9:59.999", matching Standings'
+    own LAST column reference. Fixed 3 decimals (no per-widget setting, unlike
+    Standings' LAST/BEST — one fewer knob for a column this widget didn't have
+    at all before)."""
+    return QFontMetrics(num_font(font_size)).horizontalAdvance("9:59.999") + 4
+
+
+def _widget_w(name_width: int, font_size: int = 9, decimals: int = 1,
+             show_last_lap: bool = True) -> int:
+    w = (_pos_col_w(font_size) + name_width + _GAP_PAD_L
+         + _gap_col_w(font_size, decimals) + _MARGIN)
+    if show_last_lap:
+        w += _GAP_PAD_L + _lastlap_col_w(font_size)
+    return w
 
 
 def _row_h(font_size: int) -> int:
@@ -138,6 +151,15 @@ def _fmt_gap(g: float, decimals: int = 1) -> str:
     return f"{g:+.{decimals}f}"
 
 
+def _fmt_lap(t: float, decimals: int = 3) -> str:
+    """Same format as Standings' LAST/BEST columns — m:ss.sss."""
+    if t <= 0: return "-"
+    m = int(t // 60); s = t - m * 60
+    if decimals > 0:
+        return f"{m}:{s:0{decimals + 3}.{decimals}f}"
+    return f"{m}:{int(s):02d}"
+
+
 class RelativeWidget(BaseWidget):
     WIDGET_NAME = "Relative"
     CONFIG_SCHEMA = [
@@ -184,6 +206,8 @@ class RelativeWidget(BaseWidget):
          ], "default": "session", "show_if": "show_session_bar"},
         {"type": "separator", "label": "Badges"},
         {"key": "show_badges",       "label": "PIT / OUT badges", "type": "bool", "default": True},
+        {"type": "separator", "label": "Last lap"},
+        {"key": "show_last_lap",     "label": "LAST LAP column",  "type": "bool", "default": True},
     ]
 
     # All colors from theme.T — no hex literals in this class.
@@ -199,11 +223,13 @@ class RelativeWidget(BaseWidget):
                  show_session_bar:   bool = False,
                  header_info:        str = "session",
                  font_size:          int = 11,
+                 show_last_lap:      bool = True,
                  **kw):
         self._ahead              = drivers_ahead
         self._behind             = drivers_behind
         self._interval_decimals  = interval_decimals
         self._show_badges        = show_badges
+        self._show_last_lap      = show_last_lap
         self._name_width = name_width
         self._name_format         = name_format
         self._name_case           = name_case
@@ -228,7 +254,7 @@ class RelativeWidget(BaseWidget):
         self._temp_pm_sz  = 0
         self._opacity = 85
         super().__init__(update_hz=10, **kw)
-        self.setFixedSize(int(_widget_w(name_width, self._font_size, self._interval_decimals) * self._scale),
+        self.setFixedSize(int(_widget_w(name_width, self._font_size, self._interval_decimals, show_last_lap) * self._scale),
                           int(_widget_h(drivers_ahead, drivers_behind, self._font_size, show_session_bar) * self._scale))
 
     def setup_ui(self):
@@ -243,6 +269,7 @@ class RelativeWidget(BaseWidget):
         self._behind            = int(params.get("drivers_behind", 4))
         self._interval_decimals = int(params.get("interval_decimals", 1))
         self._show_badges       = bool(params.get("show_badges", True))
+        self._show_last_lap     = bool(params.get("show_last_lap", True))
         self._name_width = int(params.get("name_width", 150))
         self._name_format         = str(params.get("name_format", "full"))
         self._name_case           = str(params.get("name_case", "upper"))
@@ -256,7 +283,7 @@ class RelativeWidget(BaseWidget):
         _c.setAlpha(round(255 * max(0, min(100, int(params.get("player_color_alpha", 20)))) / 100))
         self._player_color = _c
         self._apply_session_visibility(params)
-        self.setFixedSize(int(_widget_w(self._name_width, self._font_size, self._interval_decimals) * self._scale),
+        self.setFixedSize(int(_widget_w(self._name_width, self._font_size, self._interval_decimals, self._show_last_lap) * self._scale),
                           int(_widget_h(self._ahead, self._behind, self._font_size, self._show_session_bar) * self._scale))
         self.update()
 
@@ -343,6 +370,8 @@ class RelativeWidget(BaseWidget):
                 "is_player": False,
                 "badge":     badge,
                 "cls":       v.vehicle_class,
+                "last_lap":  v.last_lap,
+                "is_pb":     v.last_lap > 0 and v.best_lap > 0 and v.last_lap <= v.best_lap,
             }
             ahead_list.append((gap_ahead,  {**entry, "gap": -gap_ahead}))
             behind_list.append((gap_behind, {**entry, "gap": -gap_behind}))
@@ -369,10 +398,13 @@ class RelativeWidget(BaseWidget):
             "is_player": True,
             "badge":     p_badge,
             "cls":       player.vehicle_class,
+            "last_lap":  player.last_lap,
+            "is_pb":     player.last_lap > 0 and player.best_lap > 0 and player.last_lap <= player.best_lap,
         }
 
         # Pad ahead list to always have self._ahead rows
-        empty = {"pos": 0, "name_raw": "", "gap": 0.0, "is_player": False, "badge": "", "cls": ""}
+        empty = {"pos": 0, "name_raw": "", "gap": 0.0, "is_player": False, "badge": "", "cls": "",
+                 "last_lap": -1.0, "is_pb": False}
         ahead_padded  = [empty] * max(0, self._ahead - len(ahead_entries)) + ahead_entries
         behind_padded = behind_entries + [empty] * max(0, self._behind - len(behind_entries))
 
@@ -383,13 +415,15 @@ class RelativeWidget(BaseWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.scale(self._scale, self._scale)
-        W    = _widget_w(self._name_width, self._font_size, self._interval_decimals)
+        W    = _widget_w(self._name_width, self._font_size, self._interval_decimals, self._show_last_lap)
         _show_bar = self._show_session_bar and self._header_info != "none"
         H    = _widget_h(self._ahead, self._behind, self._font_size, _show_bar)
         ncw  = self._name_width
         bdg  = _badge_px(self._font_size)
         pos_w  = _pos_col_w(self._font_size)
         chip_w = _pos_chip_w(self._font_size)
+        gap_w  = _gap_col_w(self._font_size, self._interval_decimals)
+        last_w = _lastlap_col_w(self._font_size)
         _sbh = _session_bar_h(self._font_size) if _show_bar else 0
 
         self._draw_panel(p, W, H)
@@ -500,13 +534,28 @@ class RelativeWidget(BaseWidget):
                 draw_bold(p, lambda: p.drawText(
                     bx2, by2, bdg, rh - 6, Qt.AlignmentFlag.AlignCenter, badge))
 
-            # Gap
+            # Gap — fixed-width column now that Last Lap can trail it (used to
+            # span to the widget's right edge, back when it was always the
+            # last thing drawn on the row).
+            gx = pos_w + ncw + _GAP_PAD_L
             if not is_p and row["pos"] > 0:
                 p.setFont(num_font(fs))
                 p.setPen(QColor(T.TEXT))
-                gx = pos_w + ncw + _GAP_PAD_L
-                p.drawText(gx, y, W - gx - 4, rh,
+                p.drawText(gx, y, gap_w, rh,
                            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
                            _fmt_gap(gap, self._interval_decimals))
+
+            # Last lap — shown for every real row, including the player's own
+            # (unlike Gap, which is meaningless relative to oneself). Purple
+            # like Standings' session-best would need a grid-wide comparison
+            # this widget doesn't otherwise compute; personal-best (green)
+            # only needs each car's own best_lap, already on hand.
+            if self._show_last_lap and row["pos"] > 0:
+                lc = QColor(T.GOOD) if row.get("is_pb") else QColor(T.TEXT)
+                p.setFont(num_font(fs)); p.setPen(lc)
+                lx = gx + gap_w + _GAP_PAD_L
+                p.drawText(lx, y, last_w, rh,
+                           Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
+                           _fmt_lap(row.get("last_lap", -1.0)))
 
         p.end()

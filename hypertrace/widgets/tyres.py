@@ -19,7 +19,7 @@ WIDGET_H = _G * 2 + _BAR_H * 2 + _G
 _LABELS = ["FL", "FR", "RL", "RR"]
 
 # Colour bands expressed as an offset (°C) from the tyre's own optimal temp.
-_COLD_D      = -25.0   # at/below → fully cold (blue)
+_COLD_D      = -30.0   # at/below → fully cold (dark blue)
 _OPT_LO_D    = -8.0    # start of the optimal window (green)
 _OPT_HI_D    =  8.0    # end of the optimal window
 _HOT_D       =  25.0   # at/above → fully hot (red)
@@ -86,10 +86,10 @@ class TyresWidget(BaseWidget):
             opt = _FALLBACK_OPT      # game gave no optimal → sane default
         d = t - opt
         if d <= _COLD_D:
-            return QColor(80, 140, 255)
+            return QColor(30, 60, 160)
         if d < _OPT_LO_D:
             f = (d - _COLD_D) / (_OPT_LO_D - _COLD_D)
-            return QColor(int(80 - 80*f), int(140 + 80*f), int(255 - 175*f))
+            return QColor(int(30 + 30*f), int(60 + 160*f), int(160 - 80*f))
         if d <= _OPT_HI_D:
             return QColor(60, 220, 80)
         if d < _HOT_D:
