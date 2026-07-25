@@ -4,6 +4,16 @@ All notable changes to HyperTrace (formerly LMU App) are documented here.
 
 ---
 
+## [1.0.1]
+
+### Damage overlay
+- **Reworked car silhouette** — the wheels are now tucked flush against the bodywork instead of standing well clear of it, with the flanks broken open at each wheel arch, and the suspension arms moved in to match. Purely visual; the zones and what they show are unchanged.
+
+### Fixes
+- **Deleting the active preset now loads its replacement** — before, deleting the preset you were currently using switched the selection to another one but left every overlay in the deleted layout until you loaded it by hand.
+
+---
+
 ## [1.0.0] — Renamed to HyperTrace
 
 *(0.8.0 was never released publicly — its changes are folded in below, all counted against 0.7.2.)*

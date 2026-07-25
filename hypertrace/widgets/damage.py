@@ -33,12 +33,16 @@ WIDGET_H = round(_DISPLAY_H + _PAD * 2)
 _SILHOUETTE_RECT = QRectF(58, 34, 114, 232)
 _SILHOUETTE_RADIUS = 28
 
-# (p1, p2) — both stroked as one round-capped line each.
+# (p1, p2) — both stroked as one round-capped line each. The flanks are no
+# longer continuous top-to-bottom: they're just the middle segment between the
+# two wheel arches, leaving a real gap in the bodywork where each wheel now
+# tucks in (see _WHEELS — they moved inboard and would otherwise sit on the
+# line). Per the updated handoff.
 _BODY_EDGES = {
     "front": ((91, 34), (139, 34)),
     "rear":  ((91, 266), (139, 266)),
-    "left":  ((58, 67), (58, 233)),
-    "right": ((172, 67), (172, 233)),
+    "left":  ((58, 117), (58, 183)),
+    "right": ((172, 117), (172, 183)),
 }
 _BODY_STROKE = 7
 
@@ -52,21 +56,26 @@ _CORNERS = {
 _CORNER_RADIUS = 28
 _CORNER_STROKE = 7
 
-# (x, y) top-left corner — filled rect, 22×42, rx=5.
+# (x, y) top-left corner — filled rect, 22×42, rx=5. Moved inboard (was at
+# x=16/192, well outside the body) so each wheel now sits flush against the
+# flank, its outer edge just past the x=58/172 body line, centred on the arch
+# gap cut into that flank (see _BODY_EDGES). Per the updated handoff.
 _WHEELS = {
-    "fl": (16, 71),
-    "fr": (192, 71),
-    "rl": (16, 187),
-    "rr": (192, 187),
+    "fl": (52, 66),
+    "fr": (156, 66),
+    "rl": (52, 192),
+    "rr": (156, 192),
 }
 _WHEEL_W, _WHEEL_H, _WHEEL_R = 22, 42, 5
 
-# Wishbone: two line segments sharing an apex, stroked round-capped.
+# Wishbone: two line segments sharing an apex, stroked round-capped. Apex is
+# pinned to the wheel side; both arms fan out to the chassis. Moved inboard
+# with the wheels above. (apex_a, apex, apex_b) — apex is the shared point.
 _SUSPENSION = {
-    "fl": ((53, 84), (41, 92), (53, 102)),
-    "fr": ((177, 84), (189, 92), (177, 102)),
-    "rl": ((53, 200), (41, 208), (53, 218)),
-    "rr": ((177, 200), (189, 208), (177, 218)),
+    "fl": ((89, 79), (77, 87), (89, 97)),
+    "fr": ((141, 79), (153, 87), (141, 97)),
+    "rl": ((89, 205), (77, 213), (89, 223)),
+    "rr": ((141, 205), (153, 213), (141, 223)),
 }
 _SUSP_STROKE = 4
 

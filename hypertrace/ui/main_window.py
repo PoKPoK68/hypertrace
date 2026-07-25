@@ -999,11 +999,21 @@ class MainWindow(QWidget):
             self._refresh_preset_chrome()
 
     def _delete_preset(self, name: str) -> None:
+        was_active = self._config.current_preset == name
         self._config.delete_preset(name)
-        if self._config.current_preset == name:
+        if was_active:
             names = self._config.preset_names()
-            self._config.current_preset = names[0] if names else ""
-        self._config.save()
+            if names:
+                # Deleting the *active* preset — actually load whichever one
+                # takes its place, not just repoint current_preset at it.
+                # Without the load the dropdown switched but every overlay kept
+                # the deleted layout until the next manual load.
+                self._load_preset(names[0])
+            else:
+                self._config.current_preset = ""
+                self._config.save()
+        else:
+            self._config.save()
         self._refresh_preset_chrome()
         self._rebuild_preset_ui()
 
