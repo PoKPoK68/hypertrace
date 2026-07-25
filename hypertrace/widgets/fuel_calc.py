@@ -77,18 +77,21 @@ def _calc(rate: float, current: float, rem: float, safety: float, cap: float):
     `needed_to_end` is the total additional amount needed to cover the rest
     of the race (laps remaining + safety margin) — not capped to what a
     single tank can hold, so on a long race it can legitimately be several
-    times the tank capacity (several full refills' worth).
+    times the tank capacity (several full refills' worth). Can go negative:
+    that means the current amount already covers the rest of the race with
+    room to spare, and the negative value is exactly that spare amount.
 
     `refuel_next_stop` is what actually makes sense to put in at the next
     stop: the full `needed_to_end` if that already fits in the tank (this
     is your last stop), otherwise fill up to capacity (there will be at
-    least one more stop regardless of exactly how much goes in now).
+    least one more stop regardless of exactly how much goes in now). Also
+    goes negative under the same surplus condition as `needed_to_end`.
 
     Both None outside a race or before there's a consumption rate yet.
     """
     laps_on = (current / rate) if rate > 0 else None
     if rem > 0 and rate > 0:
-        needed_to_end = max(0., (rem + safety) * rate - current)
+        needed_to_end = (rem + safety) * rate - current
         refuel_next_stop = min(needed_to_end, max(0., cap - current))
         return laps_on, refuel_next_stop, needed_to_end
     return laps_on, None, None
@@ -133,7 +136,8 @@ def _fmt_fuel(v: float) -> str:
 
 
 def _fmt_ref_fuel(v: float) -> str:
-    return f"+{v:.0f}L" if v >= 100 else f"+{v:.1f}L"
+    """Signed — negative reads as surplus (you already have more than needed)."""
+    return f"{v:+.0f}L" if abs(v) >= 100 else f"{v:+.1f}L"
 
 
 def _fmt_tanks(v: float) -> str:
@@ -444,10 +448,9 @@ class FuelCalcWidget(BaseWidget):
                 p.setFont(num_font(9))
                 if refuel is None:
                     p.setPen(QColor(T.TEXT)); ref_str = "-"
-                elif refuel < 0.005:
-                    p.setPen(QColor(T.GOOD)); ref_str = "OK"
                 else:
-                    p.setPen(QColor(T.TEXT)); ref_str = _fmt_ref_fuel(refuel)
+                    p.setPen(QColor(T.GOOD) if refuel <= 0 else QColor(T.TEXT))
+                    ref_str = _fmt_ref_fuel(refuel)
                 p.drawText(cx, y, cw, _RH,
                            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight, ref_str)
 
@@ -456,10 +459,9 @@ class FuelCalcWidget(BaseWidget):
                 p.setFont(num_font(9))
                 if to_end is None:
                     p.setPen(QColor(T.TEXT)); fin_str = "-"
-                elif to_end < 0.005:
-                    p.setPen(QColor(T.GOOD)); fin_str = "OK"
                 else:
-                    p.setPen(QColor(T.TEXT)); fin_str = _fmt_ref_fuel(to_end)
+                    p.setPen(QColor(T.GOOD) if to_end <= 0 else QColor(T.TEXT))
+                    fin_str = _fmt_ref_fuel(to_end)
                 p.drawText(cx, y, cw, _RH,
                            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight, fin_str)
 
@@ -468,10 +470,9 @@ class FuelCalcWidget(BaseWidget):
                 p.setFont(num_font(9))
                 if to_end is None:
                     p.setPen(QColor(T.TEXT)); tanks_str = "-"
-                elif to_end < 0.005:
-                    p.setPen(QColor(T.GOOD)); tanks_str = "OK"
                 else:
-                    p.setPen(QColor(T.TEXT)); tanks_str = _fmt_tanks(to_end / self._fuel_cap)
+                    p.setPen(QColor(T.GOOD) if to_end <= 0 else QColor(T.TEXT))
+                    tanks_str = _fmt_tanks(to_end / self._fuel_cap)
                 p.drawText(cx, y, cw, _RH,
                            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight, tanks_str)
 

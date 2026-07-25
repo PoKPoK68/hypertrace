@@ -23,7 +23,8 @@ def _fmt_ve(v: float) -> str:
 
 
 def _fmt_ref_ve(v: float) -> str:
-    return f"+{v:.0f}%" if v >= 100 else f"+{v:.1f}%"
+    """Signed — negative reads as surplus (you already have more than needed)."""
+    return f"{v:+.0f}%" if abs(v) >= 100 else f"{v:+.1f}%"
 
 
 def _ve_col(ratio: float) -> tuple[QColor, QColor]:
@@ -344,10 +345,9 @@ class VECalcWidget(BaseWidget):
                     p.setFont(num_font(9))
                     if refuel_pct is None:
                         p.setPen(QColor(T.TEXT)); ref_str = "-"
-                    elif refuel_pct < 0.05:
-                        p.setPen(QColor(T.GOOD)); ref_str = "OK"
                     else:
-                        p.setPen(QColor(T.TEXT)); ref_str = _fmt_ref_ve(refuel_pct)
+                        p.setPen(QColor(T.GOOD) if refuel_pct <= 0 else QColor(T.TEXT))
+                        ref_str = _fmt_ref_ve(refuel_pct)
                     p.drawText(cx, y, cw, _RH,
                                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
                                ref_str)
@@ -357,10 +357,9 @@ class VECalcWidget(BaseWidget):
                     p.setFont(num_font(9))
                     if to_end_pct is None:
                         p.setPen(QColor(T.TEXT)); fin_str = "-"
-                    elif to_end_pct < 0.05:
-                        p.setPen(QColor(T.GOOD)); fin_str = "OK"
                     else:
-                        p.setPen(QColor(T.TEXT)); fin_str = _fmt_ref_ve(to_end_pct)
+                        p.setPen(QColor(T.GOOD) if to_end_pct <= 0 else QColor(T.TEXT))
+                        fin_str = _fmt_ref_ve(to_end_pct)
                     p.drawText(cx, y, cw, _RH,
                                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
                                fin_str)
@@ -370,10 +369,9 @@ class VECalcWidget(BaseWidget):
                     p.setFont(num_font(9))
                     if to_end_pct is None:
                         p.setPen(QColor(T.TEXT)); tanks_str = "-"
-                    elif to_end_pct < 0.05:
-                        p.setPen(QColor(T.GOOD)); tanks_str = "OK"
                     else:
-                        p.setPen(QColor(T.TEXT)); tanks_str = _fmt_tanks(to_end_pct / 100.0)
+                        p.setPen(QColor(T.GOOD) if to_end_pct <= 0 else QColor(T.TEXT))
+                        tanks_str = _fmt_tanks(to_end_pct / 100.0)
                     p.drawText(cx, y, cw, _RH,
                                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
                                tanks_str)
