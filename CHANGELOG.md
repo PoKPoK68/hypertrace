@@ -7,7 +7,7 @@ All notable changes to HyperTrace (formerly LMU App) are documented here.
 ## [1.1.0]
 
 ### New: Battery overlay
-- **New "Battery" widget** — hybrid state-of-charge management. SoC bar (same gauge style as the Fuel/VE calculators, more compact — green in the normal range, orange under 20% or over 80%, red under 10% or over 90%), plus LAST LAP and THIS LAP net usage (negative while draining, positive while regenerating, resets crossing the line) and the selected power-deployment map. These readings only mean something on Hypercar — the widget doesn't hide itself for other classes, so turn it off by hand if you don't want to see it elsewhere.
+- **New "Battery" widget** — hybrid state-of-charge management. SoC bar (same gauge style as the Fuel/VE calculators, more compact — green in the normal range, orange under 20% or over 80%, red under 10% or over 90%), plus LAST LAP and THIS LAP net usage (negative while draining, positive while regenerating, resets crossing the line) and the selected power-deployment map (current/max, in kW). These readings only mean something on Hypercar — the widget doesn't hide itself for other classes, so turn it off by hand if you don't want to see it elsewhere.
 
 ### Damage overlay
 - **Reworked car silhouette** — the wheels are now tucked flush against the bodywork instead of standing well clear of it, with the flanks broken open at each wheel arch, and the suspension arms moved in to match. Purely visual; the zones and what they show are unchanged.
@@ -24,6 +24,7 @@ All notable changes to HyperTrace (formerly LMU App) are documented here.
 
 ### Fixes
 - **Deleting the active preset now loads its replacement** — before, deleting the preset you were currently using switched the selection to another one but left every overlay in the deleted layout until you loaded it by hand.
+- **Pausing no longer corrupts the next fuel/VE/battery reading** — any pause (alt-tab, replay, loading screen, not just a genuine session restart) used to throw away the running lap-consumption tracking and start it over from scratch, producing one bogus spike right after unpausing. Only a real new session now resets it.
 
 ---
 
