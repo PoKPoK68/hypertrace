@@ -113,6 +113,17 @@ class RestMerge:
         self._running = False
         if self._thread:
             self._thread.join(timeout=1.0)
+        # REST is the sole source of these, and nothing else ever resets them —
+        # so once the thread stops they'd linger stale in minfo indefinitely
+        # (the footer reads "REST off" while the Weather overlay still shows the
+        # last forecast fetched, and the Damage overlay the last suspension
+        # tiers). Clear them so the widgets fall back to their no-REST state:
+        # the Weather overlay to the shared-memory "NOW" sky, the Damage overlay
+        # to neutral-grey suspension. The per-car REST fields (car number, team,
+        # class gap) self-clear — module_vehicles rebuilds dataSet from scratch
+        # every scan — so they don't need this.
+        minfo.session.weatherForecast = []
+        minfo.damage.suspensionDamage = [-1.0] * 4
 
     def _loop(self) -> None:
         last_standings = 0.0

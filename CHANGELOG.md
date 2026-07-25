@@ -11,6 +11,7 @@ All notable changes to HyperTrace (formerly LMU App) are documented here.
 
 ### Fixes
 - **Deleting the active preset now loads its replacement** — before, deleting the preset you were currently using switched the selection to another one but left every overlay in the deleted layout until you loaded it by hand.
+- **Weather forecast and suspension damage no longer linger after REST turns off** — on the without-rest-api build, turning Broadcast on then off left the last weather forecast and suspension-damage readings frozen on screen even though REST was no longer running. They now clear when REST stops, so the Weather overlay falls back to the current sky and the Damage overlay to its neutral suspension state.
 
 ---
 
