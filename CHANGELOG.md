@@ -7,7 +7,7 @@ All notable changes to HyperTrace (formerly LMU App) are documented here.
 ## [1.1.0]
 
 ### New: Battery overlay
-- **New "Battery" widget** — hybrid state-of-charge management for Hypercar, hidden automatically in every other class. SoC bar (same gauge style as the Fuel/VE calculators, more compact), plus LAST LAP and THIS LAP net usage, the selected power-deployment map, and the configured regen power.
+- **New "Battery" widget** — hybrid state-of-charge management. SoC bar (same gauge style as the Fuel/VE calculators, more compact), plus LAST LAP and THIS LAP net usage, the selected power-deployment map, and the configured regen power. These readings only mean something on Hypercar — the widget doesn't hide itself for other classes, so turn it off by hand if you don't want to see it elsewhere.
 
 ### Damage overlay
 - **Reworked car silhouette** — the wheels are now tucked flush against the bodywork instead of standing well clear of it, with the flanks broken open at each wheel arch, and the suspension arms moved in to match. Purely visual; the zones and what they show are unchanged.
