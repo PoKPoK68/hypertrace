@@ -440,7 +440,14 @@ class RelativeWidget(BaseWidget):
         name_x = pos_w + logo_w
         gap_w  = _gap_col_w(self._font_size, self._interval_decimals)
         last_w = _lastlap_col_w(self._font_size)
-        gx     = name_x + ncw + _GAP_PAD_L
+        # Last Lap sits before Gap now — lastlap_x hoisted here, gx derives
+        # from it. Deliberately not named `lx` — the per-row logo block below
+        # already uses that name for its own local pixel position, and reused
+        # it would silently shadow this one on every row (found the hard way:
+        # Last Lap rendered on top of the logo/position chip instead of after
+        # the name).
+        lastlap_x = name_x + ncw + _GAP_PAD_L
+        gx        = lastlap_x + (last_w + _GAP_PAD_L if self._show_last_lap else 0)
         _sbh = _session_bar_h(self._font_size) if _show_bar else 0
 
         self._draw_panel(p, W, H)
@@ -500,16 +507,6 @@ class RelativeWidget(BaseWidget):
             "PIT": (QColor(T.PIT_BG), QColor(T.PIT_FG)),
             "OUT": (QColor(T.OUT_BG), QColor(T.OUT_FG)),
         }
-
-        # Vertical divider between GAP and LAST LAP — one continuous line
-        # for the whole row list, not per-row, so the two read as genuinely
-        # separate columns instead of two right-aligned text blocks that
-        # merely happen not to touch.
-        if self._show_last_lap:
-            div_x = gx + gap_w + _GAP_PAD_L / 2
-            rows_top = _sbh + 2
-            rows_bottom = _sbh + 2 + len(self._rows) * rh
-            p.fillRect(QRectF(div_x, rows_top, 1, rows_bottom - rows_top), T.FAINT)
 
         for i, row in enumerate(self._rows):
             y = _sbh + 4 + i * rh
@@ -578,28 +575,26 @@ class RelativeWidget(BaseWidget):
                 draw_bold(p, lambda: p.drawText(
                     bx2, by2, bdg, rh - 6, Qt.AlignmentFlag.AlignCenter, badge))
 
-            # Gap — fixed-width column now that Last Lap can trail it (used to
-            # span to the widget's right edge, back when it was always the
-            # last thing drawn on the row). gx hoisted above the loop — same
-            # for every row.
+            # Last lap — drawn before Gap now. Shown for every real row,
+            # including the player's own (unlike Gap, which is meaningless
+            # relative to oneself). Purple like Standings' session-best would
+            # need a grid-wide comparison this widget doesn't otherwise
+            # compute; personal-best (green) only needs each car's own
+            # best_lap, already on hand. lastlap_x hoisted above the loop.
+            if self._show_last_lap and row["pos"] > 0:
+                lc = QColor(T.GOOD) if row.get("is_pb") else QColor(T.TEXT)
+                p.setFont(num_font(fs)); p.setPen(lc)
+                p.drawText(lastlap_x, y, last_w, rh,
+                           Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
+                           _fmt_lap(row.get("last_lap", -1.0)))
+
+            # Gap — fixed-width column, drawn after Last Lap now. gx hoisted
+            # above the loop — same for every row.
             if not is_p and row["pos"] > 0:
                 p.setFont(num_font(fs))
                 p.setPen(QColor(T.TEXT))
                 p.drawText(gx, y, gap_w, rh,
                            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
                            _fmt_gap(gap, self._interval_decimals))
-
-            # Last lap — shown for every real row, including the player's own
-            # (unlike Gap, which is meaningless relative to oneself). Purple
-            # like Standings' session-best would need a grid-wide comparison
-            # this widget doesn't otherwise compute; personal-best (green)
-            # only needs each car's own best_lap, already on hand.
-            if self._show_last_lap and row["pos"] > 0:
-                lc = QColor(T.GOOD) if row.get("is_pb") else QColor(T.TEXT)
-                p.setFont(num_font(fs)); p.setPen(lc)
-                lx = gx + gap_w + _GAP_PAD_L
-                p.drawText(lx, y, last_w, rh,
-                           Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
-                           _fmt_lap(row.get("last_lap", -1.0)))
 
         p.end()
