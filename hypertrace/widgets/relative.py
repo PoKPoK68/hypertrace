@@ -87,7 +87,7 @@ def _gap_col_w(font_size: int, decimals: int) -> int:
     # already uses. Using "+12" here understated the width and let a wide
     # gap value overflow past the badge padding.
     ref = "+999." + "9" * decimals if decimals > 0 else "+999"
-    return QFontMetrics(num_font(font_size)).horizontalAdvance(ref) + 4
+    return QFontMetrics(num_font(font_size)).horizontalAdvance(ref) + 6
 
 
 @lru_cache(maxsize=64)
@@ -96,7 +96,7 @@ def _lastlap_col_w(font_size: int) -> int:
     own LAST column reference. Fixed 3 decimals (no per-widget setting, unlike
     Standings' LAST/BEST — one fewer knob for a column this widget didn't have
     at all before)."""
-    return QFontMetrics(num_font(font_size)).horizontalAdvance("9:59.999") + 4
+    return QFontMetrics(num_font(font_size)).horizontalAdvance("9:59.999") + 6
 
 
 def _widget_w(name_width: int, font_size: int = 9, decimals: int = 1,
@@ -440,6 +440,7 @@ class RelativeWidget(BaseWidget):
         name_x = pos_w + logo_w
         gap_w  = _gap_col_w(self._font_size, self._interval_decimals)
         last_w = _lastlap_col_w(self._font_size)
+        gx     = name_x + ncw + _GAP_PAD_L
         _sbh = _session_bar_h(self._font_size) if _show_bar else 0
 
         self._draw_panel(p, W, H)
@@ -499,6 +500,16 @@ class RelativeWidget(BaseWidget):
             "PIT": (QColor(T.PIT_BG), QColor(T.PIT_FG)),
             "OUT": (QColor(T.OUT_BG), QColor(T.OUT_FG)),
         }
+
+        # Vertical divider between GAP and LAST LAP — one continuous line
+        # for the whole row list, not per-row, so the two read as genuinely
+        # separate columns instead of two right-aligned text blocks that
+        # merely happen not to touch.
+        if self._show_last_lap:
+            div_x = gx + gap_w + _GAP_PAD_L / 2
+            rows_top = _sbh + 2
+            rows_bottom = _sbh + 2 + len(self._rows) * rh
+            p.fillRect(QRectF(div_x, rows_top, 1, rows_bottom - rows_top), T.FAINT)
 
         for i, row in enumerate(self._rows):
             y = _sbh + 4 + i * rh
@@ -569,8 +580,8 @@ class RelativeWidget(BaseWidget):
 
             # Gap — fixed-width column now that Last Lap can trail it (used to
             # span to the widget's right edge, back when it was always the
-            # last thing drawn on the row).
-            gx = name_x + ncw + _GAP_PAD_L
+            # last thing drawn on the row). gx hoisted above the loop — same
+            # for every row.
             if not is_p and row["pos"] > 0:
                 p.setFont(num_font(fs))
                 p.setPen(QColor(T.TEXT))
