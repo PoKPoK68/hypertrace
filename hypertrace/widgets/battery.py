@@ -6,10 +6,10 @@ this only ever shows one resource (SoC) with no REFUEL/TO END/TANKS concepts
 _draw_bar from fuel_calc.py so it reads as the same kind of gauge as the
 calculators; everything else here is its own compact layout.
 
-Not auto-hidden by vehicle class — LMU's hybrid fields (SoC, regen, motor map)
-are only meaningful for Hypercar, so a non-Hypercar car just reads 0%/0kW/0/0
-here rather than the widget hiding itself; toggle it off by hand if that's
-not wanted.
+Not auto-hidden by vehicle class — LMU's hybrid fields (SoC, motor map) are
+only meaningful for Hypercar, so a non-Hypercar car just reads 0%/0% here
+rather than the widget hiding itself; toggle it off by hand if that's not
+wanted.
 """
 from __future__ import annotations
 
@@ -33,32 +33,31 @@ def _fmt_soc(v: float) -> str:
 
 
 def _fmt_soc_delta(v: float) -> str:
-    """Signed — a lap can net-gain charge when it regens more than it deploys."""
+    """Signed — negative while draining, positive while regenerating, resets
+    to 0 crossing the line (see BatteryInfo.amountUsedCurrent's own reset)."""
     return f"{v:+.1f}%"
 
 
-def _fmt_kw(v: float) -> str:
-    return f"{v:.0f}kW"
-
-
 def _fmt_map(cur: int, mx: int) -> str:
-    return f"{cur}/{mx}" if mx > 0 else "-"
+    """Selected power-deployment map as a fraction of its own max, not the
+    raw "cur/max" step — mx is a per-car step count (varies by car), so the
+    fraction is what's actually comparable lap to lap."""
+    return f"{cur / mx * 100:.0f}%" if mx > 0 else "-"
 
 
 def _soc_col(ratio: float) -> tuple[QColor, QColor]:
-    """Same low-charge warning thresholds as the Fuel/VE bars (_fuel_col/_ve_col
-    in fuel_calc.py/ve_calc.py) — not imported, since duplicating a 5-line
-    threshold check doesn't pull in the table architecture this widget is
-    otherwise deliberately independent of."""
-    if ratio < 0.10:
+    """Symmetric: both a near-empty AND a near-full battery are flagged —
+    unlike fuel/VE (only low is ever a problem), overcharging a Hypercar
+    battery is its own strategy concern."""
+    if ratio < 0.10 or ratio > 0.90:
         c = QColor(T.CRIT); return c, c.lighter(120)
-    if ratio < 0.25:
+    if ratio < 0.20 or ratio > 0.80:
         c = QColor(T.WARN); return c, c.lighter(120)
-    return QColor(T.BATTERY_LO), QColor(T.BATTERY_HI)
+    return QColor(T.VE_LO), QColor(T.VE_HI)
 
 
 def _delta_col(v: float) -> QColor:
-    """Highlight a net-positive lap (gained charge) — the common case (net
+    """Highlight a net-positive lap (regenerating) — the common case (net
     drain) stays plain text rather than reading as a problem by default."""
     return QColor(T.GOOD) if v > 0 else QColor(T.TEXT)
 
@@ -75,8 +74,7 @@ class BatteryWidget(BaseWidget):
         {"key": "show_soc_bar",  "label": "SoC bar",       "type": "bool", "default": True},
         {"key": "show_last_lap", "label": "LAST LAP row",  "type": "bool", "default": True},
         {"key": "show_this_lap", "label": "THIS LAP row",  "type": "bool", "default": True},
-        {"key": "show_deploy",   "label": "DEPLOY row",    "type": "bool", "default": True},
-        {"key": "show_regen",    "label": "REGEN row",     "type": "bool", "default": True},
+        {"key": "show_map",      "label": "MAP row",       "type": "bool", "default": True},
     ]
 
     def __init__(self, **kw):
@@ -85,13 +83,11 @@ class BatteryWidget(BaseWidget):
         self._show_soc_bar  = True
         self._show_last_lap = True
         self._show_this_lap = True
-        self._show_deploy   = True
-        self._show_regen    = True
+        self._show_map       = True
 
         self._soc            = 0.0
         self._last_lap_used   = 0.0
         self._this_lap_used   = 0.0
-        self._regen_kw        = 0.0
         self._motor_map       = 0
         self._motor_map_max   = 0
 
@@ -104,8 +100,7 @@ class BatteryWidget(BaseWidget):
 
     def _refresh_layout(self) -> None:
         bar_h = _BH + _ROW_GAP if self._show_soc_bar else 0
-        n_rows = sum((self._show_last_lap, self._show_this_lap,
-                      self._show_deploy, self._show_regen))
+        n_rows = sum((self._show_last_lap, self._show_this_lap, self._show_map))
         self._layout_h = _PAD * 2 + bar_h + n_rows * _RH
         self.setFixedSize(int(_WIDGET_W * self._scale), int(self._layout_h * self._scale))
 
@@ -115,8 +110,7 @@ class BatteryWidget(BaseWidget):
         self._show_soc_bar  = bool(params.get("show_soc_bar",  True))
         self._show_last_lap = bool(params.get("show_last_lap", True))
         self._show_this_lap = bool(params.get("show_this_lap", True))
-        self._show_deploy   = bool(params.get("show_deploy",   True))
-        self._show_regen    = bool(params.get("show_regen",    True))
+        self._show_map       = bool(params.get("show_map",      True))
         self._apply_session_visibility(params)
         self._refresh_layout()
         self.update()
@@ -125,9 +119,12 @@ class BatteryWidget(BaseWidget):
         b = minfo.battery
         h = minfo.hybrid
         self._soc            = b.amountCurrent
-        self._last_lap_used   = b.amountUsedLast
-        self._this_lap_used   = b.amountUsedCurrent
-        self._regen_kw        = h.regenKw
+        # BatteryInfo.amountUsedLast/amountUsedCurrent are positive-when-used
+        # (same "amount consumed" convention fuel/VE use) — negated here so
+        # the display convention is negative while draining, positive while
+        # regenerating, matching how a driver actually reads a power meter.
+        self._last_lap_used   = -b.amountUsedLast
+        self._this_lap_used   = -b.amountUsedCurrent
         self._motor_map       = h.motorMap
         self._motor_map_max   = h.motorMapMax
         self.update()
@@ -153,10 +150,8 @@ class BatteryWidget(BaseWidget):
             rows.append(("LAST LAP", _fmt_soc_delta(self._last_lap_used), _delta_col(self._last_lap_used)))
         if self._show_this_lap:
             rows.append(("THIS LAP", _fmt_soc_delta(self._this_lap_used), _delta_col(self._this_lap_used)))
-        if self._show_deploy:
-            rows.append(("DEPLOY", _fmt_map(self._motor_map, self._motor_map_max), QColor(T.TEXT)))
-        if self._show_regen:
-            rows.append(("REGEN", _fmt_kw(self._regen_kw), QColor(T.TEXT)))
+        if self._show_map:
+            rows.append(("MAP", _fmt_map(self._motor_map, self._motor_map_max), QColor(T.TEXT)))
 
         for label, val, col in rows:
             _draw_level(p, _PAD, y, bw, _RH, label, val, col)

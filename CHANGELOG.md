@@ -7,7 +7,7 @@ All notable changes to HyperTrace (formerly LMU App) are documented here.
 ## [1.1.0]
 
 ### New: Battery overlay
-- **New "Battery" widget** — hybrid state-of-charge management. SoC bar (same gauge style as the Fuel/VE calculators, more compact), plus LAST LAP and THIS LAP net usage, the selected power-deployment map, and the configured regen power. These readings only mean something on Hypercar — the widget doesn't hide itself for other classes, so turn it off by hand if you don't want to see it elsewhere.
+- **New "Battery" widget** — hybrid state-of-charge management. SoC bar (same gauge style as the Fuel/VE calculators, more compact — green in the normal range, orange under 20% or over 80%, red under 10% or over 90%), plus LAST LAP and THIS LAP net usage (negative while draining, positive while regenerating, resets crossing the line) and the selected power-deployment map. These readings only mean something on Hypercar — the widget doesn't hide itself for other classes, so turn it off by hand if you don't want to see it elsewhere.
 
 ### Damage overlay
 - **Reworked car silhouette** — the wheels are now tucked flush against the bodywork instead of standing well clear of it, with the flanks broken open at each wheel arch, and the suspension arms moved in to match. Purely visual; the zones and what they show are unchanged.
@@ -16,7 +16,7 @@ All notable changes to HyperTrace (formerly LMU App) are documented here.
 - **New "Reset AVG 5" setting** — the rolling 5-lap average can now auto-reset **Never** (default, unchanged), **At session start**, or **On pit exit**.
 
 ### Relative
-- **New "LAST LAP" column** — shows each driver's last lap time, including your own, in the same format as Standings. Green when it's that driver's personal best. Optional, on by default.
+- **New "LAST LAP" column** — shows each driver's last lap time, including your own, in the same format as Standings, with its own vertical divider from the Gap column so the two read as separate columns. Green when it's that driver's personal best. Optional, on by default.
 - **New brand logo column** — same manufacturer logos as Standings, between the position and the name. Optional, on by default.
 
 ### Tyres
