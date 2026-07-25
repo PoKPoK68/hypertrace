@@ -10,7 +10,7 @@ All notable changes to HyperTrace (formerly LMU App) are documented here.
 - **Reworked car silhouette** — the wheels are now tucked flush against the bodywork instead of standing well clear of it, with the flanks broken open at each wheel arch, and the suspension arms moved in to match. Purely visual; the zones and what they show are unchanged.
 
 ### Fuel & VE Calculators
-- **New "Reset AVG 5" setting** — the rolling 5-lap average can now auto-reset **Never** (default, unchanged), **At session start**, or **On pit exit**, so an out-lap or a stale reading from a previous stint doesn't skew the average going forward.
+- **New "Reset AVG 5" setting** — the rolling 5-lap average can now auto-reset **Never** (default, unchanged), **At session start**, or **On pit exit**.
 
 ### Fixes
 - **Deleting the active preset now loads its replacement** — before, deleting the preset you were currently using switched the selection to another one but left every overlay in the deleted layout until you loaded it by hand.
