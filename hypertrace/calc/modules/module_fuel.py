@@ -171,22 +171,34 @@ class Realtime(DataModule):
         _event_wait = self._event.wait
         reset = False
         interval = self.idle_interval
+        last_reset_count = None
 
         gen_fuel = gen_energy = gen_battery = None
 
         while not _event_wait(interval):
             if not realtime_state.live:
-                if reset:
-                    reset = False
-                    interval = self.idle_interval
+                interval = self.idle_interval
                 continue
 
             # Gate on `live`, not `active` — see RealtimeState.live. `active`
             # still governs the poll rate below.
             interval = self.active_interval if realtime_state.active else self.idle_interval
 
-            if not reset:
+            # Recreate the generators only on a genuine new session/restart
+            # (minfo.stint.resetCount — the same canonical signal module_stint.py
+            # computes and every other per-session module already keys off of),
+            # not on every `live` toggle. `live` also goes False on an ordinary
+            # pause/alt-tab/loading screen (see RealtimeState.live) — recreating
+            # here on every one of those discarded amount_last/used_curr/
+            # delta-history, corrupting the very next reading with the same
+            # cold-start jump a real session start produces (surfaced as THIS
+            # LAP jumping to a bogus value right after unpausing). resetCount
+            # itself doesn't bump on a mere pause (mCurrentET stays frozen, not
+            # monotonicity-broken), so it's a safe, already-proven trigger.
+            reset_count = minfo.stint.resetCount
+            if not reset or reset_count != last_reset_count:
                 reset = True
+                last_reset_count = reset_count
                 gen_fuel    = _calc_consumption(minfo.fuel, _telemetry_fuel)
                 gen_energy  = _calc_consumption(minfo.energy, _telemetry_energy)
                 gen_battery = _calc_consumption(minfo.battery, _telemetry_battery)

@@ -39,10 +39,10 @@ def _fmt_soc_delta(v: float) -> str:
 
 
 def _fmt_map(cur: int, mx: int) -> str:
-    """Selected power-deployment map as a fraction of its own max, not the
-    raw "cur/max" step — mx is a per-car step count (varies by car), so the
-    fraction is what's actually comparable lap to lap."""
-    return f"{cur / mx * 100:.0f}%" if mx > 0 else "-"
+    """mMotorMap/mMotorMapMax are both power ceilings in kW (not a step
+    index out of a step count, despite being plain uint8 in the struct) —
+    shows the currently configured deployment cap against the car's own max."""
+    return f"{cur:.0f}/{mx:.0f}kW" if mx > 0 else "-"
 
 
 def _soc_col(ratio: float) -> tuple[QColor, QColor]:
