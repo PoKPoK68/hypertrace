@@ -11,7 +11,6 @@ All notable changes to HyperTrace (formerly LMU App) are documented here.
 
 ### Fixes
 - **Deleting the active preset now loads its replacement** — before, deleting the preset you were currently using switched the selection to another one but left every overlay in the deleted layout until you loaded it by hand.
-- **Weather forecast and suspension damage no longer linger after REST turns off** — on the without-rest-api build, turning Broadcast on then off left the last weather forecast and suspension-damage readings frozen on screen even though REST was no longer running. They now clear when REST stops, so the Weather overlay falls back to the current sky and the Damage overlay to its neutral suspension state.
 
 ---
 
@@ -25,7 +24,7 @@ All notable changes to HyperTrace (formerly LMU App) are documented here.
 ### New: Damage overlay
 - **New "Damage" widget** — top-down car silhouette , 17 zones total: 4 body edges + 4 corners, 4 wheels, 4 suspension wishbones, and the rear wing as its own zone. Each zone is coloured on a 4-level severity scale (grey/amber/orange/bright red for the most severe level).
 - **Wheels** show detached/punctured state; **suspension** shows REST-only damage tiers; **body zones and the rear wing** are shared memory. No text or numeric readout — the silhouette is the whole display, matching the design spec.
-- Suspension damage is the one REST-only signal here — LMU has no shared-memory equivalent for it — so it only lights up in the full build; in the without-rest-api build that zone stays neutral grey.
+- Suspension damage is REST-only — LMU has no shared-memory equivalent for it.
 
 ### Main window redesign
 - **Sidebar layout** — the window is now a wider (560px) panel with a navigation rail on the left (Overlays / Presets / Stream / Broadcast, active page marked with an amber bar) instead of the old top tabs, in the style of typical sim-racing companion apps.

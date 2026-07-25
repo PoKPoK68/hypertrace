@@ -29,10 +29,6 @@ Overlays appear automatically when you're on track and hide when you're not. Eve
 
 Telemetry comes primarily from the game's **shared memory**, read every tick. The game's local **REST API** (`localhost:6397`) is used only in a background thread to enrich a few things shared memory doesn't expose: the broadcast focus driver, standings details (car number, team name, class gap), the weather forecast, and suspension damage.
 
-Two builds exist:
-- **Standard** — shared memory + REST enrichment (all overlays fully populated).
-- **without-rest-api** — shared memory only, for setups where the REST API is unavailable or undesirable. Identical except that REST-only signals (e.g. suspension damage) simply stay blank.
-
 ---
 
 ## Requirements
@@ -47,13 +43,6 @@ Two builds exist:
 1. Grab the latest `HyperTrace_x.x.x.zip` and extract it anywhere.
 2. Run `HyperTrace.exe`. No Python install needed — everything is bundled.
 3. Launch (or already be in) an LMU session. Overlays appear automatically once the game is on track.
-
-### Which build to download
-
-Two builds are published side by side:
-
-- **Standard** — the full app. Use this one.
-- **`without-rest-api`** — identical, except it never contacts LMU's local REST API and reads the game through shared memory only. It exists for players who get **game freezes/stutters** with the standard build: a few setups saw the extra local requests interfere with the game. It's the fallback if that happens to you. The trade-off is that the handful of details only the REST API provides go blank — car numbers, team names and class gaps in the standings, the weather forecast, and suspension damage in the Damage overlay. Everything else is the same.
 
 Settings, positions and the enabled/disabled state of each overlay are saved to `%USERPROFILE%\.hypertrace\config.json` and persist between launches. Logs go to `%USERPROFILE%\.hypertrace\hypertrace.log` — check there first if something doesn't come up (e.g. the app started before LMU, or LMU is running elevated while the app isn't).
 
