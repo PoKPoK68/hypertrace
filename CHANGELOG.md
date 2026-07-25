@@ -4,13 +4,19 @@ All notable changes to HyperTrace (formerly LMU App) are documented here.
 
 ---
 
-## [1.0.1]
+## [1.1.0]
 
 ### Damage overlay
 - **Reworked car silhouette** — the wheels are now tucked flush against the bodywork instead of standing well clear of it, with the flanks broken open at each wheel arch, and the suspension arms moved in to match. Purely visual; the zones and what they show are unchanged.
 
 ### Fuel & VE Calculators
 - **New "Reset AVG 5" setting** — the rolling 5-lap average can now auto-reset **Never** (default, unchanged), **At session start**, or **On pit exit**.
+
+### Relative
+- **New "LAST LAP" column** — shows each driver's last lap time, including your own, in the same format as Standings. Green when it's that driver's personal best. Optional, on by default.
+
+### Tyres
+- **The cold end of the temperature gradient is darker and starts later** — the fully-cold plateau now begins at -30°C below optimal (was -25°C) and is a visibly darker blue; the hot side (+25°C, full red) is unchanged.
 
 ### Fixes
 - **Deleting the active preset now loads its replacement** — before, deleting the preset you were currently using switched the selection to another one but left every overlay in the deleted layout until you loaded it by hand.
