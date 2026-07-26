@@ -5,11 +5,6 @@ here verbatim from main_window.py (v1.0 redesign) — same behavior, same
 pixels, just relocated so main_window.py stays focused on tab layout and
 wiring. Colors that used to be hardcoded hex now read from `utils.theme.T`
 (same values, just centralized).
-
-`_SegmentedControl` and `_ExclusiveOnOffGroup` are new, added to deduplicate
-logic that main_window.py used to hand-roll three times over (Broadcast
-Battle/Driver/Sectors mutual exclusion) or reimplement ad hoc per use (Tower
-mode buttons, Driver/Team name buttons).
 """
 from __future__ import annotations
 
@@ -17,7 +12,7 @@ import math
 
 from PySide6.QtCore import QTimer, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QPushButton, QWidget
+from PySide6.QtWidgets import QFrame, QPushButton, QWidget
 
 from hypertrace.utils.theme import T
 
@@ -36,17 +31,6 @@ _SS_OFF = (
     f"border: 1px solid {T.TOGGLE_OFF}; border-radius: 2px; "
     f"font-weight: bold; font-size: 10px; font-family: '{T.F_TEXT}'; }}"
     f"QPushButton:hover {{ background: {T.TOGGLE_OFF_HOVER}; border-color: {T.TOGGLE_OFF_HOVER}; }}"
-)
-_SS_SEG_ON = (
-    f"QPushButton {{ background: {T.ACCENT}; color: #000000; "
-    f"border: 1px solid {T.ACCENT}; border-radius: 2px; "
-    f"font-weight: bold; font-size: 9px; font-family: '{T.F_TEXT}'; padding: 0 4px; }}"
-)
-_SS_SEG_OFF = (
-    f"QPushButton {{ background: rgba(255,255,255,0.06); color: {T.DIM}; "
-    f"border: 1px solid rgba(255,255,255,0.12); border-radius: 2px; "
-    f"font-size: 9px; font-family: '{T.F_TEXT}'; padding: 0 4px; }}"
-    f"QPushButton:hover {{ color: {T.TEXT}; border-color: rgba(255,255,255,0.25); }}"
 )
 _SS_BTN = (
     f"QPushButton {{ color: {T.DIM}; background: rgba(255,255,255,0.06); "
@@ -257,75 +241,3 @@ class _StreamConfigProxy:
 
     def save(self) -> None:
         self._cfg.save()
-
-
-# ---------------------------------------------------------------------------
-# Segmented control — replaces hand-restyled QPushButton groups
-# ---------------------------------------------------------------------------
-
-class _SegmentedControl(QWidget):
-    """Row of mutually-exclusive buttons, one active at a time.
-
-    Works for both the 2-way (Driver/Team name, value=bool) and 3-way
-    (Tower mode, value=int) cases that main_window.py used to hand-roll with
-    manual setStyleSheet() calls scattered across 2 different handlers.
-    """
-
-    currentChanged = Signal(object)   # emits the newly-selected value
-
-    def __init__(self, options: list[tuple[str, object]], current: object,
-                 parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        hl = QHBoxLayout(self)
-        hl.setContentsMargins(0, 0, 0, 0)
-        hl.setSpacing(4)
-        self._buttons: list[tuple[object, QPushButton]] = []
-        for label, value in options:
-            btn = QPushButton(label)
-            btn.setFixedHeight(22)
-            btn.clicked.connect(lambda _, v=value: self._select(v, emit=True))
-            hl.addWidget(btn)
-            self._buttons.append((value, btn))
-        self._current = current
-        self._restyle()
-
-    def _select(self, value: object, emit: bool) -> None:
-        self._current = value
-        self._restyle()
-        if emit:
-            self.currentChanged.emit(value)
-
-    def setCurrent(self, value: object) -> None:
-        """Programmatic sync (e.g. loading a preset) — does not emit."""
-        self._select(value, emit=False)
-
-    def _restyle(self) -> None:
-        for value, btn in self._buttons:
-            btn.setStyleSheet(_SS_SEG_ON if value == self._current else _SS_SEG_OFF)
-
-
-# ---------------------------------------------------------------------------
-# Exclusive on/off group — replaces the 3x-duplicated Battle/Driver/Sectors logic
-# ---------------------------------------------------------------------------
-
-class _ExclusiveOnOffGroup:
-    """Turning one `_OnOffBtn` on turns every other one in the group off.
-
-    Attached *after* each button already has its own toggled->handler
-    connection (config write + stream_manager.set_widget_enabled) — forcing a
-    sibling off here re-triggers its own toggled signal, so that handler still
-    runs and persists the change exactly as it did when this was hand-coded
-    into each of the 3 on_toggle methods.
-    """
-
-    def __init__(self, buttons: list[_OnOffBtn]) -> None:
-        self._buttons = list(buttons)
-        for b in self._buttons:
-            b.toggled.connect(lambda checked, b=b: self._on_toggled(b, checked))
-
-    def _on_toggled(self, source: _OnOffBtn, checked: bool) -> None:
-        if not checked:
-            return
-        for b in self._buttons:
-            if b is not source and b.isChecked():
-                b.setChecked(False)

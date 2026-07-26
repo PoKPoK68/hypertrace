@@ -13,10 +13,9 @@ the widget-facing reader.
 Runs the heavy full-field scan throttled to ~10 Hz (`active_interval`) —
 standings/relative overlays sample at 5-10 Hz themselves, so finer-grained
 scanning would be wasted work. Sector-time fields (cur/last/best S1/S2) come
-straight from the scoring struct per car — the REST API merge this app used
-to do for those was solving a problem shared memory already solves; REST is
-now only needed for what shared memory genuinely doesn't expose (car number,
-team name, focused/watched driver, weather forecast) — see calc/ext/rest_merge.py.
+straight from the scoring struct per car — no REST API involved. This build
+has no REST integration at all (see CLAUDE.md); the handful of fields shared
+memory genuinely doesn't expose (weather forecast) simply stay at default.
 """
 from __future__ import annotations
 

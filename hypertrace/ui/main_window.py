@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QRectF, QSize, Qt, QTimer
 from PySide6.QtGui import QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -22,17 +22,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from hypertrace.calc.ext.rest_merge import rest_merge
 from hypertrace.calc.realtime_state import realtime_state
 from hypertrace.ui.main_window_controls import (
     _SS_BTN,
     _SS_BTN_DANGER,
     _SS_BTN_DANGER_ARMED,
     _CogBtn,
-    _ExclusiveOnOffGroup,
     _LockToggle,
     _OnOffBtn,
-    _SegmentedControl,
     _StreamConfigProxy,
     _sep,
 )
@@ -171,7 +168,6 @@ _SS_NAV = (
 
 class MainWindow(QWidget):
     """Tabbed control panel — Direction A Broadcast."""
-    open_live_timing = Signal()
 
     def __init__(
         self,
@@ -217,31 +213,6 @@ class MainWindow(QWidget):
         self._stream_url_lbl: QLabel | None = None
         self._stream_rows_w: QWidget | None = None
         self._stream_port_spin: QSpinBox | None = None
-
-        # Broadcast director
-        self._bc_state = None   # set later by caller via set_broadcast_state()
-        self._bc_name_seg:        _SegmentedControl | None = None
-        self._bc_url_lbl:         QLabel    | None = None
-        self._bc_master_toggle:   _OnOffBtn | None = None
-        self._bc_tower_toggle:    _OnOffBtn | None = None
-        self._bc_battle_toggle:   _OnOffBtn | None = None
-        self._bc_driver_toggle:   _OnOffBtn | None = None
-        self._bc_sectors_toggle:  _OnOffBtn | None = None
-        self._bc_count_ovr_spin:  QSpinBox  | None = None
-        self._bc_count_mc_spin:   QSpinBox  | None = None
-        self._bc_count_cls_spin:  QSpinBox  | None = None
-        self._bc_tower_mode_seg:  _SegmentedControl | None = None
-        self._bc_tower_spin_rows: list     | None = None
-        self._bc_parade_count_spin: QSpinBox | None = None
-        # NOTE: _bc_class_combo / _bc_viewer_combo are intentionally never
-        # instantiated (no QComboBox is ever built for them) — left exactly
-        # as they were, per explicit instruction not to touch this during the
-        # v1.0 redesign. Their handlers below (_on_bc_class_changed,
-        # _on_bc_viewer_changed, _update_bc_viewer_combo) are correspondingly
-        # unreachable dead code, also left untouched.
-        self._bc_class_combo:    QComboBox | None = None
-        self._bc_viewer_combo:   QComboBox | None = None
-        self._bc_viewer_slots:   list[int]        = []
 
         self._setup_ui()
         self._apply_lock_state()
@@ -328,22 +299,22 @@ class MainWindow(QWidget):
         root.addWidget(_sep())
 
         # Body: nav rail on the left, stacked pages on the right — replaces
-        # the old QTabWidget. The pages themselves are the same 4 builders.
+        # the old QTabWidget. The pages themselves are the same 3 builders.
         body = QWidget()
         body_hl = QHBoxLayout(body)
         body_hl.setContentsMargins(0, 0, 0, 0)
         body_hl.setSpacing(8)
 
         rail = QWidget()
-        # 116, not 104: "BROADCAST" at 11px bold uppercase with 1px letter
-        # spacing needs 82px, and the nav button spends 22px on padding plus a
-        # 3px accent border-left — 104 left only 79px and clipped the word once
-        # the main window switched from JetBrains Mono to the wider Montserrat.
+        # Kept at 116 (unchanged from when a wider "BROADCAST" label also
+        # lived in this rail) rather than re-tuned for the 3 remaining
+        # labels, to avoid re-verifying pixel-perfect nav-button padding
+        # without a visual pass.
         rail.setFixedWidth(116)
         rail_vl = QVBoxLayout(rail)
         rail_vl.setContentsMargins(0, 4, 0, 0)
         rail_vl.setSpacing(2)
-        for i, name in enumerate(("Overlays", "Presets", "Stream", "Broadcast")):
+        for i, name in enumerate(("Overlays", "Presets", "Stream")):
             btn = QPushButton(name)
             btn.setCheckable(True)
             btn.setStyleSheet(_SS_NAV)
@@ -363,7 +334,6 @@ class MainWindow(QWidget):
         stack.addWidget(self._make_overlays_tab())
         stack.addWidget(self._make_presets_tab())
         stack.addWidget(self._make_stream_tab())
-        stack.addWidget(self._make_broadcast_tab())
         body_hl.addWidget(stack, 1)
         self._stack = stack
 
@@ -427,12 +397,9 @@ class MainWindow(QWidget):
         def dot(on: bool, good: str = T.GOOD) -> str:
             return f"<span style='color:{good if on else T.DIM};'>●</span>"
         game = realtime_state.game_running and realtime_state.connected
-        broadcast_on = self._config.broadcast_active
         parts = [
             f"{dot(game)} Game {'connected' if game else 'not running'}",
-            f"{dot(rest_merge.running)} REST {'active' if rest_merge.running else 'off'}",
             f"{dot(self._config.stream_active)} Stream {'on' if self._config.stream_active else 'off'}",
-            f"{dot(broadcast_on)} Broadcast {'on' if broadcast_on else 'off'}",
         ]
         self._status_lbl.setText("&nbsp;&nbsp;&nbsp;".join(parts))
 
@@ -1093,7 +1060,6 @@ class MainWindow(QWidget):
         if self._get_snapshot is None:
             return
         snap = self._get_snapshot()
-        self._update_bc_viewer_combo(snap)
         if not snap.game_running:
             self._last_player_class = None
             return
@@ -1195,18 +1161,6 @@ QCheckBox::indicator:checked {{
         self._refresh_stream_ui()
         return w
 
-    def _make_broadcast_tab(self) -> QWidget:
-        w = QWidget()
-        vl = QVBoxLayout(w)
-        vl.setSpacing(6)
-        vl.setContentsMargins(6, 8, 6, 8)
-
-        self._build_broadcast_content(vl)
-
-        vl.addStretch()
-        self._refresh_bc_ui()
-        return w
-
     def _make_stream_row(self, key: str, widget) -> QWidget:
         row = QWidget()
         hl  = QHBoxLayout(row)
@@ -1237,24 +1191,12 @@ QCheckBox::indicator:checked {{
 
         return row
 
-    def _broadcast_wants_server(self) -> bool:
-        """Whether the Broadcast side needs the shared OBS server up — the
-        master BROADCAST toggle by itself is enough (so the /broadcast link
-        works as soon as it's on, matching Stream's own toggle), and so is
-        any individual graphic turned on without the master switch."""
-        return (self._config.broadcast_active or self._config.bc_tower_enabled
-                or self._config.bc_battle_enabled or self._config.bc_driver_enabled
-                or self._config.bc_sectors_enabled)
-
     def _sync_stream_server(self) -> None:
-        """The localhost OBS server is shared infrastructure between Stream
-        and Broadcast — it must run whenever either is in use, independently,
-        and only stop once neither is. Called after every toggle that could
-        change that union (Stream master, Broadcast master, and each of the
-        4 broadcast widgets)."""
+        """Starts/stops the localhost OBS server to match the Stream toggle.
+        Called after every toggle that could change that state."""
         if self._stream_manager is None:
             return
-        should_run = self._config.stream_active or self._broadcast_wants_server()
+        should_run = self._config.stream_active
         running = self._stream_manager.is_running
         if should_run and not running:
             ok = self._stream_manager.start(self._config.stream_port)
@@ -1262,31 +1204,19 @@ QCheckBox::indicator:checked {{
                 if self._stream_url_lbl is not None:
                     self._stream_url_lbl.setVisible(False)
                 return
-            # Port conflict — every toggle that could have just turned on was
-            # false a moment ago (should_run was false, i.e. server was off),
-            # so reverting all of them is exactly reverting whichever one(s)
-            # just changed, nothing else.
-            if self._config.broadcast_active:
-                rest_merge.stop()
-            for tog, cfg_attr in (
-                (self._stream_main_toggle,  "stream_active"),
-                (self._bc_master_toggle,    "broadcast_active"),
-                (self._bc_tower_toggle,     "bc_tower_enabled"),
-                (self._bc_battle_toggle,    "bc_battle_enabled"),
-                (self._bc_driver_toggle,    "bc_driver_enabled"),
-                (self._bc_sectors_toggle,   "bc_sectors_enabled"),
-            ):
-                setattr(self._config, cfg_attr, False)
-                if tog is not None:
-                    tog.blockSignals(True)
-                    tog.setChecked(False)
-                    tog.blockSignals(False)
+            # Port conflict — Stream was the only thing that could have just
+            # turned on (should_run was false a moment ago), so reverting it
+            # is exactly reverting what just changed, nothing else.
+            setattr(self._config, "stream_active", False)
+            if self._stream_main_toggle is not None:
+                self._stream_main_toggle.blockSignals(True)
+                self._stream_main_toggle.setChecked(False)
+                self._stream_main_toggle.blockSignals(False)
             self._config.save()
             if self._stream_url_lbl is not None:
                 self._stream_url_lbl.setText("Port already in use — choose another port")
                 self._stream_url_lbl.setVisible(True)
             self._refresh_stream_ui()
-            self._refresh_bc_ui()
         elif not should_run and running:
             self._stream_manager.stop()
             if self._stream_url_lbl is not None:
@@ -1309,7 +1239,6 @@ QCheckBox::indicator:checked {{
         self._config.save()
         self._sync_stream_server()
         self._refresh_stream_ui()
-        self._refresh_bc_ui()
 
     def _on_stream_port_changed(self, value: int) -> None:
         self._config.stream_port = value
@@ -1344,297 +1273,6 @@ QCheckBox::indicator:checked {{
             on_copy=lambda p: setattr(self, "_params_clipboard", p),
             on_paste=lambda: self._paste_params(key, widget),
         ).exec()
-
-    # ------------------------------------------------------------------ Streaming — Broadcast graphics
-
-    def set_broadcast_state(self, state) -> None:
-        """Called from main.py after MainWindow is constructed."""
-        self._bc_state = state
-        state.tower_parade_count = self._config.bc_tower_parade_count
-
-    def _make_bc_section_header(self, title: str, enabled: bool) -> tuple[QWidget, _OnOffBtn]:
-        hdr = QWidget()
-        hl  = QHBoxLayout(hdr)
-        hl.setContentsMargins(0, 2, 0, 2)
-        hl.setSpacing(6)
-        lbl = QLabel(title)
-        lbl.setStyleSheet(
-            f"color: {T.DIM}; font-size: 10px; font-weight: bold; "
-            f"letter-spacing: 1px; text-transform: uppercase;"
-        )
-        hl.addWidget(lbl)
-        hl.addStretch()
-        tog = _OnOffBtn(enabled)
-        hl.addWidget(tog)
-        return hdr, tog
-
-    def _build_broadcast_content(self, layout: QVBoxLayout) -> None:
-        # ── Master broadcast switch — REST (localhost:6397) still starts
-        # automatically on launch on this build (unchanged), this just adds a
-        # manual on/off on top of that, for parity with the without-rest-api
-        # build where this same switch is the only thing that starts it.
-        master_hdr, master_tog = self._make_bc_section_header(
-            "Broadcast", self._config.broadcast_active)
-        self._bc_master_toggle = master_tog
-        master_tog.toggled.connect(self._on_broadcast_toggle)
-        layout.addWidget(master_hdr)
-        layout.addWidget(_sep())
-
-        # ── Broadcast URL — independent of the Stream section now: this
-        # shows as soon as the OBS server is up, whether that's because
-        # Stream is on, a broadcast widget below is on, or both.
-        url_row = QWidget()
-        url_hl  = QHBoxLayout(url_row)
-        url_hl.setContentsMargins(0, 0, 0, 0)
-        url_hl.setSpacing(6)
-        url_lbl = QLabel()
-        url_lbl.setStyleSheet(f"color: {T.ACCENT}; font-size: 10px;")
-        url_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self._bc_url_lbl = url_lbl
-        url_hl.addWidget(url_lbl, 1)
-        copy_btn = QPushButton("Copy URL")
-        copy_btn.setFixedSize(80, 22)
-        copy_btn.setStyleSheet(_SS_BTN)
-        copy_btn.clicked.connect(self._copy_broadcast_url)
-        url_hl.addWidget(copy_btn)
-        layout.addWidget(url_row)
-
-        layout.addWidget(_sep())
-
-        # ── TOWER ──────────────────────────────────────────────────────
-        tower_hdr, tower_tog = self._make_bc_section_header(
-            "Tower", self._config.bc_tower_enabled)
-        self._bc_tower_toggle = tower_tog
-        tower_tog.toggled.connect(self._on_bc_tower_toggle)
-        layout.addWidget(tower_hdr)
-
-        cur_show_team = getattr(self._bc_state, "show_team", False) if self._bc_state else False
-        name_seg = _SegmentedControl(
-            [("Driver Name", False), ("Team Name", True)], current=cur_show_team,
-        )
-        name_seg.currentChanged.connect(self._on_bc_show_team)
-        self._bc_name_seg = name_seg
-        layout.addWidget(name_seg)
-
-        tower_opts = QWidget()
-        to_vl = QVBoxLayout(tower_opts)
-        to_vl.setContentsMargins(0, 0, 0, 0)
-        to_vl.setSpacing(4)
-
-        cur_mode = self._config.bc_tower_mode
-        mode_seg = _SegmentedControl(
-            [("Overall", 0), ("Multiclass", 1), ("Class", 2)], current=cur_mode,
-        )
-        mode_seg.currentChanged.connect(self._on_bc_tower_mode)
-        self._bc_tower_mode_seg = mode_seg
-        to_vl.addWidget(mode_seg)
-
-        def _dim_lbl(t: str) -> QLabel:
-            lbl2 = QLabel(t)
-            lbl2.setStyleSheet(f"color:{T.DIM};font-size:11px;")
-            return lbl2
-
-        def _cnt_spin(attr_name: str, spin_attr: str, mn: int, mx: int, val: int) -> QSpinBox:
-            sp = QSpinBox()
-            sp.setRange(mn, mx)
-            sp.setValue(val)
-            sp.setFixedWidth(54)
-            sp.valueChanged.connect(lambda v, a=attr_name: self._on_bc_count(a, v))
-            setattr(self, spin_attr, sp)
-            return sp
-
-        def _spin_row(lbl2: str, attr: str, spin_attr: str, mn: int, mx: int, val: int) -> QWidget:
-            row = QWidget()
-            hl2 = QHBoxLayout(row); hl2.setContentsMargins(0, 0, 0, 0); hl2.setSpacing(4)
-            hl2.addWidget(_dim_lbl(lbl2))
-            hl2.addWidget(_cnt_spin(attr, spin_attr, mn, mx, val))
-            hl2.addStretch()
-            return row
-
-        spin0 = _spin_row("Number of drivers:", "bc_tower_count_overall",   "_bc_count_ovr_spin", 3, 30,
-                          self._config.bc_tower_count_overall)
-        spin1 = _spin_row("Number of drivers:", "bc_tower_count_multiclass", "_bc_count_mc_spin", 1, 10,
-                          self._config.bc_tower_count_multiclass)
-        spin2 = _spin_row("Number of drivers:", "bc_tower_count_ourclass",  "_bc_count_cls_spin", 3, 30,
-                          self._config.bc_tower_count_ourclass)
-        for i, sw in enumerate((spin0, spin1, spin2)):
-            sw.setVisible(i == cur_mode)
-            to_vl.addWidget(sw)
-
-        spin_pc = _spin_row("Parade drivers:", "bc_tower_parade_count", "_bc_parade_count_spin", 1, 20,
-                            self._config.bc_tower_parade_count)
-        spin_pc.setVisible(cur_mode in (0, 2))
-        to_vl.addWidget(spin_pc)
-
-        self._bc_tower_spin_rows = [spin0, spin1, spin2]
-        layout.addWidget(tower_opts)
-
-        # Live Timing button
-        lt_btn = QPushButton("Open Live Timing Panel")
-        lt_btn.setFixedHeight(24)
-        lt_btn.setStyleSheet(_SS_BTN)
-        lt_btn.clicked.connect(self.open_live_timing.emit)
-        layout.addWidget(lt_btn)
-        layout.addWidget(_sep())
-
-        # ── BATTLE / DRIVER CARD / SECTORS — mutually exclusive ─────────
-        battle_hdr, battle_tog = self._make_bc_section_header(
-            "Battle", self._config.bc_battle_enabled)
-        self._bc_battle_toggle = battle_tog
-        battle_tog.toggled.connect(self._on_bc_battle_toggle)
-        layout.addWidget(battle_hdr)
-        layout.addWidget(_sep())
-
-        driver_hdr, driver_tog = self._make_bc_section_header(
-            "Driver Card", self._config.bc_driver_enabled)
-        self._bc_driver_toggle = driver_tog
-        driver_tog.toggled.connect(self._on_bc_driver_toggle)
-        layout.addWidget(driver_hdr)
-        layout.addWidget(_sep())
-
-        sectors_hdr, sectors_tog = self._make_bc_section_header(
-            "Sectors", self._config.bc_sectors_enabled)
-        self._bc_sectors_toggle = sectors_tog
-        sectors_tog.toggled.connect(self._on_bc_sectors_toggle)
-        layout.addWidget(sectors_hdr)
-
-        # Replaces the 3x-duplicated manual exclusivity that used to live
-        # inside _on_bc_battle_toggle / _on_bc_driver_toggle / _on_bc_sectors_toggle.
-        _ExclusiveOnOffGroup([battle_tog, driver_tog, sectors_tog])
-
-    # ── Broadcast handlers ─────────────────────────────────────────────
-
-    def _refresh_bc_ui(self) -> None:
-        # Always visible, regardless of whether the server happens to be
-        # running yet — unlike Stream's per-overlay URL buttons, this is the
-        # only way to get the Broadcast link, so it needs to be there to
-        # copy/paste into OBS ahead of time, before turning anything on.
-        if self._bc_url_lbl:
-            port = self._config.stream_port
-            self._bc_url_lbl.setText(f"http://localhost:{port}/broadcast")
-        # Broadcast graphics are independent of Stream (see _sync_stream_server) —
-        # every section toggle here always works on its own, whether or not
-        # the Stream section is also on.
-
-    def _copy_broadcast_url(self) -> None:
-        url = f"http://localhost:{self._config.stream_port}/broadcast"
-        QApplication.clipboard().setText(url)
-        btn = self.sender()
-        if isinstance(btn, QPushButton):
-            btn.setText("✓ Copied")
-            QTimer.singleShot(1500, lambda b=btn: b.setText("Copy URL"))
-
-    def _on_broadcast_toggle(self, checked: bool) -> None:
-        self._config.broadcast_active = checked
-        self._config.save()
-        if checked:
-            rest_merge.start()
-        else:
-            rest_merge.stop()
-        self._sync_stream_server()
-        self._refresh_stream_ui()
-        self._refresh_bc_ui()
-
-    def _on_bc_tower_toggle(self, checked: bool) -> None:
-        self._config.bc_tower_enabled = checked
-        self._config.save()
-        if self._stream_manager:
-            self._stream_manager.set_widget_enabled("bc_tower", checked)
-        self._sync_stream_server()
-        self._refresh_stream_ui()
-        self._refresh_bc_ui()
-
-    def _on_bc_battle_toggle(self, checked: bool) -> None:
-        self._config.bc_battle_enabled = checked
-        self._config.save()
-        if self._stream_manager:
-            self._stream_manager.set_widget_enabled("bc_battle", checked)
-        self._sync_stream_server()
-        self._refresh_stream_ui()
-        self._refresh_bc_ui()
-
-    def _on_bc_driver_toggle(self, checked: bool) -> None:
-        self._config.bc_driver_enabled = checked
-        self._config.save()
-        if self._stream_manager:
-            self._stream_manager.set_widget_enabled("bc_driver", checked)
-        self._sync_stream_server()
-        self._refresh_stream_ui()
-        self._refresh_bc_ui()
-
-    def _on_bc_sectors_toggle(self, checked: bool) -> None:
-        self._config.bc_sectors_enabled = checked
-        self._config.save()
-        if self._stream_manager:
-            self._stream_manager.set_widget_enabled("bc_sectors", checked)
-        self._sync_stream_server()
-        self._refresh_stream_ui()
-        self._refresh_bc_ui()
-
-    def _on_bc_tower_mode(self, idx: int) -> None:
-        if self._bc_tower_spin_rows:
-            for i, row in enumerate(self._bc_tower_spin_rows):
-                row.setVisible(i == idx)
-        if self._bc_parade_count_spin is not None:
-            self._bc_parade_count_spin.setVisible(idx in (0, 2))
-        self._config.bc_tower_mode = idx
-        self._config.save()
-        if self._bc_state is not None:
-            self._bc_state.tower_mode = idx
-
-    def _on_bc_count(self, cfg_attr: str, value: int) -> None:
-        setattr(self._config, cfg_attr, value)
-        self._config.save()
-        if self._bc_state is not None:
-            state_attr = (cfg_attr.replace("bc_tower_count", "tower_count")
-                                  .replace("bc_tower_parade", "tower_parade"))
-            setattr(self._bc_state, state_attr, value)
-
-    def _on_bc_show_team(self, show_team: bool) -> None:
-        self._config.bc_tower_show_team = show_team
-        if self._bc_state:
-            self._bc_state.show_team = show_team
-        self._config.save()
-
-    def _on_bc_class_changed(self, _idx: int) -> None:
-        if self._bc_class_combo is None:
-            return
-        abbrev = self._bc_class_combo.currentData() or ""
-        self._config.bc_tower_filter_class = abbrev
-        self._config.save()
-        if self._bc_state is not None:
-            self._bc_state.tower_filter_class = abbrev
-
-    def _on_bc_viewer_changed(self, _idx: int) -> None:
-        if self._bc_state is None or self._bc_viewer_combo is None:
-            return
-        slot_id = self._bc_viewer_combo.currentData()
-        self._bc_state.pinned_slot_id = slot_id if slot_id is not None else -1
-
-    def _update_bc_viewer_combo(self, snap=None) -> None:
-        if self._bc_viewer_combo is None or self._get_snapshot is None:
-            return
-        if snap is None:
-            snap = self._get_snapshot()
-        if not snap or not snap.session or not snap.game_running:
-            return
-        vlist = sorted(snap.session.vehicles, key=lambda v: v.place if v.place > 0 else 9999)
-        new_slots = [-1] + [v.slot_id for v in vlist]
-        if new_slots == self._bc_viewer_slots:
-            return
-        self._bc_viewer_slots = new_slots
-        pinned = self._bc_state.pinned_slot_id if self._bc_state else -1
-        combo = self._bc_viewer_combo
-        combo.blockSignals(True)
-        combo.clear()
-        combo.addItem("Auto", -1)
-        for v in vlist:
-            pos_s = f"P{v.place} " if v.place > 0 else ""
-            label = f"{pos_s}{v.driver_name}" if v.driver_name else f"Car {v.slot_id}"
-            combo.addItem(label, v.slot_id)
-        idx = next((i for i in range(combo.count()) if combo.itemData(i) == pinned), 0)
-        combo.setCurrentIndex(idx)
-        combo.blockSignals(False)
 
     # ------------------------------------------------------------------ Handlers
 

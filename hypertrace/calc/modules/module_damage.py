@@ -1,9 +1,10 @@
 """hypertrace/calc/modules/module_damage.py — Bodywork/wheel damage.
 
 Direct passthrough into `minfo.damage` — the Damage widget maps these raw
-facts to its own severity scale. Everything here is shared memory except
-`suspensionDamage`, populated separately by calc/ext/rest_merge.py (REST
-only, see project memory).
+facts to its own severity scale. Everything here is shared memory;
+`suspensionDamage` has no shared-memory equivalent for LMU and this build has
+no REST integration to source it from, so it stays at its default (see
+module_info.py's DamageInfo docstring).
 """
 from __future__ import annotations
 

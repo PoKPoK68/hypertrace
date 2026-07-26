@@ -40,11 +40,6 @@ class VehicleData:
     fuel: float                = 0.0
     virtual_energy: float      = 0.0
     compounds: list[str] = field(default_factory=lambda: ["", "", "", ""])
-    # REST-enriched (calc/ext/rest_merge.py) — absent from raw shared memory.
-    car_number: str = ""
-    team_name: str  = ""
-    time_behind_class_leader: float = 0.0
-    laps_behind_class_leader: int   = 0
     cur_sector1: float      = -1.0
     cur_sector2: float      = -1.0
     last_sector1: float     = -1.0
@@ -74,7 +69,6 @@ class VehiclesInfo:
     dataSet: list[VehicleData] = field(default_factory=list)
     totalVehicles: int  = 0
     playerSlotId: int   = -1
-    viewedSlotId: int   = -1   # focused/watched driver (REST /rest/watch/focus)
     playerInGarage: bool = False   # computed once per scan — was re-scanned by every widget
 
 
@@ -165,9 +159,9 @@ class DamageInfo:
     bodySeverity: 8 zones, ordered FL, FC, FR, CL, CR, RL, RC, RR (see
     calc/api.py Damage.body_severity). wheelDetached/tyrePuncture/
     rearWingDetached: shared memory. suspensionDamage (FL, FR, RL, RR
-    fractions): REST-only (calc/ext/rest_merge.py) — no shared-memory
-    equivalent exists for LMU (see project memory). -1.0 per wheel means
-    "no data yet" (REST off, or the build doesn't poll it), not "no damage".
+    fractions) has no shared-memory equivalent for LMU (see project memory)
+    and this build has no REST integration to source it from either, so it
+    never leaves its default. -1.0 per wheel means "no data", not "no damage".
     """
     bodySeverity: list[int] = field(default_factory=lambda: [0] * 8)
     wheelDetached: list[bool] = field(default_factory=lambda: [False] * 4)
@@ -202,7 +196,7 @@ class SessionInfo:
     avgPathWetness: float  = 0.0
     playerName: str        = ""
     weatherSky: int         = -1
-    weatherForecast: list[int] = field(default_factory=list)
+    weatherForecast: list[int] = field(default_factory=list)   # always empty in this build — no REST integration to source it from
 
 
 @dataclass

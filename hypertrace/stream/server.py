@@ -48,33 +48,6 @@ tick();
 
 _INDEX_ROW = '<li><a href="/{name}">{name}</a> — <code>http://localhost:{{port}}/{name}</code></li>'
 
-_BROADCAST_HTML = (
-    "<!DOCTYPE html><html><head><meta charset='utf-8'><style>"
-    "* { margin:0; padding:0; }"
-    "html,body { background:transparent; overflow:hidden; }"
-    "img { position:fixed; display:block; }"
-    "#bc-tower   { left:8px; top:8px; }"
-    "#bc-battle  { left:calc(50vw - 240px); bottom:30px; }"
-    "#bc-driver  { left:calc(50vw - 180px); bottom:30px; }"
-    "#bc-sectors { left:calc(50vw - 180px); bottom:30px; }"
-    "</style></head><body>"
-    "<img id='bc-tower'><img id='bc-battle'><img id='bc-driver'><img id='bc-sectors'>"
-    "<script>"
-    "function poll(id,name){"
-    "const img=document.getElementById(id);let busy=false;"
-    "function tick(){if(busy)return;busy=true;"
-    "const ni=new Image();"
-    "ni.onload=()=>{img.src=ni.src;busy=false;requestAnimationFrame(tick);};"
-    "ni.onerror=()=>{busy=false;setTimeout(tick,250);};"
-    "ni.src='/api/'+name+'.png?t='+Date.now();}"
-    "tick();}"
-    "poll('bc-tower','bc_tower');"
-    "poll('bc-battle','bc_battle');"
-    "poll('bc-driver','bc_driver');"
-    "poll('bc-sectors','bc_sectors');"
-    "</script></body></html>"
-)
-
 # ---------------------------------------------------------------------------
 # HTTP handler
 # ---------------------------------------------------------------------------
@@ -85,18 +58,12 @@ class _Handler(BaseHTTPRequestHandler):
 
         if path == "/":
             self._index()
-        elif path == "/broadcast":
-            self._broadcast_page()
         elif path.startswith("/api/") and path.endswith(".png"):
             self._frame(path[5:-4])
         elif path.lstrip("/"):
             self._page(path.lstrip("/"))
         else:
             self._404()
-
-    def _broadcast_page(self) -> None:
-        body = _BROADCAST_HTML.encode()
-        self._send(200, "text/html; charset=utf-8", body)
 
     def _index(self) -> None:
         srv: StreamServer = self.server  # type: ignore[assignment]
@@ -376,10 +343,11 @@ class StreamManager(QObject):
                 continue
             if snap.game_running and snap.session_active:
                 try:
-                    # Migrated widgets read hypertrace.calc.module_info.minfo
-                    # directly and take no argument; the still-on-hold
-                    # broadcast/live-timing widgets still expect the legacy
-                    # snapshot object — checked once per widget and cached.
+                    # All registered stream widgets read hypertrace.calc.
+                    # module_info.minfo directly and take no argument, but
+                    # on_data's signature is still probed rather than assumed
+                    # — cheap, and keeps this generic if a legacy-style
+                    # snapshot-taking widget is ever added back.
                     wants_snap = self._on_data_wants_snap.get(key)
                     if wants_snap is None:
                         import inspect

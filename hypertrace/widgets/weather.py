@@ -110,7 +110,7 @@ class WeatherWidget(BaseWidget):
         self._track_temp   = s.trackTemp
         self._raining      = s.raining
         self._wetness      = s.avgPathWetness
-        self._forecast     = s.weatherForecast   # via calc/ext/rest_merge.py (no REST here)
+        self._forecast     = s.weatherForecast   # always empty — this build has no REST integration to source it from
         self._sky_now      = s.weatherSky        # current sky via shared memory (instant)
         self.update()
 
@@ -178,7 +178,7 @@ class WeatherWidget(BaseWidget):
         nodes = self._forecast
 
         if not nodes:
-            # No forecast yet (REST not ready) — show current sky from shared
+            # No forecast source in this build — show current sky from shared
             # memory instantly if we have it, else "NO DATA".
             if 0 <= self._sky_now < len(self._sky_svgs) and self._sky_svgs[self._sky_now] is not None:
                 ic_x = _PAD_X + (BASE_W - _PAD_X * 2 - _IC_H) / 2

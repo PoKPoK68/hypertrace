@@ -5,7 +5,6 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QApplication
 from hypertrace.api.reader import DataReader
-from hypertrace.calc.ext.rest_merge import rest_merge
 from hypertrace.config import AppConfig
 from hypertrace.widgets.speed import SpeedWidget
 from hypertrace.widgets.inputs import InputsWidget
@@ -20,7 +19,6 @@ from hypertrace.widgets.weather import WeatherWidget
 from hypertrace.widgets.delta import DeltaWidget
 from hypertrace.stream.server import StreamManager
 from hypertrace.ui.main_window import MainWindow
-from hypertrace.widgets.broadcast import BroadcastBattle, BroadcastDriverCard, BroadcastSectors, BroadcastState, BroadcastTower
 
 
 # Montserrat is the app's only typeface — text and numbers alike, overlays and
@@ -203,15 +201,6 @@ def main() -> int:
     reader = DataReader(update_hz=args.hz)
     reader.start()
 
-    # without-rest-api build: REST (localhost:6397) is NOT started with the
-    # calc modules (see calc/module_control.py — it deliberately omits
-    # rest_merge.start()). It's only ever needed by the broadcast overlays and
-    # the Live Timing panel, so it's started here on demand, tied to the
-    # Broadcast toggle. The 9 primary desktop overlays never need it, and the
-    # REST-only extras (suspension damage, etc.) simply stay blank when it's off.
-    if config.broadcast_active:
-        rest_merge.start()
-
     fuel_calc_w = FuelCalcWidget(auto_hide=False)
     ve_calc_w   = VECalcWidget(auto_hide=False)
 
@@ -283,54 +272,16 @@ def main() -> int:
 
     stream_manager.set_hide_in_garage(config.stream_hide_in_garage)
 
-    # ── Broadcast mode ─────────────────────────────────────────────────
-    bc_state  = BroadcastState()
-    bc_state.tower_mode             = config.bc_tower_mode
-    bc_state.tower_count_overall    = config.bc_tower_count_overall
-    bc_state.tower_count_multiclass = config.bc_tower_count_multiclass
-    bc_state.tower_count_ourclass   = config.bc_tower_count_ourclass
-    bc_state.tower_filter_class     = config.bc_tower_filter_class
-    bc_state.show_team              = config.bc_tower_show_team
-
-    bc_tower   = BroadcastTower(bc_state)
-    bc_battle  = BroadcastBattle(bc_state)
-    bc_driver  = BroadcastDriverCard(bc_state)
-    bc_sectors = BroadcastSectors(bc_state)
-
-    stream_manager.add_widget("bc_tower",   bc_tower)
-    stream_manager.add_widget("bc_battle",  bc_battle)
-    stream_manager.add_widget("bc_driver",  bc_driver)
-    stream_manager.add_widget("bc_sectors", bc_sectors)
-    stream_manager.set_widget_enabled("bc_tower",   config.bc_tower_enabled)
-    stream_manager.set_widget_enabled("bc_battle",  config.bc_battle_enabled)
-    stream_manager.set_widget_enabled("bc_driver",  config.bc_driver_enabled)
-    stream_manager.set_widget_enabled("bc_sectors", config.bc_sectors_enabled)
-
-    # The OBS server is shared infrastructure between Stream and Broadcast
-    # (see MainWindow._sync_stream_server) — resume it on launch if either
-    # was left on. Deliberately NOT keyed on config.broadcast_active: that
-    # flag is forced True a few lines above regardless of what was saved
-    # (see comment there), so using it here would start this server on every
-    # launch even for someone who never streams.
-    broadcast_graphics_enabled = (
-        config.bc_tower_enabled or config.bc_battle_enabled
-        or config.bc_driver_enabled or config.bc_sectors_enabled
-    )
-    if config.stream_active or broadcast_graphics_enabled:
+    # Resume the OBS server on launch if Stream was left on.
+    if config.stream_active:
         stream_manager.start(config.stream_port)
 
     main_win = MainWindow(config, widget_entries, reader=reader,
                           stream_manager=stream_manager,
                           stream_entries=stream_entries)
-    main_win.set_broadcast_state(bc_state)
     main_win.show()
 
-    from hypertrace.widgets.live_timing import LiveTimingPanel
-    live_timing_win = LiveTimingPanel(reader, bc_state)
-    main_win.open_live_timing.connect(lambda: (live_timing_win.show(), live_timing_win.raise_()))
-
     def on_quit() -> None:
-        live_timing_win.close()
         stream_manager.stop()
         for _, w in widget_entries:
             w.stop()
