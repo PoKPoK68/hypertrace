@@ -154,16 +154,33 @@ def _row_h(font_size: int) -> int:
     return font_size + 11
 
 
-def _true_laps_behind(leader, v) -> int:
-    """Correct laps-down count using time_into_lap (same logic as relative widget).
-    raw==1 only counts as +1L if the leader is also further into the current lap —
-    avoids false positive when the leader just crossed the line but v is still ahead on track."""
-    raw = leader.total_laps - v.total_laps
-    if raw <= 0:
-        return 0
-    if raw >= 2:
-        return raw
-    return 1 if leader.time_into_lap >= v.time_into_lap else 0
+def _true_laps_behind(leader, v, track_length: float) -> int:
+    """Laps-down count from each car's continuous total lap progress (laps
+    completed + fractional distance into the current lap), not a raw
+    total_laps difference plus a separate on/off tie-break — same principle
+    TinyPedal's module_vehicles.py uses (totalLapProgress = laps_completed +
+    lap_progress_distance(...), compared directly between cars).
+
+    The previous version compared `leader.total_laps - v.total_laps` and,
+    for a difference of exactly 1, tie-broke on whether `leader.time_into_lap
+    >= v.time_into_lap`. That has a real discontinuity: right as the leader
+    crosses the line, mTotalLaps increments and mTimeIntoLap resets to ~0 in
+    the same tick, so for that tick leader.time_into_lap (now ~0) reads as
+    LESS than v's (unchanged, still mid-lap) — the tie-break flips back to
+    "not lapped" and the caller falls through to a raw time gap that isn't
+    lap-aware, which is what showed as gap/interval snapping to "0.0" at the
+    exact instant of being lapped.
+
+    total_laps + lap_dist/track_length doesn't have that discontinuity: at
+    the same crossing tick, total_laps and lap_dist change together, so the
+    sum — and the difference between two cars' sums — stays continuous
+    through the crossing instead of having one of its two inputs jump alone.
+    """
+    if track_length <= 0:
+        return max(0, leader.total_laps - v.total_laps)  # no track length yet — coarse fallback
+    leader_progress = leader.total_laps + leader.lap_dist / track_length
+    v_progress       = v.total_laps + v.lap_dist / track_length
+    return max(0, int(leader_progress - v_progress))
 
 
 def _compute_h(entries: list, row_h: int = ROW_H, show_class_header: bool = True,
@@ -604,8 +621,9 @@ class StandingsWidget(BaseWidget):
                  else f"L{self._pit_lap_tracking[slot]}" if slot in self._pit_lap_tracking
                  else "")
 
-        laps_behind    = _true_laps_behind(cls_leader, v)      if is_race else 0
-        prev_laps_down = _true_laps_behind(cls_leader, prev_v) if (is_race and prev_v) else 0
+        track_length   = minfo.session.trackLength
+        laps_behind    = _true_laps_behind(cls_leader, v, track_length)      if is_race else 0
+        prev_laps_down = _true_laps_behind(cls_leader, prev_v, track_length) if (is_race and prev_v) else 0
         interval_laps  = laps_behind - prev_laps_down
 
         return {

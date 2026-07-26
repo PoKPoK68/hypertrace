@@ -159,6 +159,28 @@ def _fmt_gap(g: float, decimals: int = 1) -> str:
     return f"{g:+.{decimals}f}"
 
 
+def _lap_diff_sign(v_total_laps: int, v_lap_dist: float,
+                   plr_total_laps: int, plr_lap_dist: float, track_length: float) -> int:
+    """+1 if this car is a lap ahead of the player (about to lap us / already
+    has), -1 if a lap behind (we're about to lap them / already have), 0
+    within one lap either way. Continuous-progress comparison (laps
+    completed + fractional distance into the current lap, TinyPedal's
+    module_vehicles.py lap_difference()), not a raw total_laps difference —
+    that has a real discontinuity right as either car crosses the line (see
+    Standings' _true_laps_behind for the full story), and Relative only ever
+    shows cars physically near the player on track, so a genuine lap
+    difference here means the lap-taking moment is imminent, not distant."""
+    if track_length <= 0:
+        return 0
+    diff = ((v_total_laps + v_lap_dist / track_length)
+            - (plr_total_laps + plr_lap_dist / track_length))
+    if diff >= 1:
+        return 1
+    if diff <= -1:
+        return -1
+    return 0
+
+
 def _fmt_lap(t: float, decimals: int = 3) -> str:
     """Same format as Standings' LAST/BEST columns — m:ss.sss."""
     if t <= 0: return "-"
@@ -187,6 +209,7 @@ class RelativeWidget(BaseWidget):
          "min": 0, "max": 3,  "step": 1, "default": 1},
         {"type": "separator", "label": "Names"},
         {"key": "show_logo",         "label": "Brand logo",  "type": "bool", "default": True},
+        {"key": "show_lap_diff",     "label": "Color name red/blue when a lap apart", "type": "bool", "default": True},
         {"key": "name_format",       "label": "Format", "type": "choice",
          "options": [
              {"value": "full",    "label": "First Last"},
@@ -234,6 +257,7 @@ class RelativeWidget(BaseWidget):
                  font_size:          int = 11,
                  show_last_lap:      bool = True,
                  show_logo:          bool = True,
+                 show_lap_diff:      bool = True,
                  **kw):
         self._ahead              = drivers_ahead
         self._behind             = drivers_behind
@@ -241,6 +265,7 @@ class RelativeWidget(BaseWidget):
         self._show_badges        = show_badges
         self._show_last_lap      = show_last_lap
         self._show_logo          = show_logo
+        self._show_lap_diff      = show_lap_diff
         self._name_width = name_width
         self._name_format         = name_format
         self._name_case           = name_case
@@ -282,6 +307,7 @@ class RelativeWidget(BaseWidget):
         self._show_badges       = bool(params.get("show_badges", True))
         self._show_last_lap     = bool(params.get("show_last_lap", True))
         self._show_logo         = bool(params.get("show_logo", True))
+        self._show_lap_diff     = bool(params.get("show_lap_diff", True))
         self._name_width = int(params.get("name_width", 150))
         self._name_format         = str(params.get("name_format", "full"))
         self._name_case           = str(params.get("name_case", "upper"))
@@ -356,7 +382,8 @@ class RelativeWidget(BaseWidget):
             best_laps = [v.best_lap for v in vehicles if v.best_lap > 10]
             laptime_est = min(best_laps) if best_laps else 120.0
 
-        plr_time = player.time_into_lap
+        plr_time     = player.time_into_lap
+        track_length = s.trackLength
 
         ahead_list:  list[tuple[float, dict]] = []
         behind_list: list[tuple[float, dict]] = []
@@ -385,6 +412,8 @@ class RelativeWidget(BaseWidget):
                 "vehicle_name": v.vehicle_name,
                 "last_lap":  v.last_lap,
                 "is_pb":     v.last_lap > 0 and v.best_lap > 0 and v.last_lap <= v.best_lap,
+                "lap_diff":  _lap_diff_sign(v.total_laps, v.lap_dist,
+                                            player.total_laps, player.lap_dist, track_length),
             }
             ahead_list.append((gap_ahead,  {**entry, "gap": -gap_ahead}))
             behind_list.append((gap_behind, {**entry, "gap": -gap_behind}))
@@ -414,11 +443,12 @@ class RelativeWidget(BaseWidget):
             "vehicle_name": player.vehicle_name,
             "last_lap":  player.last_lap,
             "is_pb":     player.last_lap > 0 and player.best_lap > 0 and player.last_lap <= player.best_lap,
+            "lap_diff":  0,
         }
 
         # Pad ahead list to always have self._ahead rows
         empty = {"pos": 0, "name_raw": "", "gap": 0.0, "is_player": False, "badge": "", "cls": "",
-                 "vehicle_name": "", "last_lap": -1.0, "is_pb": False}
+                 "vehicle_name": "", "last_lap": -1.0, "is_pb": False, "lap_diff": 0}
         ahead_padded  = [empty] * max(0, self._ahead - len(ahead_entries)) + ahead_entries
         behind_padded = behind_entries + [empty] * max(0, self._behind - len(behind_entries))
 
@@ -554,7 +584,13 @@ class RelativeWidget(BaseWidget):
 
             # Driver name — elided to the column width: a character count no
             # longer maps to a width now that the text font is proportional.
-            name_col = QColor(T.TEXT)
+            # Tinted red/blue when this car and the player are a lap apart —
+            # imminent here specifically because Relative only ever shows
+            # cars physically near the player (see _lap_diff_sign).
+            lap_diff = row.get("lap_diff", 0) if self._show_lap_diff else 0
+            name_col = (QColor(T.CRIT) if lap_diff > 0
+                        else QColor(T.COLD) if lap_diff < 0
+                        else QColor(T.TEXT))
             p.setFont(text_font(fs))
             p.setPen(name_col)
             avail = ncw - _NAME_PAD_L - (bdg + 2 if badge else 0)
