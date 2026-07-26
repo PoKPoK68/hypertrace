@@ -31,7 +31,7 @@ _FONTS = [
     "Montserrat-Bold.ttf",
 ]
 
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.1.1"
 _LOGO = "hypertrace_icon.ico"
 LOG_PATH = None   # set by _log_handlers()
 
