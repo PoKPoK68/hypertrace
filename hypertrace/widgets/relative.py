@@ -159,24 +159,25 @@ def _fmt_gap(g: float, decimals: int = 1) -> str:
     return f"{g:+.{decimals}f}"
 
 
-def _lap_diff_sign(v_total_laps: int, v_lap_dist: float,
-                   plr_total_laps: int, plr_lap_dist: float, track_length: float) -> int:
-    """+1 if this car is a lap ahead of the player (about to lap us / already
-    has), -1 if a lap behind (we're about to lap them / already have), 0
-    within one lap either way. Continuous-progress comparison (laps
-    completed + fractional distance into the current lap, TinyPedal's
-    module_vehicles.py lap_difference()), not a raw total_laps difference —
-    that has a real discontinuity right as either car crosses the line (see
-    Standings' _true_laps_behind for the full story), and Relative only ever
-    shows cars physically near the player on track, so a genuine lap
-    difference here means the lap-taking moment is imminent, not distant."""
-    if track_length <= 0:
-        return 0
-    diff = ((v_total_laps + v_lap_dist / track_length)
-            - (plr_total_laps + plr_lap_dist / track_length))
-    if diff >= 1:
+def _lap_diff_sign(v_total_laps: int, plr_total_laps: int) -> int:
+    """+1 if this car is a lap ahead of the player (about to lap us, or
+    already has — the whole time it's ahead, not just once it's physically
+    passed), -1 if a lap behind (same, the other way), 0 on the same lap.
+
+    Plain total_laps compare, no continuous-progress/track-position
+    involved: a car catching up to lap the player already has total_laps
+    one higher well before it physically draws level, since it crossed the
+    line before reaching the player's position — a continuous-progress
+    version (matching position too, not just lap count) only flipped at the
+    moment of the actual on-track pass, which read as "not lapped yet" for
+    however long the catch-up took. Standings' _true_laps_behind still needs
+    continuous progress (it's counting a magnitude, not a sign, and has to
+    survive the leader's own crossing tick) — this is a different question
+    ("ahead, behind, or even, right now") that total_laps alone answers
+    correctly at every tick, including at either car's own crossing."""
+    if v_total_laps > plr_total_laps:
         return 1
-    if diff <= -1:
+    if v_total_laps < plr_total_laps:
         return -1
     return 0
 
@@ -383,7 +384,6 @@ class RelativeWidget(BaseWidget):
             laptime_est = min(best_laps) if best_laps else 120.0
 
         plr_time     = player.time_into_lap
-        track_length = s.trackLength
 
         ahead_list:  list[tuple[float, dict]] = []
         behind_list: list[tuple[float, dict]] = []
@@ -412,8 +412,7 @@ class RelativeWidget(BaseWidget):
                 "vehicle_name": v.vehicle_name,
                 "last_lap":  v.last_lap,
                 "is_pb":     v.last_lap > 0 and v.best_lap > 0 and v.last_lap <= v.best_lap,
-                "lap_diff":  _lap_diff_sign(v.total_laps, v.lap_dist,
-                                            player.total_laps, player.lap_dist, track_length),
+                "lap_diff":  _lap_diff_sign(v.total_laps, player.total_laps),
             }
             ahead_list.append((gap_ahead,  {**entry, "gap": -gap_ahead}))
             behind_list.append((gap_behind, {**entry, "gap": -gap_behind}))
@@ -584,9 +583,10 @@ class RelativeWidget(BaseWidget):
 
             # Driver name — elided to the column width: a character count no
             # longer maps to a width now that the text font is proportional.
-            # Tinted red/blue when this car and the player are a lap apart —
-            # imminent here specifically because Relative only ever shows
-            # cars physically near the player (see _lap_diff_sign).
+            # Tinted red/blue when this car and the player are on different
+            # lap counts (see _lap_diff_sign) — Relative only ever shows cars
+            # physically near the player, so this always means the lap is
+            # about to be taken/given, not some distant, meaningless gap.
             lap_diff = row.get("lap_diff", 0) if self._show_lap_diff else 0
             name_col = (QColor(T.CRIT) if lap_diff > 0
                         else QColor(T.COLD) if lap_diff < 0
