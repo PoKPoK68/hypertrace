@@ -159,27 +159,43 @@ def _fmt_gap(g: float, decimals: int = 1) -> str:
     return f"{g:+.{decimals}f}"
 
 
-def _lap_diff_sign(v_total_laps: int, plr_total_laps: int) -> int:
-    """+1 if this car is a lap ahead of the player (about to lap us, or
-    already has — the whole time it's ahead, not just once it's physically
-    passed), -1 if a lap behind (same, the other way), 0 on the same lap.
+# TinyPedal's own default for both lap_difference_ahead_threshold and
+# lap_difference_behind_threshold (tinypedal/module/module_vehicles.py +
+# calculation.py's lap_difference()) — not 1.0. See _lap_diff_sign.
+_LAP_DIFF_THRESHOLD = 0.9
 
-    Plain total_laps compare, no continuous-progress/track-position
-    involved: a car catching up to lap the player already has total_laps
-    one higher well before it physically draws level, since it crossed the
-    line before reaching the player's position — a continuous-progress
-    version (matching position too, not just lap count) only flipped at the
-    moment of the actual on-track pass, which read as "not lapped yet" for
-    however long the catch-up took. Standings' _true_laps_behind still needs
-    continuous progress (it's counting a magnitude, not a sign, and has to
-    survive the leader's own crossing tick) — this is a different question
-    ("ahead, behind, or even, right now") that total_laps alone answers
-    correctly at every tick, including at either car's own crossing."""
-    if v_total_laps > plr_total_laps:
-        return 1
-    if v_total_laps < plr_total_laps:
-        return -1
-    return 0
+
+def _lap_progress(total_laps: int, lap_dist: float, track_length: float) -> float:
+    """One continuous number per car: laps completed + fractional distance
+    into the current lap (0-1). Same as TinyPedal's totalLapProgress."""
+    if track_length < 1:
+        return float(total_laps)
+    frac = lap_dist / track_length
+    frac = 0.0 if frac < 0 else 1.0 if frac > 1 else frac
+    return total_laps + frac
+
+
+def _lap_diff_sign(v_total_laps: int, v_lap_dist: float,
+                   plr_total_laps: int, plr_lap_dist: float, track_length: float) -> int:
+    """+1 if this car is a lap ahead of the player (about to lap us / already
+    has), -1 if a lap behind (we're about to lap them / already have), 0
+    otherwise. Ported from TinyPedal's own lap_difference(): continuous
+    progress (laps completed + fractional track position), zeroed out
+    whenever the two are within `_LAP_DIFF_THRESHOLD` of a lap apart — not a
+    raw total_laps compare (a car still on the same physical lap as the
+    player, just a moment from crossing the line itself, would misread as
+    genuinely a lap down the instant the player crosses first — total_laps
+    differs by 1 but the real, continuous gap is nearly zero), and not a
+    plain ±1.0 threshold either (that only flips at the exact moment of
+    physical passing — a car catching up to lap the player, still trailing
+    on track, has continuous progress just under 1.0 lap ahead well before
+    it draws level, and should already color as about to lap). 0.9 is
+    TinyPedal's own tuned middle ground between those two failure modes."""
+    diff = (_lap_progress(v_total_laps, v_lap_dist, track_length)
+            - _lap_progress(plr_total_laps, plr_lap_dist, track_length))
+    if -_LAP_DIFF_THRESHOLD < diff < _LAP_DIFF_THRESHOLD:
+        return 0
+    return 1 if diff > 0 else -1
 
 
 def _fmt_lap(t: float, decimals: int = 3) -> str:
@@ -384,6 +400,7 @@ class RelativeWidget(BaseWidget):
             laptime_est = min(best_laps) if best_laps else 120.0
 
         plr_time     = player.time_into_lap
+        track_length = s.trackLength
 
         ahead_list:  list[tuple[float, dict]] = []
         behind_list: list[tuple[float, dict]] = []
@@ -412,7 +429,8 @@ class RelativeWidget(BaseWidget):
                 "vehicle_name": v.vehicle_name,
                 "last_lap":  v.last_lap,
                 "is_pb":     v.last_lap > 0 and v.best_lap > 0 and v.last_lap <= v.best_lap,
-                "lap_diff":  _lap_diff_sign(v.total_laps, player.total_laps),
+                "lap_diff":  _lap_diff_sign(v.total_laps, v.lap_dist,
+                                            player.total_laps, player.lap_dist, track_length),
             }
             ahead_list.append((gap_ahead,  {**entry, "gap": -gap_ahead}))
             behind_list.append((gap_behind, {**entry, "gap": -gap_behind}))
