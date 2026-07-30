@@ -183,6 +183,32 @@ def _true_laps_behind(leader, v, track_length: float) -> int:
     return max(0, int(leader_progress - v_progress))
 
 
+def _class_time_gap(ahead_time_into_lap: float, v_time_into_lap: float, v_est_lap: float) -> float:
+    """Time gap behind `ahead`, for two cars already known to be on the same
+    lap (the caller switches to the "+1L" lap-count display via
+    _true_laps_behind before this is ever reached for a genuine lap apart).
+
+    Deliberately NOT `ahead.time_behind_leader - v.time_behind_leader`
+    (mTimeBehindLeader/mTimeBehindNext, both relative to the OVERALL race
+    leader, not a class-mate — see mPlace/mLapsBehindNext being overall-
+    scoped fields). That subtraction only stays a clean, comparable time gap
+    as long as neither car has ever been lapped by the overall leader; once
+    either has, the raw field stops behaving as a plain accumulating time
+    value, so every row's gap/interval computed against it read ~0 for the
+    rest of the race the moment the class leader itself got lapped by the
+    overall leader — TinyPedal's own module_vehicles.py never uses that raw
+    field for its in-class gap either (calc_time_gap_behind always derives it
+    from estimated_time_into instead, only using the raw field, and only
+    once actually lapped, for the non-class-specific "overall" gap variant).
+
+    time_into_lap doesn't have that failure mode: it only ever reflects each
+    car's own current lap, which the same-lap gate above already guarantees
+    matches between the two cars being compared here.
+    """
+    gap = ahead_time_into_lap - v_time_into_lap
+    return gap + v_est_lap if gap < 0 else gap
+
+
 def _compute_h(entries: list, row_h: int = ROW_H, show_class_header: bool = True,
                bar_h: int = 22) -> int:
     """Compute widget height. Header row is always present and merged with column labels."""
@@ -607,8 +633,12 @@ class StandingsWidget(BaseWidget):
     def _make_row(self, v, prev_v, class_rank: int, is_race: bool,
                   cls_leader, leader_best: float) -> dict:
         if is_race:
-            gap      = v.time_behind_leader - cls_leader.time_behind_leader
-            interval = (v.time_behind_leader - prev_v.time_behind_leader) if prev_v else 0.0
+            est_lap = (v.estimated_lap_time if v.estimated_lap_time > 0
+                       else cls_leader.estimated_lap_time if cls_leader.estimated_lap_time > 0
+                       else leader_best if leader_best > 0
+                       else 120.0)
+            gap      = _class_time_gap(cls_leader.time_into_lap, v.time_into_lap, est_lap)
+            interval = _class_time_gap(prev_v.time_into_lap, v.time_into_lap, est_lap) if prev_v else 0.0
         else:
             gap      = (v.best_lap - leader_best if v.best_lap > 0 and leader_best > 0 else -1.0)
             interval = (v.best_lap - prev_v.best_lap
