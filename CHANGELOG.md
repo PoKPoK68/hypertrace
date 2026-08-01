@@ -10,7 +10,7 @@ All notable changes to HyperTrace (formerly LMU App) are documented here.
 - **Driver names now tint red/blue when a car is a lap apart** — red if that car is about to lap you (or just did), blue if you're about to lap them (or just did). Optional, on by default ("Color name red/blue when a lap apart" in the widget's settings).
 
 ### Fixes
-- **Fixed Standings' GAP and INTERVAL columns briefly flashing "0.0" when the overall leader laps you** — right at the moment they cross the line, both columns now correctly keep showing "+1L" instead of dropping to a raw, not-lap-aware time gap for one tick.
+- **Fixed Standings' GAP and INTERVAL columns collapsing to "0.0" for the rest of the race once anyone in your class got lapped by the race leader** — a lapped car's own internal time reference breaks once that happens, and every other gap/interval in the class was quietly computed from it. Both columns are now computed independently of that reference and stay accurate all race, including once you or your class leader are a lap (or more) down.
 
 ---
 
