@@ -86,6 +86,7 @@ def _scan() -> list[VehicleData]:
             in_garage           = bool(v.mInGarageStall),
             control             = v.mControl,
             finish_status       = getattr(v, "mFinishStatus", 0),
+            penalties           = int(getattr(v, "mNumPenalties", 0)),
             cur_sector1         = v.mCurSector1,
             cur_sector2         = v.mCurSector2,
             last_sector1        = v.mLastSector1,

@@ -37,9 +37,15 @@ class VehicleData:
     in_garage: bool           = False
     control: int              = 0
     finish_status: int        = 0
+    penalties: int             = 0   # mNumPenalties — outstanding penalties, not yet served
     fuel: float                = 0.0
     virtual_energy: float      = 0.0
     compounds: list[str] = field(default_factory=lambda: ["", "", "", ""])
+    # WS-enriched (calc/ext/ws_merge.py) — REMOVE once shared memory exposes
+    # penalty *type* directly (mNumPenalties above is only ever a bare count).
+    penalty_dt: int   = 0   # outstanding drive-through penalties
+    penalty_sg: int   = 0   # outstanding stop-and-go penalties
+    penalty_time: int = 0   # outstanding time penalty, seconds
     # REST-enriched (calc/ext/rest_merge.py) — absent from raw shared memory.
     car_number: str = ""
     team_name: str  = ""

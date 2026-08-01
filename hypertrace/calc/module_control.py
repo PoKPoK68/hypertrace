@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 
 from hypertrace.calc.ext.rest_merge import rest_merge
+from hypertrace.calc.ext.ws_merge import ws_merge
 from hypertrace.calc.modules import module_damage, module_delta, module_fuel, module_stint, module_telemetry, module_vehicles, module_wheels
 from hypertrace.calc.realtime_state import state_control
 
@@ -39,10 +40,12 @@ class ModuleControl:
         # toggle's stop() a no-op here (see calc/ext/rest_merge.py).
         rest_merge.pin()
         rest_merge.start()
+        ws_merge.start()   # penalty-type enrichment, see calc/ext/ws_merge.py
         logger.info("calc: all modules started")
 
     def stop(self) -> None:
         rest_merge.stop(force=True)   # shutdown overrides the pin
+        ws_merge.stop()
         for inst in self._instances:
             inst.stop()
         state_control.stop()

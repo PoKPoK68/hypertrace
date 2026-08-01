@@ -4,6 +4,13 @@ All notable changes to HyperTrace (formerly LMU App) are documented here.
 
 ---
 
+## [1.1.2]
+
+### Standings
+- **New penalty tag** — a red tag showing each driver's outstanding penalty (drive-through, stop-and-go, or time), only visible when they actually have one. Sits flush against the far left or far right edge of the widget (your choice in the settings), outside the panel itself. Optional, on by default.
+
+---
+
 ## [1.1.1]
 
 ### Relative

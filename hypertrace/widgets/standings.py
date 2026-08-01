@@ -12,7 +12,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt, QRectF
 from functools import lru_cache
 
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QIcon, QPainter
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QIcon, QPainter, QPainterPath
 from PySide6.QtWidgets import QSizePolicy
 
 from hypertrace.calc.module_info import minfo
@@ -53,6 +53,51 @@ def _badge_px(font_size: int) -> int:
     """
     fm = QFontMetrics(num_font(_badge_font_size(font_size)))
     return max(14, fm.horizontalAdvance("GAR") + 2 * _BADGE_PAD)
+
+@lru_cache(maxsize=64)
+def _pen_tag_w(font_size: int) -> int:
+    """Penalty tag width — sized for "DTx9", the widest realistic text
+    _pen_tag_text can produce (stacked drive-through penalties); the common
+    cases ("DT", "SG", "1", "60s") are all narrower."""
+    fm = QFontMetrics(num_font(_badge_font_size(font_size)))
+    return max(16, fm.horizontalAdvance("DTx9") + 2 * _BADGE_PAD)
+
+
+def _pen_tag_text(count: int, dt: int, sg: int, time_s: int) -> str:
+    """What the penalty tag shows: type when known (WS-enriched, see
+    calc/ext/ws_merge.py — REMOVE this preference once mNumPenalties is
+    replaced with a real shared-memory type field, leaving just `count`),
+    else the bare outstanding-penalty count shared memory always has.
+    Priority SG > DT > TIME."""
+    if sg > 0:
+        return "SG" if sg == 1 else f"SGx{sg}"
+    if dt > 0:
+        return "DT" if dt == 1 else f"DTx{dt}"
+    if time_s > 0:
+        return f"{time_s}s"
+    return str(count) if count > 0 else ""
+
+def _tag_path(rect: QRectF, radius: float, flat_side: str) -> QPainterPath:
+    """Rounded-rect path with two sharp corners on `flat_side` ('left' or
+    'right') and two rounded corners on the other side.
+
+    Built as the union of a fully-rounded rect with a plain slab covering
+    just the flat side's corner cutouts, rather than hand-deriving arc
+    angles for two of the four corners — a slab of the rect's own height and
+    `radius` width entirely covers both corner cutouts on that side (they
+    never extend further from the edge than the radius), so unioning it back
+    in reliably squares them off without any per-corner angle math to get
+    subtly wrong.
+    """
+    rounded = QPainterPath()
+    rounded.addRoundedRect(rect, radius, radius)
+    if flat_side == "left":
+        patch = QRectF(rect.left(), rect.top(), radius, rect.height())
+    else:
+        patch = QRectF(rect.right() - radius, rect.top(), radius, rect.height())
+    patch_path = QPainterPath()
+    patch_path.addRect(patch)
+    return rounded.united(patch_path)
 
 # Fastest → slowest, with the same keyword sets as class_colors.CLASS_ENTRIES.
 # Each tuple lists all substrings that identify that class (uppercase match).
@@ -285,6 +330,12 @@ class StandingsWidget(BaseWidget):
          "min": 0, "max": 3, "step": 1, "default": 3, "show_if": "show_last_col"},
         {"key": "show_fuel_ve_col",  "label": "VE / Fuel",     "type": "bool", "default": True},
         {"key": "show_compound_col", "label": "Tire compound",  "type": "bool", "default": True},
+        {"key": "show_penalty_col", "label": "Penalties",       "type": "bool", "default": True},
+        {"key": "penalty_side", "label": "Position", "type": "choice",
+         "options": [
+             {"value": "left",  "label": "Far left"},
+             {"value": "right", "label": "Far right"},
+         ], "default": "right", "show_if": "show_penalty_col"},
         {"type": "separator", "label": "Badges"},
         {"key": "show_lap_badge",  "label": "Pitted lap",  "type": "bool", "default": True},
         {"key": "show_out_badge",  "label": "Out lap",      "type": "bool", "default": True},
@@ -311,6 +362,10 @@ class StandingsWidget(BaseWidget):
              "last":     "show_last_col",
              "fuel_ve":  "show_fuel_ve_col",
          },
+         # Penalties is deliberately NOT one of these draggable options — it's
+         # pinned to the far left/right only (penalty_side), never the middle
+         # of the row, so self.columns is built from this list and then has
+         # "penalty" forced onto one end afterward (see __init__/apply_params).
          "default": ["pos", "logo", "name", "badge", "compound", "gap", "interval", "best", "last", "fuel_ve"]},
     ]
 
@@ -326,6 +381,7 @@ class StandingsWidget(BaseWidget):
                  show_gap_col: bool = True, show_interval_col: bool = True,
                  show_best_col: bool = True, show_last_col: bool = True,
                  show_fuel_ve_col: bool = True, show_compound_col: bool = True,
+                 show_penalty_col: bool = True, penalty_side: str = "right",
                  font_size: int = 11,
                  best_decimals: int = 3, last_decimals: int = 3,
                  **kw):
@@ -337,6 +393,8 @@ class StandingsWidget(BaseWidget):
         }
         _col_order = list(columns or COLUMN_DEFS.keys())
         self.columns              = [c for c in _col_order if c in COLUMN_DEFS and _show_map.get(c, True)] or ["pos", "name"]
+        self._show_penalty_col    = show_penalty_col
+        self._penalty_side        = penalty_side if penalty_side in ("left", "right") else "right"
         self._top_n               = top_n
         self._around_n            = around_n
         self._name_width          = name_width
@@ -380,10 +438,20 @@ class StandingsWidget(BaseWidget):
         self._dw: dict[str, int] = {}
         super().__init__(update_hz=1, **kw)
         self._recompute_sizes()
-        ncw = self._name_width
         n_init = top_n + 1 + 2 * around_n
-        self.setFixedSize(int(_total_w(self.columns, ncw, self._font_size, self._dw) * self._scale),
+        self.setFixedSize(int(self._full_w() * self._scale),
                           int(_compute_h([{}] * n_init, self._rh, bar_h=self._sbh) * self._scale))
+
+    def _full_w(self) -> int:
+        """Total widget width: the column grid plus the penalty tag's own
+        strip outside it (see paintEvent — the tag lives past the panel's
+        own edge, not inside the column grid, so it's additive here rather
+        than counted by _total_w)."""
+        ncw = self._name_width
+        w = _total_w(self.columns, ncw, self._font_size, self._dw)
+        if self._show_penalty_col:
+            w += _pen_tag_w(self._font_size)
+        return w
 
     def _recompute_sizes(self) -> None:
         from PySide6.QtGui import QFontMetrics
@@ -462,12 +530,14 @@ class StandingsWidget(BaseWidget):
             "fuel_ve":  bool(params.get("show_fuel_ve_col",  True)),
         }
         self.columns = [c for c in col_order if show_map.get(c, True)] or ["pos", "name"]
+        self._show_penalty_col = bool(params.get("show_penalty_col", True))
+        _pside = str(params.get("penalty_side", "right"))
+        self._penalty_side = _pside if _pside in ("left", "right") else "right"
         self._apply_session_visibility(params)
         self._recompute_sizes()
-        ncw   = self._name_width
         ref   = self._entries if self._entries else [{}] * (self._top_n + 1 + 2 * self._around_n)
         new_h = _compute_h(ref, self._rh, self._show_class_badge, self._sbh)
-        self.setFixedSize(int(_total_w(self.columns, ncw, self._font_size, self._dw) * self._scale),
+        self.setFixedSize(int(self._full_w() * self._scale),
                           int(new_h * self._scale))
         self.update()
 
@@ -621,10 +691,8 @@ class StandingsWidget(BaseWidget):
 
         self._entries = entries
 
-        ncw   = self._name_width
-        new_w = _total_w(self.columns, ncw, self._font_size, self._dw)
         new_h = _compute_h(entries, self._rh, self._show_class_badge, self._sbh)
-        sw, sh = int(new_w * self._scale), int(new_h * self._scale)
+        sw, sh = int(self._full_w() * self._scale), int(new_h * self._scale)
         if self.width() != sw or self.height() != sh:
             self.setFixedSize(sw, sh)
 
@@ -679,6 +747,10 @@ class StandingsWidget(BaseWidget):
             "virtual_energy":        v.virtual_energy,
             "fuel":                  v.fuel,
             "compounds":             v.compounds,
+            "penalties":             v.penalties,
+            "penalty_dt":            v.penalty_dt,
+            "penalty_sg":            v.penalty_sg,
+            "penalty_time":          v.penalty_time,
         }
 
     # ------------------------------------------------------------------
@@ -691,6 +763,19 @@ class StandingsWidget(BaseWidget):
         ncw  = self._name_width
         W    = _total_w(self.columns, ncw, self._font_size, self._dw)
         H    = _compute_h(self._entries, self._rh, self._show_class_badge, self._sbh)
+
+        # The penalty tag lives outside the panel entirely (see paintEvent's
+        # tail, after p.restore()) — flush against whichever edge it's pinned
+        # to, over the fully transparent margin beyond the panel's own
+        # background/border, never inside it. When it's pinned left that
+        # margin sits before the panel, so the panel (and every column
+        # inside it) is pushed right by the tag's width; everything below,
+        # up to the matching restore(), is drawn in that shifted space and
+        # never needs to know the tag exists.
+        pen_w = _pen_tag_w(self._font_size) if self._show_penalty_col else 0
+        panel_x0 = pen_w if (self._show_penalty_col and self._penalty_side == "left") else 0
+        p.save()
+        p.translate(panel_x0, 0)
 
         self._draw_panel(p, W, H, accent=False)
 
@@ -771,6 +856,7 @@ class StandingsWidget(BaseWidget):
         p.fillRect(QRectF(2, self._sbh, W - 4, 1), T.FAINT)
 
         y = self._sbh + 4
+        pen_tags: list[tuple[float, float, str]] = []   # (y, row_h, text) — drawn after restore()
 
         for e in self._entries:
 
@@ -809,6 +895,12 @@ class StandingsWidget(BaseWidget):
                 p.setBrush(self._player_color)
                 p.setPen(Qt.PenStyle.NoPen)
                 p.drawRoundedRect(1, y, W - 2, rh, 3, 3)
+
+            if self._show_penalty_col:
+                pen_txt = _pen_tag_text(e.get("penalties", 0), e.get("penalty_dt", 0),
+                                        e.get("penalty_sg", 0), e.get("penalty_time", 0))
+                if pen_txt:
+                    pen_tags.append((y, rh, pen_txt))
 
             x = 2
             for col in self.columns:
@@ -951,5 +1043,24 @@ class StandingsWidget(BaseWidget):
 
                 x += cw
             y += rh
+
+        p.restore()   # undo the panel_x0 translate — back to scale-only coordinates
+
+        # Penalty tags: drawn last, outside the panel's own background/border
+        # entirely, over the fully transparent margin reserved for them. The
+        # flat side touches the panel (the mounting point); the free end,
+        # away from the panel, is rounded.
+        if self._show_penalty_col:
+            pr = 3
+            if self._penalty_side == "left":
+                tag_x, flat_side = 0.0, "right"    # flat edge touches the panel at x=pen_w
+            else:
+                tag_x, flat_side = float(W), "left"   # flat edge touches the panel at x=W
+            for ty, trh, txt in pen_tags:
+                rect = QRectF(tag_x, ty, pen_w, trh)
+                p.setBrush(QColor(T.PEN_BG)); p.setPen(Qt.PenStyle.NoPen)
+                p.drawPath(_tag_path(rect, pr, flat_side))
+                p.setFont(num_font(fss)); p.setPen(QColor(T.PEN_FG))
+                draw_bold(p, lambda r=rect, t=txt: p.drawText(r, Qt.AlignmentFlag.AlignCenter, t))
 
         p.end()

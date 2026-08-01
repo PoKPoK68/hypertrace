@@ -73,6 +73,7 @@ class T:
     OUT_BG, OUT_FG = "#BE8200", "#14140A"
     GAR_BG, GAR_FG = "#4A4A4A", "#C8C8C8"
     LAP_BG, LAP_FG = "#FFD700", "#111111"   # pit lap badge: yellow / black
+    PEN_BG, PEN_FG = "#E0433D", "#FFFFFF"   # penalty count badge: red / white
 
     # main window — ON/OFF pills, lock toggle, danger actions (centralized out
     # of hypertrace/ui/main_window_controls.py, same values as before — no visual
