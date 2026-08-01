@@ -20,9 +20,9 @@ REST/HTTP code (rest_merge.py, widgets/live_timing.py) already talking to
 library for a couple of endpoints.
 
 REMOVE ME — this whole file, its wiring in calc/module_control.py, and
-VehicleData.penalty_dt/penalty_sg/penalty_time in calc/module_info.py — the
-day mNumPenalties is replaced with (or joined by) a real shared-memory
-penalty-type field. That would make this entire module redundant.
+VehiclesInfo.penaltyTypes in calc/module_info.py — the day mNumPenalties is
+replaced with (or joined by) a real shared-memory penalty-type field. That
+would make this entire module redundant.
 """
 from __future__ import annotations
 
@@ -151,15 +151,17 @@ def _apply_update(message: str) -> None:
         )
     if not by_slot:
         return
-    # Same shape as rest_merge.py's standings enrichment: match onto whatever
-    # module_vehicles.py's last scan built, by slot_id. No clearing needed on
-    # disconnect — module_vehicles rebuilds VehicleData from scratch every
-    # scan, so these fields fall back to their 0 default on their own the
-    # next tick after this stops writing.
-    for entry in minfo.vehicles.dataSet:
-        dt_sg_time = by_slot.get(entry.slot_id)
-        if dt_sg_time:
-            entry.penalty_dt, entry.penalty_sg, entry.penalty_time = dt_sg_time
+    # Written onto minfo.vehicles.penaltyTypes, NOT the matching VehicleData
+    # in dataSet — that list is rebuilt from scratch by module_vehicles.py
+    # roughly every 100ms, on its own thread, at its own cadence. Writing
+    # per-car fields directly raced against that rebuild (this thread's
+    # update landing, then immediately getting wiped by the next scan before
+    # the widget ever read it) and made the tag flicker between the known
+    # type and the shared-memory bare count. This dict survives every
+    # rebuild untouched, so a slot's last known (DT, SG, TIME) — including
+    # genuinely (0, 0, 0), once actually served — stays put until this
+    # reports something new for it.
+    minfo.vehicles.penaltyTypes.update(by_slot)
 
 
 class WsMerge:
@@ -184,6 +186,11 @@ class WsMerge:
         self._running = False
         if self._thread:
             self._thread.join(timeout=1.0)
+        # penaltyTypes is the one thing this module writes that doesn't
+        # self-clear on its own (see _apply_update) — nothing else ever
+        # resets it, so a stale entry would otherwise linger and could even
+        # end up mislabeling a different car if slot IDs get reused.
+        minfo.vehicles.penaltyTypes.clear()
 
     def _loop(self) -> None:
         while self._running:

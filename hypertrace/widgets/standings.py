@@ -748,9 +748,7 @@ class StandingsWidget(BaseWidget):
             "fuel":                  v.fuel,
             "compounds":             v.compounds,
             "penalties":             v.penalties,
-            "penalty_dt":            v.penalty_dt,
-            "penalty_sg":            v.penalty_sg,
-            "penalty_time":          v.penalty_time,
+            "slot_id":               slot,
         }
 
     # ------------------------------------------------------------------
@@ -897,8 +895,8 @@ class StandingsWidget(BaseWidget):
                 p.drawRoundedRect(1, y, W - 2, rh, 3, 3)
 
             if self._show_penalty_col:
-                pen_txt = _pen_tag_text(e.get("penalties", 0), e.get("penalty_dt", 0),
-                                        e.get("penalty_sg", 0), e.get("penalty_time", 0))
+                pen_dt, pen_sg, pen_time = minfo.vehicles.penaltyTypes.get(e.get("slot_id", -1), (0, 0, 0))
+                pen_txt = _pen_tag_text(e.get("penalties", 0), pen_dt, pen_sg, pen_time)
                 if pen_txt:
                     pen_tags.append((y, rh, pen_txt))
 

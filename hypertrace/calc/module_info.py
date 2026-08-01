@@ -41,11 +41,6 @@ class VehicleData:
     fuel: float                = 0.0
     virtual_energy: float      = 0.0
     compounds: list[str] = field(default_factory=lambda: ["", "", "", ""])
-    # WS-enriched (calc/ext/ws_merge.py) — REMOVE once shared memory exposes
-    # penalty *type* directly (mNumPenalties above is only ever a bare count).
-    penalty_dt: int   = 0   # outstanding drive-through penalties
-    penalty_sg: int   = 0   # outstanding stop-and-go penalties
-    penalty_time: int = 0   # outstanding time penalty, seconds
     # REST-enriched (calc/ext/rest_merge.py) — absent from raw shared memory.
     car_number: str = ""
     team_name: str  = ""
@@ -82,6 +77,17 @@ class VehiclesInfo:
     playerSlotId: int   = -1
     viewedSlotId: int   = -1   # focused/watched driver (REST /rest/watch/focus)
     playerInGarage: bool = False   # computed once per scan — was re-scanned by every widget
+    # WS-enriched (calc/ext/ws_merge.py) — REMOVE alongside that file once
+    # shared memory exposes penalty *type* directly (VehicleData.penalties,
+    # mNumPenalties, is only ever a bare count). slot_id -> (DT, SG, TIME).
+    # Deliberately kept here on VehiclesInfo rather than per-VehicleData:
+    # dataSet is rebuilt from scratch every ~100ms by module_vehicles.py,
+    # which reset this the instant it landed and raced against ws_merge's own
+    # update cadence — the tag flickered between the WS-known type and the
+    # shared-memory bare count. This dict isn't touched by that rebuild, so
+    # whatever ws_merge last reported for a slot stays current until it
+    # reports something else (including genuinely (0, 0, 0) once served).
+    penaltyTypes: dict[int, tuple[int, int, int]] = field(default_factory=dict)
 
 
 @dataclass
