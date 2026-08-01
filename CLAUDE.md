@@ -18,8 +18,11 @@ python -m hypertrace            # --hz <n> shared-memory poll rate (default 50);
 # Lint (ruff; line-length 100, target py311)
 ruff check .
 
-# Build the standalone exe (use the repo's venv pyinstaller)
-.venv/Scripts/pyinstaller.exe HyperTrace.spec --noconfirm --clean
+# Build the standalone exe
+# The .venv/Scripts/pyinstaller.exe shim is broken (crashes silently, exit 1,
+# even on --version) — a past folder rename left it pointing at a stale path.
+# Invoke PyInstaller as a module instead:
+.venv/Scripts/python.exe -m PyInstaller HyperTrace.spec --noconfirm --clean
 # → dist/HyperTrace/HyperTrace.exe ; zip as dist/.../HyperTrace_<version>.zip
 ```
 
@@ -44,12 +47,16 @@ Data flows one direction through clearly separated layers. **The golden rule: on
 
 `hypertrace/calc/ext/rest_merge.py` is the **only** place that calls LMU's local REST API (`localhost:6397`), on its own background thread, writing into `minfo`. It enriches what shared memory can't give: broadcast focus driver, standings car number/team/class-gap, weather forecast, and player suspension damage. Never call REST from anywhere else.
 
+### WebSocket enrichment (isolated, `main` only for now)
+
+LMU also exposes a local **WebSocket** next to the REST port — `ws://localhost:<REST port + 1>/websocket/ui` (`6398` by default), subscribed with `{"messageType":"SUB","topic":"LiveStandings"}` — pushing richer per-car data than REST or shared memory ever expose, discovered by decompiling the companion app *LMU Broadcast Control*. `hypertrace/calc/ext/ws_merge.py` is the **only** place that opens it, same isolation rule and same shape as `rest_merge.py` (own background thread, writes into `minfo`, never touched elsewhere). Currently used for one thing: penalty *type* (drive-through/stop-go/time-in-seconds) for Standings' penalty tag — shared memory's `mNumPenalties` is only ever a bare count. Written onto `minfo.vehicles.penaltyTypes` (a `slot_id -> (DT, SG, TIME)` dict on `VehiclesInfo`, **not** per-`VehicleData`) deliberately: `module_vehicles.py` rebuilds the whole `dataSet` list from scratch roughly every 100ms, and per-car fields written there raced against that rebuild and flickered. `VehiclesInfo` itself isn't rebuilt, so the dict survives untouched between `ws_merge` updates. No `websockets` package dependency — a small raw-socket client, matching how `rest_merge.py`/`widgets/live_timing.py` already talk HTTP by hand. Marked `REMOVE ME` in its own docstring: delete the file, its `module_control.py` wiring, and `penaltyTypes` the day shared memory exposes penalty type directly.
+
 ### Two builds / two branches
 
-- **`main`** — full build: REST starts unconditionally with the calc modules and stays on the whole session. `module_control` also calls `rest_merge.pin()`, which makes `stop()` a no-op — the Broadcast toggle in `main_window.py` calls `stop()` on its way off, and without the pin that would blank every REST-only signal in the *desktop* overlays too. Shutdown uses `stop(force=True)` to override the pin.
-- **`without-rest-api`** — shared-memory-first build: `module_control` does **not** start REST (and never pins it); `main.py` starts it only when Broadcast is on. REST-only signals (e.g. suspension damage) just stay blank.
+- **`main`** — full build: REST starts unconditionally with the calc modules and stays on the whole session. `module_control` also calls `rest_merge.pin()`, which makes `stop()` a no-op — the Broadcast toggle in `main_window.py` calls `stop()` on its way off, and without the pin that would blank every REST-only signal in the *desktop* overlays too. Shutdown uses `stop(force=True)` to override the pin. `module_control` also starts `ws_merge` unconditionally, no pin needed (nothing ever toggles it off).
+- **`without-rest-api`** — shared-memory-first build: as of this writing, Broadcast and REST were removed from this build entirely (see its own commit "Drop Broadcast and REST API integration from this build" — check that branch's own CLAUDE.md for the current, branch-specific architecture, since it now differs from `main` more than the two-file rule below implies). Work on this branch is currently paused; whether `ws_merge.py` belongs there (it's a local, no-server-needed API, unlike REST-for-Broadcast — but the branch's whole premise is avoiding LMU's local API surface beyond shared memory) is an open question for whenever it resumes.
 
-The two branches are **identical except for the REST wiring in exactly two files**: `hypertrace/main.py` and `hypertrace/calc/module_control.py`. When porting features between them, touch everything freely but preserve each branch's version of those two files. Always check `git branch --show-current` before editing.
+On `main`, shared files between the two branches are **identical except for the REST/WebSocket wiring in exactly two files**: `hypertrace/main.py` and `hypertrace/calc/module_control.py` — plus, currently, `ws_merge.py` existing only on `main` (see above). When porting features between them, touch everything freely but preserve each branch's version of those two files. Always check `git branch --show-current` before editing.
 
 ### UI, stream, broadcast
 
