@@ -4,6 +4,22 @@ All notable changes to HyperTrace (formerly LMU App) are documented here.
 
 ---
 
+## [1.1.3]
+
+### Standings
+- **New driver-count on the class badge** — shows how many drivers are in that class, as a helmet icon + number attached to the badge's flat right edge. Optional, on by default ("Driver count" in the widget's settings, under the class badge toggle).
+- **New "Bottom drivers (your class)" option** — shows the tail-enders of your class in addition to the top drivers and the rows around your own position. Off by default (0).
+- **New "Show DNF/DQ drivers" toggle** — hide retired/disqualified cars from every driver list and count (top/around/bottom, other classes). On by default (unchanged behavior); your own row is never hidden even if you retire.
+
+### Relative
+- **Fixed the red/blue lap-apart name tint showing outside the Race** — it was tinting names in Practice and Qualifying too, where being "a lap apart" isn't meaningful (different fuel loads, out-laps). Now Race-only.
+
+### Fixes
+- **Sharper small header/label text everywhere** — session info, column headers, and short captions like SOC/FUEL/LAST/BEST/AVG 5 could show faint gaps right where a letter's curve rounds (P, R, S…), most visible at the small sizes these use. Font hinting at that size was distorting the curve; that text now renders unhinted with a synthetic-bold pass to keep it looking as bold as before.
+- **Standings/Relative's session clock no longer shifts as the digits change** — it now uses the same fixed-width digits as every other number in the app (Delta, Speed, lap times), instead of a proportional font where each new second could nudge the whole readout sideways.
+
+---
+
 ## [1.1.2]
 
 ### Standings

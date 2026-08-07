@@ -40,7 +40,9 @@
       "Bash(python -m py_compile lmu_app/ui/main_window.py lmu_app/ui/main_window_controls.py)",
       "Bash(python -m py_compile lmu_app/ui/main_window.py)",
       "Bash(rm -rf build/LMUApp dist/LMUApp)",
-      "Bash(.venv/Scripts/pyinstaller.exe LMUApp.spec --noconfirm)"
+      "Bash(.venv/Scripts/pyinstaller.exe LMUApp.spec --noconfirm)",
+      "Bash(.venv/Scripts/python.exe -m ruff check hypertrace/widgets/standings.py hypertrace/widgets/relative.py)",
+      "Bash(.venv/Scripts/python.exe -m ruff check hypertrace/)"
     ],
     "additionalDirectories": [
       "\\mnt\\c\\LMUApp\\lmuapp\\lmu_app"
