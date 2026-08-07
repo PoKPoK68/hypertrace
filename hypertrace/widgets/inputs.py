@@ -8,7 +8,7 @@ from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QSizePolicy
 
 from hypertrace.calc.module_info import minfo
-from hypertrace.utils.theme import T, label_font, num_font
+from hypertrace.utils.theme import T, draw_bold, label_font, num_font
 from hypertrace.widgets.base import BaseWidget, DEFAULT_SCALE
 
 _BAR_W   = 16
@@ -231,5 +231,6 @@ class InputsWidget(BaseWidget):
 
             p.setFont(label_font(6))
             p.setPen(QColor(T.DIM))
-            p.drawText(QRectF(x, y + bh + 2, bw, 10),
-                       Qt.AlignmentFlag.AlignCenter, lbl)
+            draw_bold(p, lambda x=x, y=y, bw=bw, lbl=lbl: p.drawText(
+                QRectF(x, y + bh + 2, bw, 10),
+                Qt.AlignmentFlag.AlignCenter, lbl))

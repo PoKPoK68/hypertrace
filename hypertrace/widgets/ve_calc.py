@@ -7,7 +7,7 @@ from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QSizePolicy
 from hypertrace.calc.module_info import minfo
 from hypertrace.calc.realtime_state import realtime_state
-from hypertrace.utils.theme import T, label_font, num_font, draw_panel
+from hypertrace.utils.theme import T, draw_bold, label_font, num_font, draw_panel
 from hypertrace.widgets.base import BaseWidget, DEFAULT_SCALE
 from hypertrace.widgets.fuel_calc import (
     _BH, _LVL_H, _PAD, _HDR, _RH, _LABEL_W,
@@ -304,9 +304,10 @@ class VECalcWidget(BaseWidget):
             p.setPen(QColor(T.DIM))
             for k, (cx, cw) in self._col_pos.items():
                 if k != "label":
-                    p.drawText(cx, y, cw, _HDR,
-                               Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
-                               _HDR_NAMES[k])
+                    draw_bold(p, lambda cx=cx, cw=cw, k=k: p.drawText(
+                        cx, y, cw, _HDR,
+                        Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
+                        _HDR_NAMES[k]))
             y += _HDR
 
             # ── VE data rows ────────────────────────────────────────────────
@@ -324,7 +325,8 @@ class VECalcWidget(BaseWidget):
 
                 cx, cw = self._col_pos["label"]
                 p.setFont(label_font(8)); p.setPen(QColor(T.DIM))
-                p.drawText(cx, y, cw, _RH, Qt.AlignmentFlag.AlignVCenter, lbl)
+                draw_bold(p, lambda cx=cx, cw=cw, lbl=lbl: p.drawText(
+                    cx, y, cw, _RH, Qt.AlignmentFlag.AlignVCenter, lbl))
 
                 if "usage" in self._col_pos:
                     cx, cw = self._col_pos["usage"]
@@ -384,7 +386,8 @@ class VECalcWidget(BaseWidget):
             ratio = self._fuel_ratio
             ratio_str = f"{math.ceil(ratio * 100) / 100:.2f}" if ratio > 0 else "-"
             p.setFont(label_font(8)); p.setPen(QColor(T.DIM))
-            p.drawText(_PAD, y, self._bw // 2, _RH, Qt.AlignmentFlag.AlignVCenter, "FUEL RATIO")
+            draw_bold(p, lambda: p.drawText(
+                _PAD, y, self._bw // 2, _RH, Qt.AlignmentFlag.AlignVCenter, "FUEL RATIO"))
             p.setFont(num_font(9)); p.setPen(QColor(T.TEXT))
             p.drawText(_PAD, y, self._bw, _RH,
                        Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight, ratio_str)

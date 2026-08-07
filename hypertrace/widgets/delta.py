@@ -6,7 +6,7 @@ from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QSizePolicy
 
 from hypertrace.calc.module_info import minfo
-from hypertrace.utils.theme import T, label_font, num_font
+from hypertrace.utils.theme import T, draw_bold, label_font, num_font
 from hypertrace.widgets.base import BaseWidget, DEFAULT_SCALE
 
 _BASE_W  = 160
@@ -130,8 +130,8 @@ class DeltaWidget(BaseWidget):
         if self._show_last:
             p.setFont(label_font(10))
             p.setPen(QColor(T.DIM))
-            p.drawText(QRectF(_PAD, y, lbl_w, _ROW_H),
-                       Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, "LAST")
+            draw_bold(p, lambda y=y: p.drawText(QRectF(_PAD, y, lbl_w, _ROW_H),
+                       Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, "LAST"))
             if self._last_lap <= 0:
                 last_col = QColor(T.TEXT)
             # <= not <: best_lap is the minimum lap time *including* last_lap,
@@ -152,8 +152,8 @@ class DeltaWidget(BaseWidget):
         if self._show_best:
             p.setFont(label_font(10))
             p.setPen(QColor(T.DIM))
-            p.drawText(QRectF(_PAD, y, lbl_w, _ROW_H),
-                       Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, "BEST")
+            draw_bold(p, lambda y=y: p.drawText(QRectF(_PAD, y, lbl_w, _ROW_H),
+                       Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, "BEST"))
             # Purple only while it's still the class's fastest — was purple
             # for any personal best at all, so it never reverted when
             # someone else took the class best away.

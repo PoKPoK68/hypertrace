@@ -9,7 +9,7 @@ from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QSizePolicy
 
 from hypertrace.calc.module_info import minfo
-from hypertrace.utils.theme import T, label_font, num_font
+from hypertrace.utils.theme import T, draw_bold, label_font, num_font
 from hypertrace.widgets.base import BaseWidget, DEFAULT_SCALE
 
 logger = logging.getLogger(__name__)
@@ -154,7 +154,8 @@ class WeatherWidget(BaseWidget):
                 else:
                     p.setFont(label_font(7))
                     p.setPen(QColor(T.DIM))
-                    p.drawText(lbl_r, Qt.AlignmentFlag.AlignCenter, lbl)
+                    draw_bold(p, lambda lbl_r=lbl_r, lbl=lbl: p.drawText(
+                        lbl_r, Qt.AlignmentFlag.AlignCenter, lbl))
                 p.setFont(num_font(12))
                 p.setPen(QColor(T.TEXT))
                 p.drawText(QRectF(x, y + _LBL_H + _GAP, half, _VAL_H),
@@ -168,8 +169,9 @@ class WeatherWidget(BaseWidget):
 
         p.setFont(label_font(6))
         p.setPen(QColor(T.DIM))
-        p.drawText(QRectF(_PAD_X, _FC_TOP, BASE_W - _PAD_X * 2, _FC_HDR),
-                   Qt.AlignmentFlag.AlignCenter, "FORECAST")
+        draw_bold(p, lambda: p.drawText(
+            QRectF(_PAD_X, _FC_TOP, BASE_W - _PAD_X * 2, _FC_HDR),
+            Qt.AlignmentFlag.AlignCenter, "FORECAST"))
 
         icon_y  = _FC_TOP + _FC_HDR
         label_y = icon_y + _IC_H + 1
@@ -185,13 +187,15 @@ class WeatherWidget(BaseWidget):
                 self._sky_svgs[self._sky_now].render(p, QRectF(ic_x, icon_y, _IC_H, _IC_H))
                 p.setFont(label_font(6))
                 p.setPen(QColor(T.DIM))
-                p.drawText(QRectF(_PAD_X, label_y, BASE_W - _PAD_X * 2, _NL_H - 1),
-                           Qt.AlignmentFlag.AlignCenter, "NOW")
+                draw_bold(p, lambda: p.drawText(
+                    QRectF(_PAD_X, label_y, BASE_W - _PAD_X * 2, _NL_H - 1),
+                    Qt.AlignmentFlag.AlignCenter, "NOW"))
             else:
                 p.setFont(label_font(6))
                 p.setPen(QColor(T.DIM))
-                p.drawText(QRectF(_PAD_X, icon_y, BASE_W - _PAD_X * 2, _IC_H),
-                           Qt.AlignmentFlag.AlignCenter, "NO DATA")
+                draw_bold(p, lambda: p.drawText(
+                    QRectF(_PAD_X, icon_y, BASE_W - _PAD_X * 2, _IC_H),
+                    Qt.AlignmentFlag.AlignCenter, "NO DATA"))
             return
 
         for i, sky in enumerate(nodes):
@@ -204,10 +208,12 @@ class WeatherWidget(BaseWidget):
             else:
                 p.setFont(label_font(6))
                 p.setPen(QColor(T.DIM))
-                p.drawText(QRectF(slot_x, icon_y, slot_w, _IC_H),
-                           Qt.AlignmentFlag.AlignCenter, f"?{sky}")
+                draw_bold(p, lambda slot_x=slot_x, sky=sky: p.drawText(
+                    QRectF(slot_x, icon_y, slot_w, _IC_H),
+                    Qt.AlignmentFlag.AlignCenter, f"?{sky}"))
 
             p.setFont(label_font(6))
             p.setPen(QColor(T.DIM))
-            p.drawText(QRectF(slot_x, label_y, slot_w, _NL_H - 1),
-                       Qt.AlignmentFlag.AlignCenter, _NODE_LABELS[i])
+            draw_bold(p, lambda slot_x=slot_x, i=i: p.drawText(
+                QRectF(slot_x, label_y, slot_w, _NL_H - 1),
+                Qt.AlignmentFlag.AlignCenter, _NODE_LABELS[i]))

@@ -8,7 +8,7 @@ from PySide6.QtGui import QColor, QFont, QPainter
 from PySide6.QtWidgets import QSizePolicy
 
 from hypertrace.calc.module_info import minfo
-from hypertrace.utils.theme import T, label_font, rpm_seg_color
+from hypertrace.utils.theme import T, draw_bold, label_font, rpm_seg_color
 from functools import lru_cache
 
 from PySide6.QtGui import QFontMetrics
@@ -177,9 +177,9 @@ class SpeedWidget(BaseWidget):
         kph_x   = _PAD_X + ref_w + 3
         kph_w   = fm_kph.horizontalAdvance("KM/H") + 4
         p.setPen(QColor(T.DIM))
-        p.drawText(QRectF(kph_x, spd_base - fm_kph.ascent(),
+        draw_bold(p, lambda: p.drawText(QRectF(kph_x, spd_base - fm_kph.ascent(),
                           kph_w, fm_kph.height()),
-                   avc | Qt.AlignmentFlag.AlignLeft, "KM/H")
+                   avc | Qt.AlignmentFlag.AlignLeft, "KM/H"))
 
         # Gear — right-aligned in right 32 %
         p.setFont(_num_px(num_px))

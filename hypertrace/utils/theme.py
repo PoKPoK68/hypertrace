@@ -152,11 +152,19 @@ def _label_font_cached(size: float, weight: QFont.Weight, hint: bool) -> QFont:
     if not hint:
         f.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
     f.setCapitalization(QFont.Capitalization.AllUppercase)
+    # Every overlay is a per-pixel-alpha translucent window (see widgets/base.py's
+    # WA_TranslucentBackground) — Windows' ClearType subpixel text AA assumes an
+    # opaque backing store to resolve its RGB-fringe coverage against, and gets it
+    # wrong on a layered window with no fixed background, dropping/discoloring
+    # coverage pixels most visibly on curved strokes (P, R, digits). Grayscale AA
+    # has no subpixel color channels to mis-resolve, so it's the only mode that's
+    # correct on a translucent surface.
+    f.setStyleStrategy(QFont.StyleStrategy.NoSubpixelAntialias)
     return f
 
 
 def label_font(size: float, weight: QFont.Weight = QFont.Weight.Bold,
-               hint: bool = True) -> QFont:
+               hint: bool = False) -> QFont:
     # Every paintEvent used to build a brand new QFont per call — family
     # lookup, feature/hinting setup — dozens of times per repaint across 9
     # overlays. Returning a copy of a cached template keeps that one-time
@@ -164,6 +172,15 @@ def label_font(size: float, weight: QFont.Weight = QFont.Weight.Bold,
     # each caller its own QFont instance (some call sites mutate the
     # returned font, e.g. standings.py's session-bar capitalization override
     # — mutating the cached template itself would corrupt it for everyone).
+    #
+    # hint defaults to False (unlike num_font/text_font): this is the font
+    # every small all-caps header/column-label/badge is drawn with, and hinted
+    # rendering was dropping coverage pixels right on curved strokes (P, R, S,
+    # the badge letters) at these small sizes — reported as "missing pixels"
+    # right where the glyph rounds. Disabling hinting keeps the curves intact
+    # but loses the stem-darkening that made the single embedded Bold weight
+    # read as bold — every call site drawing with this font must pair it with
+    # draw_bold() to restore that weight (see its docstring).
     return QFont(_label_font_cached(size, weight, hint))
 
 
@@ -181,6 +198,7 @@ def _num_font_cached(size: float, weight: QFont.Weight, hint: bool) -> QFont:
         pass          # older Qt without font-feature support — falls back
     if not hint:
         f.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
+    f.setStyleStrategy(QFont.StyleStrategy.NoSubpixelAntialias)   # see _label_font_cached
     return f
 
 
@@ -196,6 +214,7 @@ def _text_font_cached(size: float, weight: QFont.Weight, hint: bool) -> QFont:
     f.setStyleHint(QFont.StyleHint.TypeWriter)
     if not hint:
         f.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
+    f.setStyleStrategy(QFont.StyleStrategy.NoSubpixelAntialias)   # see _label_font_cached
     return f
 
 

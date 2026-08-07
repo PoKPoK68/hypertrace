@@ -6,7 +6,7 @@ from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QSizePolicy
 
 from hypertrace.calc.module_info import minfo
-from hypertrace.utils.theme import T, label_font, num_font
+from hypertrace.utils.theme import T, draw_bold, label_font, num_font
 from hypertrace.widgets.base import BaseWidget, DEFAULT_SCALE
 
 _BAR_W = 38
@@ -143,5 +143,5 @@ class TyresWidget(BaseWidget):
         # Corner label (FL/FR/RL/RR) — centered, drawn last
         p.setFont(label_font(7))
         p.setPen(QColor(255, 255, 255, 140))
-        p.drawText(QRectF(x, y, _BAR_W, _BAR_H),
-                   Qt.AlignmentFlag.AlignCenter, label)
+        draw_bold(p, lambda: p.drawText(QRectF(x, y, _BAR_W, _BAR_H),
+                   Qt.AlignmentFlag.AlignCenter, label))

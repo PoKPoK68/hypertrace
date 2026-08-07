@@ -12,7 +12,7 @@ from hypertrace.api.reader import LMUSnapshot
 from hypertrace.utils.class_colors import class_abbrev, class_color
 from hypertrace.utils.logos import get_logo as _get_logo
 from hypertrace.utils.compounds import draw_compound_badge as _draw_compound_badge
-from hypertrace.utils.theme import T, accent_hairline, border_pen, label_font, num_font, panel_brush, text_font
+from hypertrace.utils.theme import T, accent_hairline, border_pen, draw_bold, label_font, num_font, panel_brush, text_font
 
 
 # ---------------------------------------------------------------------------
@@ -560,8 +560,8 @@ class BroadcastTower(_BcWidget):
 
         p.setFont(label_font(8))
         p.setPen(QColor(T.ACCENT))
-        p.drawText(QRectF(10 + clock_w + 14, 0, 120, _TSEH),
-                   Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, ses_name)
+        draw_bold(p, lambda: p.drawText(QRectF(10 + clock_w + 14, 0, 120, _TSEH),
+                   Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, ses_name))
 
         # Flag indicator (14×14 rounded square, right)
         gp = self._game_phase
@@ -599,16 +599,18 @@ class BroadcastTower(_BcWidget):
                 p.setPen(Qt.PenStyle.NoPen)
                 p.drawRoundedRect(4, y + 1, bw, _TCLSH - 2, 2, 2)
                 p.setPen(QColor(T.TEXT))
-                p.drawText(4, y + 1, bw, _TCLSH - 2, Qt.AlignmentFlag.AlignCenter, ab)
+                draw_bold(p, lambda bw=bw, y=y: p.drawText(
+                    4, y + 1, bw, _TCLSH - 2, Qt.AlignmentFlag.AlignCenter, ab))
                 # Column label on the same row, in the info column area
                 info_x = W - 4 - _TINFO_W
                 col_label = (e.get("ve_label", "VE") if self._col_mode == 2
                              else _COL_LABELS[self._col_mode])
                 p.setFont(label_font(7))
                 p.setPen(QColor(T.DIM))
-                p.drawText(info_x, y, _TINFO_W - 2, _TCLSH,
-                           Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
-                           col_label)
+                draw_bold(p, lambda info_x=info_x, y=y, col_label=col_label: p.drawText(
+                    info_x, y, _TINFO_W - 2, _TCLSH,
+                    Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
+                    col_label))
                 y += _TCLSH
                 continue
 
@@ -642,9 +644,10 @@ class BroadcastTower(_BcWidget):
             num_txt = e.get("car_num", "")
             if num_txt:
                 p.setFont(label_font(7)); p.setPen(QColor(T.DIM))
-                p.drawText(x, y, _TNUM_W - 4, _TRH,
-                           Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
-                           f"#{num_txt}")
+                draw_bold(p, lambda x=x, y=y, num_txt=num_txt: p.drawText(
+                    x, y, _TNUM_W - 4, _TRH,
+                    Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
+                    f"#{num_txt}"))
             x += _TNUM_W
 
             # Driver / team name (already formatted)
@@ -672,8 +675,9 @@ class BroadcastTower(_BcWidget):
                 p.setBrush(bdg_col); p.setPen(Qt.PenStyle.NoPen)
                 p.drawRoundedRect(bdg_x, bdg_y, _TBDG_W, bdg_h, 3, 3)
                 p.setFont(label_font(7)); p.setPen(QColor("#FFFFFF"))
-                p.drawText(bdg_x, bdg_y, _TBDG_W, bdg_h,
-                           Qt.AlignmentFlag.AlignCenter, status)
+                draw_bold(p, lambda bdg_x=bdg_x, bdg_y=bdg_y, bdg_h=bdg_h, status=status: p.drawText(
+                    bdg_x, bdg_y, _TBDG_W, bdg_h,
+                    Qt.AlignmentFlag.AlignCenter, status))
 
             y += _TRH
 
@@ -840,7 +844,7 @@ class BroadcastBattle(_BcWidget):
         else:
             gap_txt = "—"
         p.setFont(label_font(7)); p.setPen(QColor(T.DIM))
-        p.drawText(cx0, 10, _BCW, 16, Qt.AlignmentFlag.AlignCenter, "GAP")
+        draw_bold(p, lambda: p.drawText(cx0, 10, _BCW, 16, Qt.AlignmentFlag.AlignCenter, "GAP"))
         p.setFont(num_font(11 if len(gap_txt) <= 6 else 9)); p.setPen(QColor(T.ACCENT))
         p.drawText(cx0, 26, _BCW, 22, Qt.AlignmentFlag.AlignCenter, gap_txt)
 
@@ -884,7 +888,8 @@ class BroadcastBattle(_BcWidget):
             num_txt = driver.get("car_num", "")
             if num_txt:
                 p.setFont(label_font(10)); p.setPen(QColor(T.DIM))
-                p.drawText(pos_x, 46, _BPOS_W, 14, pos_align, f"#{num_txt}")
+                draw_bold(p, lambda pos_x=pos_x, num_txt=num_txt: p.drawText(
+                    pos_x, 46, _BPOS_W, 14, pos_align, f"#{num_txt}"))
 
             # Manufacturer logo — below the name row so it doesn't clip the name text
             logo = _get_logo(driver.get("vehicle_name", ""), 32, 26)
@@ -906,7 +911,7 @@ class BroadcastBattle(_BcWidget):
             ar = Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight
             if align_right:
                 p.setFont(lbl_font); p.setPen(QColor(T.DIM))
-                p.drawText(name_x, 34, 30, 18, la, "LAST")
+                draw_bold(p, lambda name_x=name_x: p.drawText(name_x, 34, 30, 18, la, "LAST"))
                 p.setFont(lap_font)
                 p.setPen(QColor(T.DIM) if driver["last"] <= 0 else QColor(last_col))
                 p.drawText(name_x + 30, 34, name_w - 30, 18, la, last_txt)
@@ -915,14 +920,15 @@ class BroadcastBattle(_BcWidget):
                 p.setPen(QColor(T.DIM) if driver["last"] <= 0 else QColor(last_col))
                 p.drawText(name_x, 34, name_w - 30, 18, ar, last_txt)
                 p.setFont(lbl_font); p.setPen(QColor(T.DIM))
-                p.drawText(name_x + name_w - 30, 34, 30, 18, ar, "LAST")
+                draw_bold(p, lambda name_x=name_x, name_w=name_w: p.drawText(
+                    name_x + name_w - 30, 34, 30, 18, ar, "LAST"))
 
             # Best lap (purple if session best)
             best_txt = _fmt_lap(driver["best"], 3)
             best_col = T.PURPLE if driver.get("best_is_ses") else T.TEXT
             if align_right:
                 p.setFont(lbl_font); p.setPen(QColor(T.DIM))
-                p.drawText(name_x, 56, 30, 18, la, "BEST")
+                draw_bold(p, lambda name_x=name_x: p.drawText(name_x, 56, 30, 18, la, "BEST"))
                 p.setFont(lap_font)
                 p.setPen(QColor(T.DIM) if driver["best"] <= 0 else QColor(best_col))
                 p.drawText(name_x + 30, 56, name_w - 30, 18, la, best_txt)
@@ -931,7 +937,8 @@ class BroadcastBattle(_BcWidget):
                 p.setPen(QColor(T.DIM) if driver["best"] <= 0 else QColor(best_col))
                 p.drawText(name_x, 56, name_w - 30, 18, ar, best_txt)
                 p.setFont(lbl_font); p.setPen(QColor(T.DIM))
-                p.drawText(name_x + name_w - 30, 56, 30, 18, ar, "BEST")
+                draw_bold(p, lambda name_x=name_x, name_w=name_w: p.drawText(
+                    name_x + name_w - 30, 56, 30, 18, ar, "BEST"))
 
         p.end()
 
@@ -1041,9 +1048,10 @@ class BroadcastDriverCard(_BcWidget):
         _dnum_w = 32
         if num_txt:
             p.setFont(label_font(9)); p.setPen(QColor(T.DIM))
-            p.drawText(6 + _DPOS_W + 4 + _dlogo_w + 4, row1_y, _dnum_w, row1_h,
-                       Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter,
-                       f"#{num_txt}")
+            draw_bold(p, lambda: p.drawText(
+                6 + _DPOS_W + 4 + _dlogo_w + 4, row1_y, _dnum_w, row1_h,
+                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter,
+                f"#{num_txt}"))
 
         # VE / fuel — right-aligned on row 1
         ve   = driver["ve"]
@@ -1068,8 +1076,9 @@ class BroadcastDriverCard(_BcWidget):
             lbl_x = W - ve_block_w - 6
             val_x = lbl_x + lbl_w + 4
             p.setFont(lbl_f); p.setPen(QColor(T.DIM))
-            p.drawText(lbl_x, row1_y, lbl_w + 4, row1_h,
-                       Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, fv_lbl)
+            draw_bold(p, lambda lbl_x=lbl_x, lbl_w=lbl_w: p.drawText(
+                lbl_x, row1_y, lbl_w + 4, row1_h,
+                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, fv_lbl))
             p.setFont(val_f); p.setPen(fv_col)
             p.drawText(val_x, row1_y, val_w + 4, row1_h,
                        Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, fv_txt)
@@ -1093,8 +1102,8 @@ class BroadcastDriverCard(_BcWidget):
 
         last_txt = _fmt_lap(driver["last"], 3)
         p.setFont(lbl_f); p.setPen(QColor(T.DIM))
-        p.drawText(6, row2_y, 28, row2_h,
-                   Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, "LAST")
+        draw_bold(p, lambda: p.drawText(6, row2_y, 28, row2_h,
+                   Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, "LAST"))
         p.setFont(val_f)
         p.setPen(QColor(driver["last_col"]))
         p.drawText(34, row2_y, 84, row2_h,
@@ -1102,8 +1111,8 @@ class BroadcastDriverCard(_BcWidget):
 
         best_txt = _fmt_lap(driver["best"], 3)
         p.setFont(lbl_f); p.setPen(QColor(T.DIM))
-        p.drawText(126, row2_y, 28, row2_h,
-                   Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, "BEST")
+        draw_bold(p, lambda: p.drawText(126, row2_y, 28, row2_h,
+                   Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, "BEST"))
         p.setFont(val_f)
         p.setPen(QColor(T.PURPLE) if driver.get("best_is_ses") else QColor(T.TEXT) if driver["best"] > 0 else QColor(T.DIM))
         p.drawText(154, row2_y, 84, row2_h,
@@ -1243,9 +1252,10 @@ class BroadcastSectors(_BcWidget):
         num_txt = d.get("car_num", "")
         if num_txt:
             p.setFont(label_font(9)); p.setPen(QColor(T.DIM))
-            p.drawText(6 + _qpos_w + 4 + _qlogo_w + 4, top_y, _qnum_w, top_h,
-                       Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter,
-                       f"#{num_txt}")
+            draw_bold(p, lambda: p.drawText(
+                6 + _qpos_w + 4 + _qlogo_w + 4, top_y, _qnum_w, top_h,
+                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter,
+                f"#{num_txt}"))
 
         best_lap = d["best_lap"]
         best_txt = _fmt_lap(best_lap, 3) if best_lap > 0 else "—"
@@ -1314,7 +1324,8 @@ class BroadcastSectors(_BcWidget):
             sw = _QSEC
 
             p.setFont(label_font(7)); p.setPen(QColor(T.DIM))
-            p.drawText(x, lbl_y, sw, 8, Qt.AlignmentFlag.AlignCenter, label)
+            draw_bold(p, lambda x=x, label=label: p.drawText(
+                x, lbl_y, sw, 8, Qt.AlignmentFlag.AlignCenter, label))
 
             if not in_prog and t > 0 and ref > 0:
                 delta = t - ref

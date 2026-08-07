@@ -7,7 +7,7 @@ from PySide6.QtWidgets import QSizePolicy
 from hypertrace.calc.module_info import minfo
 from hypertrace.calc.realtime_state import realtime_state
 from hypertrace.utils.class_colors import CLASS_ENTRIES
-from hypertrace.utils.theme import T, label_font, num_font, draw_panel
+from hypertrace.utils.theme import T, draw_bold, label_font, num_font, draw_panel
 from hypertrace.widgets.base import BaseWidget, DEFAULT_SCALE
 
 # ── Layout constants (shared with ve_calc via import) ─────────────────────
@@ -43,7 +43,7 @@ def _draw_bar(p: QPainter, x: int, y: int, w: int, h: int,
         p.setBrush(col_hi); p.drawRoundedRect(x, y, fw, h, 5, 5)
     p.setFont(label_font(9))   # was 6 — too small next to the num_font(10) value
     p.setPen(QColor(255, 255, 255, 200))
-    p.drawText(x + 4, y, w // 2, h, Qt.AlignmentFlag.AlignVCenter, label)
+    draw_bold(p, lambda: p.drawText(x + 4, y, w // 2, h, Qt.AlignmentFlag.AlignVCenter, label))
     if show_val:
         p.setFont(num_font(10))
         p.setPen(QColor(T.TEXT))
@@ -56,7 +56,7 @@ def _draw_level(p: QPainter, x: int, y: int, w: int, h: int,
     """Compact text-only row: label (dim) on left, value (colored) on right."""
     p.setFont(label_font(9))   # was 6 — too small next to the num_font(10) value
     p.setPen(QColor(T.DIM))
-    p.drawText(x, y, w // 2, h, Qt.AlignmentFlag.AlignVCenter, label)
+    draw_bold(p, lambda: p.drawText(x, y, w // 2, h, Qt.AlignmentFlag.AlignVCenter, label))
     p.setFont(num_font(10))
     p.setPen(val_col)
     p.drawText(x, y, w, h,
@@ -409,9 +409,10 @@ class FuelCalcWidget(BaseWidget):
         p.setPen(QColor(T.DIM))
         for k, (cx, cw) in self._col_pos.items():
             if k != "label":
-                p.drawText(cx, y, cw, _HDR,
-                           Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
-                           _HDR_NAMES[k])
+                draw_bold(p, lambda cx=cx, cw=cw, k=k: p.drawText(
+                    cx, y, cw, _HDR,
+                    Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
+                    _HDR_NAMES[k]))
         y += _HDR
 
         # ── Data rows ──────────────────────────────────────────────────────
@@ -427,7 +428,8 @@ class FuelCalcWidget(BaseWidget):
             cx, cw = self._col_pos["label"]
             p.setFont(label_font(8))
             p.setPen(QColor(T.DIM))
-            p.drawText(cx, y, cw, _RH, Qt.AlignmentFlag.AlignVCenter, lbl)
+            draw_bold(p, lambda cx=cx, cw=cw, lbl=lbl: p.drawText(
+                cx, y, cw, _RH, Qt.AlignmentFlag.AlignVCenter, lbl))
 
             if "usage" in self._col_pos:
                 cx, cw = self._col_pos["usage"]
