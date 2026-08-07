@@ -11,7 +11,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt, QRectF
 from functools import lru_cache
 
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QIcon, QPainter
+from PySide6.QtGui import QColor, QFontMetrics, QIcon, QPainter
 from PySide6.QtWidgets import QSizePolicy
 
 from hypertrace.calc.module_info import minfo
@@ -289,6 +289,7 @@ class RelativeWidget(BaseWidget):
         self._show_session_bar    = show_session_bar
         self._header_info         = header_info
         self._ses_type            = 0
+        self._is_race             = False
         self._current_et          = 0.0
         self._ses_remaining       = 0.0
         self._track_temp          = 0.0
@@ -345,6 +346,7 @@ class RelativeWidget(BaseWidget):
     def on_data(self):
         s = minfo.session
         self._ses_type      = s.sessionType
+        self._is_race       = s.sessionType >= 10
         self._current_et    = s.currentEt
         self._ses_remaining = s.timeRemaining
         self._track_temp    = s.trackTemp
@@ -515,13 +517,11 @@ class RelativeWidget(BaseWidget):
                 lbl_w = fm.horizontalAdvance(lbl)
                 baseline = 1 + (_sbh + fm.ascent() - fm.descent()) // 2
                 p.setPen(QColor(T.ACCENT))
-                p.drawText(6, baseline, lbl)
-                f_num = label_font(max(6, fsh))
-                f_num.setCapitalization(QFont.Capitalization.MixedCase)
-                p.setFont(f_num)
+                draw_bold(p, lambda: p.drawText(6, baseline, lbl))
+                p.setFont(num_font(max(6, fsh), hint=False))
                 p.setPen(QColor(T.TEXT))
                 _st = _fmt_session_time(self._current_et, self._ses_remaining)
-                p.drawText(6 + lbl_w + 6, baseline, _st)
+                draw_bold(p, lambda: p.drawText(6 + lbl_w + 6, baseline, _st))
             elif hi == "temp":
                 p.setFont(num_font(fsh))
                 fm = p.fontMetrics()
@@ -605,7 +605,9 @@ class RelativeWidget(BaseWidget):
             # lap counts (see _lap_diff_sign) — Relative only ever shows cars
             # physically near the player, so this always means the lap is
             # about to be taken/given, not some distant, meaningless gap.
-            lap_diff = row.get("lap_diff", 0) if self._show_lap_diff else 0
+            # Race only: in Practice/Qualifying a lap "apart" is just fuel
+            # loads and out-laps, not a real lap-count gap.
+            lap_diff = row.get("lap_diff", 0) if (self._show_lap_diff and self._is_race) else 0
             name_col = (QColor(T.CRIT) if lap_diff > 0
                         else QColor(T.COLD) if lap_diff < 0
                         else QColor(T.TEXT))

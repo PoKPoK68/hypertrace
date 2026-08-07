@@ -12,7 +12,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt, QRectF
 from functools import lru_cache
 
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QIcon, QPainter, QPainterPath
+from PySide6.QtGui import QColor, QFontMetrics, QIcon, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QSizePolicy
 
 from hypertrace.calc.module_info import minfo
@@ -25,6 +25,7 @@ from hypertrace.widgets.base import BaseWidget, DEFAULT_SCALE
 _ASSETS = Path(__file__).resolve().parent.parent / "assets"
 _TRACK_TEMP_SVG = str(_ASSETS / "track-temp.svg")
 _AIR_TEMP_SVG   = str(_ASSETS / "air-temp.svg")
+_HELMET_SVG     = str(_ASSETS / "helmet.svg")
 
 ROW_H = 20
 SEP_H = 4
@@ -286,11 +287,16 @@ class StandingsWidget(BaseWidget):
              {"value": "none",    "label": "Nothing"},
          ], "default": "session"},
         {"key": "show_class_badge", "label": "Car class badge", "type": "bool", "default": True},
+        {"key": "show_class_driver_count", "label": "Driver count", "type": "bool",
+         "default": True, "show_if": "show_class_badge"},
         {"type": "separator", "label": "Rows"},
+        {"key": "show_dnf", "label": "Show DNF/DQ drivers", "type": "bool", "default": True},
         {"key": "top_n",    "label": "Top drivers (your class)", "type": "int",
          "min": 1, "max": 6, "step": 1, "default": 3},
         {"key": "around_n", "label": "Rows around your position", "type": "int",
          "min": 0, "max": 6, "step": 1, "default": 2},
+        {"key": "bottom_n", "label": "Bottom drivers (your class)", "type": "int",
+         "min": 0, "max": 6, "step": 1, "default": 0},
         {"key": "show_other_classes",  "label": "Show other classes", "type": "bool", "default": False},
         {"key": "other_classes_top_n", "label": "Leaders per other class", "type": "int",
          "min": 1, "max": 6, "step": 1, "default": 3, "show_if": "show_other_classes"},
@@ -371,7 +377,8 @@ class StandingsWidget(BaseWidget):
 
     def __init__(self,
                  columns: list[str] | None = None,
-                 top_n: int = 3, around_n: int = 2,
+                 top_n: int = 3, around_n: int = 2, bottom_n: int = 0,
+                 show_dnf: bool = True,
                  name_width: int = 150,
                  gap_decimals: int = 1, interval_decimals: int = 1,
                  name_format: str = "full", name_case: str = "upper",
@@ -397,6 +404,8 @@ class StandingsWidget(BaseWidget):
         self._penalty_side        = penalty_side if penalty_side in ("left", "right") else "right"
         self._top_n               = top_n
         self._around_n            = around_n
+        self._bottom_n            = bottom_n
+        self._show_dnf            = show_dnf
         self._name_width          = name_width
         self._gap_decimals        = gap_decimals
         self._interval_decimals   = interval_decimals
@@ -412,6 +421,9 @@ class StandingsWidget(BaseWidget):
         self._show_out_badge      = show_out_badge
         self._show_lap_badge      = True
         self._show_class_badge    = True
+        self._show_class_driver_count = True
+        self._helmet_pm    = None
+        self._helmet_pm_sz = -1
         self._show_player_bg      = True
         self._show_other_classes  = show_other_classes
         self._other_classes_top_n = other_classes_top_n
@@ -438,7 +450,7 @@ class StandingsWidget(BaseWidget):
         self._dw: dict[str, int] = {}
         super().__init__(update_hz=1, **kw)
         self._recompute_sizes()
-        n_init = top_n + 1 + 2 * around_n
+        n_init = top_n + 1 + 2 * around_n + bottom_n + 1
         self.setFixedSize(int(self._full_w() * self._scale),
                           int(_compute_h([{}] * n_init, self._rh, bar_h=self._sbh) * self._scale))
 
@@ -479,6 +491,8 @@ class StandingsWidget(BaseWidget):
     def apply_params(self, params: dict) -> None:
         self._top_n               = int(params.get("top_n", 3))
         self._around_n            = int(params.get("around_n", 2))
+        self._bottom_n            = int(params.get("bottom_n", 0))
+        self._show_dnf            = bool(params.get("show_dnf", True))
         self._name_width          = int(params.get("name_width", 150))
         self._gap_decimals        = int(params.get("gap_decimals", 1))
         self._interval_decimals   = int(params.get("interval_decimals", self._gap_decimals))
@@ -489,6 +503,7 @@ class StandingsWidget(BaseWidget):
         self._show_out_badge      = bool(params.get("show_out_badge",   True))
         self._show_lap_badge      = bool(params.get("show_lap_badge",   True))
         self._show_class_badge    = bool(params.get("show_class_badge", True))
+        self._show_class_driver_count = bool(params.get("show_class_driver_count", True))
         self._show_player_bg      = bool(params.get("show_player_bg",   True))
         self._show_other_classes  = bool(params.get("show_other_classes", False))
         self._other_classes_top_n = int(params.get("other_classes_top_n", 3))
@@ -568,9 +583,14 @@ class StandingsWidget(BaseWidget):
         self._player_fuel = player.fuel
         self._player_ve   = player.virtual_energy
 
-        # Group vehicles by class, sorted by overall place within each class
+        # Group vehicles by class, sorted by overall place within each class.
+        # DNF'd/DQ'd cars (finish_status 2/3) are dropped when show_dnf is
+        # off — but never the player's own car, so their overlay never loses
+        # its own row just because they retired.
         by_class: dict[str, list] = defaultdict(list)
         for v in vehicles:
+            if not self._show_dnf and v.finish_status in (2, 3) and not v.is_player:
+                continue
             by_class[v.vehicle_class].append(v)
         for cls in by_class:
             by_class[cls].sort(key=lambda v: v.place)
@@ -628,7 +648,8 @@ class StandingsWidget(BaseWidget):
             shown     = cls_veh[:self._other_classes_top_n]
             cls_col   = class_color(cls_name, self._class_colors)
             entries.append({"is_class_header": True, "label": cls_name,
-                            "cls_color": cls_col, "abbrev": class_abbrev(cls_name)})
+                            "cls_color": cls_col, "abbrev": class_abbrev(cls_name),
+                            "driver_count": len(cls_veh)})
             leader      = shown[0]
             leader_best = leader.best_lap if leader.best_lap > 0 else -1.0
             for rank, v in enumerate(shown):
@@ -665,20 +686,38 @@ class StandingsWidget(BaseWidget):
             while len(merged) < target and merged[-1] + 1 < n:
                 merged.append(merged[-1] + 1)
             all_indices = merged
-            sep_after   = -1
         else:
             all_indices = top_indices + player_indices
-            sep_after   = len(top_indices) - 1
+
+        # Tail block ("Bottom drivers"): merged (not appended) — when the
+        # around-player window sits close to the back, the bottom range can
+        # overlap indices *below* the window's own max, e.g. all_indices
+        # already holding [.., 4] (player last, small class) while
+        # bottom_n's range starts at 2: appending would place index 3 after
+        # index 4 and show place 4 below place 5. Union+sort keeps every
+        # rank in actual position order regardless of how the ranges overlap.
+        if self._bottom_n > 0:
+            bottom_indices = set(range(max(0, n - self._bottom_n), n))
+            all_indices = sorted(set(all_indices) | bottom_indices)
+
+        # A separator goes before any rank where the index jumps — replaces
+        # the old single sep_after marker so both the top→around gap and the
+        # around→bottom gap (if any) get one, without special-casing either.
+        sep_before: set[int] = {
+            rank for rank in range(1, len(all_indices))
+            if all_indices[rank] != all_indices[rank - 1] + 1
+        }
 
         cls_leader      = player_cls_vehicles[0]
         cls_leader_best = cls_leader.best_lap if cls_leader.best_lap > 0 else -1.0
 
         cls_col = class_color(player_class, self._class_colors)
         entries.append({"is_class_header": True, "label": player_class,
-                        "cls_color": cls_col, "abbrev": class_abbrev(player_class)})
+                        "cls_color": cls_col, "abbrev": class_abbrev(player_class),
+                        "driver_count": n})
 
         for rank, i in enumerate(all_indices):
-            if sep_after >= 0 and rank == sep_after + 1:
+            if rank in sep_before:
                 entries.append({"is_sep": True})
             v    = player_cls_vehicles[i]
             prev = player_cls_vehicles[all_indices[rank - 1]] if rank > 0 else None
@@ -807,13 +846,11 @@ class StandingsWidget(BaseWidget):
                 lbl_w = fm.horizontalAdvance(lbl)
                 baseline = 1 + (self._sbh + fm.ascent() - fm.descent()) // 2
                 p.setPen(QColor(T.ACCENT))
-                p.drawText(6, baseline, lbl)
-                f_num = label_font(max(6, fsh))
-                f_num.setCapitalization(QFont.Capitalization.MixedCase)
-                p.setFont(f_num)
+                draw_bold(p, lambda: p.drawText(6, baseline, lbl))
+                p.setFont(num_font(max(6, fsh), hint=False))
                 p.setPen(QColor(T.TEXT))
                 _st = _fmt_session_time(self._current_et, self._ses_remaining)
-                p.drawText(6 + lbl_w + 6, baseline, _st)
+                draw_bold(p, lambda: p.drawText(6 + lbl_w + 6, baseline, _st))
             elif hi == "temp":
                 p.setFont(num_font(fss))
                 fm = p.fontMetrics()
@@ -848,7 +885,8 @@ class StandingsWidget(BaseWidget):
             if hdr_label:
                 p.setFont(label_font(max(6, fshc)))
                 p.setPen(QColor(T.DIM))
-                p.drawText(x_col + _CP, 1, cw - 2*_CP, self._sbh, align, hdr_label)
+                draw_bold(p, lambda x=x_col, cw=cw, align=align, hdr_label=hdr_label: p.drawText(
+                    x + _CP, 1, cw - 2*_CP, self._sbh, align, hdr_label))
             x_col += cw
 
         p.fillRect(QRectF(2, self._sbh, W - 4, 1), T.FAINT)
@@ -872,10 +910,22 @@ class StandingsWidget(BaseWidget):
                 cls_col = e.get("cls_color")
                 bdg_w   = len(abbrev) * _char_px(fs) + 8
                 bdg_x, bdg_y, bdg_h = 4, y + 1, CLS_H - 2
+
+                show_count = self._show_class_driver_count
+                if show_count:
+                    count_txt = str(e.get("driver_count", 0))
+                    icon_sz   = bdg_h - 6
+                    cnt_txt_w = QFontMetrics(num_font(fss)).horizontalAdvance(count_txt)
+                    cnt_w     = 4 + icon_sz + 3 + cnt_txt_w + 5
+
                 if cls_col is not None:
                     p.setBrush(cls_col)
                     p.setPen(Qt.PenStyle.NoPen)
-                    p.drawRoundedRect(bdg_x, bdg_y, bdg_w, bdg_h, 2, 2)
+                    if show_count:
+                        # Flat on the right — flush against the driver-count box.
+                        p.drawPath(_tag_path(QRectF(bdg_x, bdg_y, bdg_w, bdg_h), 2, "right"))
+                    else:
+                        p.drawRoundedRect(bdg_x, bdg_y, bdg_w, bdg_h, 2, 2)
                 # Synthetic bold: at this small size Montserrat's single
                 # embedded weight looks noticeably thinner than larger text
                 # (requesting a heavier QFont.Weight has no effect — there is
@@ -884,6 +934,29 @@ class StandingsWidget(BaseWidget):
                 p.setPen(QColor(T.TEXT))
                 draw_bold(p, lambda: p.drawText(
                     bdg_x, bdg_y, bdg_w, bdg_h, Qt.AlignmentFlag.AlignCenter, abbrev))
+
+                if show_count:
+                    cnt_x = bdg_x + bdg_w
+                    cnt_rect = QRectF(cnt_x, bdg_y, cnt_w, bdg_h)
+                    p.setBrush(Qt.BrushStyle.NoBrush)
+                    p.setPen(QPen(cls_col if cls_col is not None else QColor(T.DIM), 1))
+                    # Flat on the left — the seam glued to the badge above.
+                    p.drawPath(_tag_path(cnt_rect, 2, "left"))
+
+                    if icon_sz != self._helmet_pm_sz:
+                        self._helmet_pm    = QIcon(_HELMET_SVG).pixmap(icon_sz, icon_sz)
+                        self._helmet_pm_sz = icon_sz
+                    icon_x = cnt_x + 4
+                    icon_y = bdg_y + (bdg_h - icon_sz) // 2
+                    p.drawPixmap(icon_x, icon_y, self._helmet_pm)
+
+                    txt_x = icon_x + icon_sz + 3
+                    p.setFont(num_font(fss))
+                    p.setPen(QColor(T.TEXT))
+                    draw_bold(p, lambda txt_x=txt_x, cnt_txt_w=cnt_txt_w: p.drawText(
+                        txt_x, bdg_y, cnt_txt_w + 2, bdg_h,
+                        Qt.AlignmentFlag.AlignVCenter, count_txt))
+
                 y += CLS_H
                 continue
 
