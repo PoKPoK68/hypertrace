@@ -1,5 +1,35 @@
 # Third-party notices
 
+## Bundled dependencies
+
+### SVappsLAB.iRacingTelemetrySDK
+
+Copyright (C) 2024-2026 Scott Velez.
+Source: https://github.com/SVappsLAB/iRacingTelemetrySDK
+
+Licensed under the **Apache License, Version 2.0** (full text:
+https://www.apache.org/licenses/LICENSE-2.0). Distributed with HyperTrace
+as an unmodified NuGet package; no changes have been made to it.
+
+HyperTrace reads iRacing's live telemetry through this SDK — the shared
+memory mapping, the variable table, the session-info block, and the
+connect/disconnect lifecycle. Everything on HyperTrace's own side of that
+boundary (`hypertrace/overlay/src/IRacing/`) is HyperTrace's: mapping the
+SDK's types onto this app's `GameState`, and the per-lap fuel bookkeeping
+the SDK does not provide.
+
+Apache 2.0 is permissive and imposes no licensing obligation on
+HyperTrace's own code or on the binary it distributes — unlike the GPLv3
+situation described below, which is why that distinction is spelled out
+here rather than left implicit.
+
+### SkiaSharp
+
+Copyright (c) Microsoft Corporation and contributors.
+Licensed under the **MIT License**. Used for all overlay rendering.
+
+## Historical acknowledgment
+
 HyperTrace's original Python implementation (retired to `legacy/hypertrace/`
 — see its own git history on the `legacy-python` branch) adapted portions
 of its telemetry calculation engine and its overlay visibility engine from
@@ -20,6 +50,21 @@ applies to the binary this app distributes.
 TinyPedal is credited here as a courtesy, for the historical record of
 where the original Python prototype's approach came from — not because
 the current app incorporates any of its code.
+
+## CrewChiefV4 (MIT)
+
+`hypertrace/overlay/src/AssettoCorsa/AcTyreFloors.cs` carries the figure
+each of Assetto Corsa's tyre compounds stops wearing at, taken from
+[CrewChiefV4](https://github.com/mrbelowski/CrewChiefV4) (MIT), which
+measured them. The game publishes a wear figure but nothing that says how
+far it can fall, and the answer differs from compound to compound — 70 for
+a road tyre, 98 for a vintage GP one — so a wear reading means nothing
+without them.
+
+What is used is that table of measurements, keyed by the compound name the
+game itself publishes; no CrewChiefV4 code is used or adapted. MIT asks
+only that the notice travel with the work, which is what this section is
+for.
 
 ## License
 

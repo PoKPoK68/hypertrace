@@ -4,19 +4,800 @@ All notable changes to HyperTrace (formerly LMU App) are documented here.
 
 ---
 
+## [1.4.0]
+
+### Assetto Corsa
+
+- **Assetto Corsa is the third supported game.** The original Assetto
+  Corsa — not Competizione, not EVO — detected live like the other two,
+  with its own presets and its own class colours. Speed and gear, pedals,
+  Delta, fuel and weather read your car straight from the game and need
+  nothing installed.
+- **Standings and Relative need the in-game app.** Assetto Corsa shares
+  nothing about the other cars, so a small HyperTrace app runs inside the
+  game and passes the field along. Copy the `AssettoCorsa\apps` folder
+  from this archive into your Assetto Corsa folder, switch HyperTrace on
+  in the game's app list, and leave its window open. It needs Custom
+  Shaders Patch. Without it every other overlay still works and the two
+  boards simply stay empty.
+- **The Tyres overlay works on Assetto Corsa**, with live wear and
+  temperatures for your own car. Wear is read from Custom Shaders Patch,
+  which measures it against the car's own tyres, so a car whose tyres last
+  a long way reads as barely worn after a handful of corners — as it
+  should. Each tyre is also coloured against the temperature it actually
+  wants to be at, rather than one figure assumed for every car.
+- **The Battery overlay works on Assetto Corsa** for the cars with a
+  hybrid system, and stays empty for the many that have none.
+- **Cars that publish their own data are read too.** Modern mods carry far
+  more than Assetto Corsa's own telemetry, and HyperTrace reads what a car
+  publishes — starting with its state of charge, which for some cars the
+  game's own gauge gets wrong.
+- **You make your own car classes.** Assetto Corsa has none, so the
+  Presets page has an "Arrange car classes…" button that opens a window of
+  its own: every car you have driven on the left, the classes you name on
+  the right, and you drag a car onto a class to file it there. The bin
+  forgets a car; the cross on its tag takes it out of its class. Cars you
+  leave out share one group, and each class can have its own preset,
+  exactly like Le Mans Ultimate's categories.
+- Standings shows those classes by their **full name** on the group badge,
+  rather than shortening them the way it does the games' own class codes —
+  they are your words.
+- Gaps between cars are read off your own quickest lap, as they already
+  are on iRacing, so a car beside you on track reads as beside you on the
+  board.
+- The race board is ordered on where the cars actually are, not on a
+  position that only updates at the line.
+
+### Class colours
+
+- **Every class gets a colour of its own.** iRacing's classes and Assetto
+  Corsa's were all drawn in the same grey, which made a multi-class board
+  hard to read at a glance. A class with no colour of its own is now
+  handed one, and no two classes on track are handed the same. Le Mans
+  Ultimate's categories keep the colours they have always had.
+- Settings has **four class colours** to choose from, used in that order.
+- The pencil beside a class on the Presets page picks that one class's
+  colour outright, and DEFAULT gives the automatic one back. On Assetto
+  Corsa the same pencil, in the car class window, sets both its name and
+  its colour — and there you may give two classes the same colour if you
+  want to.
+
+### Fuel and Energy calculators
+
+- **"REFUEL as pit-exit total"**, a new tick box for Le Mans Ultimate in
+  both calculators. LMU's pit screen asks for the level you drive OUT of
+  the pits with, while REFUEL says how much to put in — so the figure on
+  screen had to be added to what was already in the car before it could be
+  typed in. Ticked, REFUEL shows the level to leave with, ready to copy
+  straight across.
+- **The laps either side of a pit stop no longer count.** The lap you come
+  in on and the lap you leave on are driven at pit speed, not racing pace,
+  and averaging them in quietly moved the figure the whole stop is planned
+  from. Both calculators now leave them out on their own, and LAST holds
+  the most recent proper lap rather than following you through the stop.
+- **No stop is called for a lap that will never be driven.** With enough
+  fuel to reach the flag but not enough to also cover the safety margin,
+  the calculators still asked for a few litres — for a lap beyond the end
+  of the race. The margin now steps aside once the race can be finished
+  without it.
+
+### Standings and Relative
+
+- **The LMU Standings layout shows the gap between you and each car, not a
+  track relative.** The figure took whichever way round the lap was
+  nearer, which meant a car on its way to lapping you sat a few seconds
+  behind you on the road while holding most of a lap on you — and read as
+  a car comfortably held off. A car ahead of you now always reads
+  negative, one behind always positive, whichever way round you meet, and
+  a lap or more apart the seconds give way to -1L or +2L.
+- **Relative shows penalties too.** The tag Standings has always carried
+  — SG, DT, added seconds — now hangs off Relative's edge as well, on the
+  same two settings: whether to show it, and which side it sits on. The
+  car about to serve a drive-through is often the one right beside you,
+  which is the overlay you are looking at when it matters. Le Mans
+  Ultimate only, the one game that publishes penalties.
+- **Relative: a car a lap apart from you is coloured the moment it is
+  beside you.** The row's colour — red for a car lapping you, blue for one
+  you are lapping — was decided on how far apart the two of you were in
+  race distance, and only once that passed nine tenths of a lap. Two cars
+  a lap apart running close together are nowhere near that, so the colour
+  went missing exactly where it matters: alongside a backmarker you are
+  about to lap, or alongside the car coming past to take a lap off you.
+  Most of all with the start/finish line between you, where the car that
+  has just crossed it carries a whole lap more than the one that has not,
+  though the two are side by side. The colour now reads the laps each car
+  has completed together with how far round the current one it sits, and
+  which side of you its row is on — so a car genuinely a lap apart is
+  coloured wherever it is, and one merely far ahead on your own lap is
+  not. Both simulators.
+
+### Fixes
+
+- **Le Mans Ultimate's shared memory is read the way its September update
+  asks for.** The game now announces each new frame in two steps instead
+  of one, and waiting for both, in that order, is what the update says
+  makes a frame safe to read. The app kept working after the update and
+  still does either way; this closes the window where a frame could be
+  read while the game was part-way through writing it.
+- **"Launch with Windows" survives a refused write and a moved app.** The
+  switch failed silently where Windows would not let the entry be written,
+  and an app that had been moved or reinstalled left Windows launching a
+  path that no longer existed while the option still looked on. The entry
+  is now put right when the app has moved, and the switch says so when it
+  cannot be set.
+- **Icons are drawn sharply at any display scaling.** At fractional
+  scaling — 125%, 150% — the small icons were drawn at one size and
+  rescaled to another, and came out muddy; the bin in particular was hard
+  to recognise. Every icon is now drawn at the size it appears, and the
+  bin has been redrawn.
+- **Stream mode follows a change of game.** Switching games while
+  streaming left the broadcast overlays showing the previous game's
+  columns — blank, and impossible to turn off — until HyperTrace was
+  restarted. The desktop overlays already followed the switch; the
+  streamed ones now do too.
+
+---
+
+## [1.3.2]
+
+### Fixes
+
+- **iRacing: the overlays no longer vanish during the last lap of a timed
+  race.** The moment the clock reached its full length — 15:00 of 15:00 —
+  the session's elapsed time stopped moving, and a clock that stands still
+  reads as a paused game: every overlay was hidden for the rest of the
+  lap, on the desktop and in Stream mode alike, coming back only once the
+  session ended. The clock now keeps counting past the end of the
+  countdown, as Le Mans Ultimate's own does, so the overlays stay up to
+  the flag.
+- **iRacing: the gaps and Relative are measured on your own lap.** Every
+  car's position around the lap came from iRacing's estimate for its
+  model, which is close but not exact: against what the cars on track
+  actually did, the figures were out by 0.18 to 0.70 s on average
+  depending on the circuit. From your second clean lap of a session, the
+  app uses the lap you have just driven as the ruler instead, which brings
+  that to 0.05 to 0.08 s — and a car a few centimetres ahead of another is
+  now always shown ahead of it. Until that lap exists, iRacing's own
+  estimate still does the job.
+- **iRacing: Relative and the standings put the cars around you on the
+  right side again.** A class like GT3 mixes car models that iRacing paces
+  separately, and the position figures it publishes are expressed through
+  each car's own pace — so two GT3s side by side could read up to half a
+  second apart, and a car level with you could show as ahead of you (on a
+  double-file grid, the car beside you read 0.2 s ahead). 1.3.1 removed the
+  correction that puts every car on your pace, believing a single class
+  shared one; it is back, for every car, in every kind of field.
+- **iRacing: positions move the moment a car is passed.** They only
+  changed as cars crossed the start/finish line, because the position
+  iRacing publishes is official timing, updated at the line. While a race
+  is running, the order now comes from where each car actually is on the
+  road. On the grid and after the chequered flag, the official order still
+  stands, and so does the best-lap order in practice and qualifying.
+- **A car level with the one ahead of it no longer shows a lap's gap.** On
+  an iRacing grid, with P1 and P2 side by side in double file and P2 a hair
+  ahead on track, P2's gap to the leader read 120 seconds: the gap added a
+  whole lap whenever the car it was measured against sat fractionally
+  behind, a rule only meant for a leader that has just crossed the line.
+  Whether that lap belongs is now judged on how far round the race each car
+  actually is, and a car level with or ahead of its reference shows no gap.
+- **iRacing: the gap and interval columns are live again, and a change of
+  leader no longer zeroes the gap.** 1.3.1 took them from iRacing's own
+  time behind the leader, which turned out to be official timing too:
+  refreshed only at the line, so both columns stood still for a lap at a
+  time, and a new leader left the gap at zero until the next crossing. They
+  are measured from each car's position on the road again, as before 1.3.1.
+- **iRacing: a car being towed no longer climbs the order.** The running
+  order ranks cars on where they are around the lap, and a tow puts a car
+  in its pit box at once — so one towed to a box further round the lap
+  than where it stopped gained places while sitting there, motionless. It
+  now keeps the place it held on track until it drives off again.
+- **iRacing: a car starting from the pit lane stays behind the field.** It
+  waits at pit exit, which is past the start/finish line, and iRacing
+  credits it a lap as the field crosses that line — seen in a recorded
+  race, with the car stationary in its box. Counted as further round the
+  lap than everyone still short of pit exit, it was shown leading at the
+  green. It now sits behind every car that has taken the start until it
+  joins the track.
+- **The standings' figures are readable at a glance.** Gaps and intervals
+  changed on every frame, which made a column of digits to decipher
+  rather than read while driving. They now refresh once a second. The
+  board itself is still drawn every frame, so rows sliding to their new
+  places and the best-lap highlights are as smooth as before.
+- **The standings no longer cut the bottom driver in half.** When a car
+  retired from the middle of the order, everyone below it slid up a row
+  while the board lost one — and for the length of that movement the row
+  on its way out was drawn past the bottom edge of the panel, showing as
+  half a driver. Reported on a full field in the LMU layout.
+- **Le Mans Ultimate: Delta's sector colours are right.** Purple was
+  handed out where green was due, mostly in sectors 1 and 2. A rival's
+  sector only counted once their whole lap was finished, so a quicker one
+  set on the lap under way was not yet known when yours was graded — and
+  none of it counted at all while the Delta overlay was hidden (auto-hide
+  in the garage, or the overlay switched off). Sector times are now taken
+  for every car the moment each sector is completed, whether the overlay
+  is on screen or not, and a sector's time is only read once the game has
+  confirmed it belongs to the lap being timed. Best sectors also belong to
+  one session now: they used to carry over from practice or qualifying
+  into the race, which left the board calling a genuine session best
+  merely green.
+- **A car a hair ahead of you reads "-0.0", not "-+0.0".** A gap that
+  small rounds to zero, and Relative was printing the rounded figure's own
+  plus sign after the minus. The fuel and virtual-energy reference figures
+  had the same flaw.
+- **No "L0" or "L-1" badge on the grid.** The pit badge names the lap a
+  car pitted on, and before the first crossing there is no such lap: cars
+  starting from the pits carried "L0" in Le Mans Ultimate and "L-1" in
+  iRacing for the rest of the session. A stop with no completed lap behind
+  it is no longer labelled.
+- **Quitting a game no longer switches the app to the other one.** Closing
+  iRacing sent the app back to Le Mans Ultimate — the game last picked in
+  the header — and loaded LMU's preset over the overlays, though LMU had
+  never been launched, taking any unsaved change to the iRacing layout
+  with it. The app now stays on the game you just quit, overlays and all,
+  until another game starts or you pick one in the header. Launching with
+  no game running still opens on your pick, as before.
+- **Launching HyperTrace with a game already running shows that game's
+  overlays.** Opened after iRacing, the app kept Le Mans Ultimate's
+  overlay positions and settings on screen, with only the LMU-only parts
+  switched off. The game's own preset was only ever loaded when the app
+  saw the game change, and a game that is already running when the app
+  starts never does. The app now remembers which game the layout on
+  screen belongs to, and loads the running game's preset whenever the two
+  differ. Relaunching into the game you last played changes nothing, so a
+  layout you tweaked without saving is still there.
+- **iRacing: Delta compares you with this session's best lap.** It was
+  measuring against your best ever lap in that car at that track — a
+  record iRacing keeps between sessions — so a fresh race opened already
+  being judged against a lap set some other day, and the bar never moved
+  however the session went. It now resets with the session, which is what
+  the same overlay has always done in Le Mans Ultimate.
+
+---
+
+## [1.3.1]
+
+### Standings — two new layouts
+
+- **"LMU Standings' layout"** turns the board into the game's own, in
+  HyperTrace's styling: position, manufacturer, driver, a single timing
+  figure, tires and virtual energy. In a race that figure is the gap
+  relative to you; in practice and qualifying it is the gap to the
+  leader, to three decimals, with the leader showing their own best lap
+  instead. In any session, a driver's figure becomes their last lap for a
+  few seconds when they cross the line — how many seconds is up to you.
+- **The mode decides its own columns**, so the column list and the
+  per-column switches step aside while it is on: it is LMU's board, and
+  anything that would make it something else is simply not offered. What
+  stays yours: how many drivers are listed and which, everything in the
+  header, names, the player-row highlight, opacity, size and font size.
+- **"Cycling columns"** stops the board from showing every column at
+  once. You choose which stay put and which take turns in a single slot
+  on the right, and how long each turn lasts — ten seconds by default.
+  The changeover slides the old column out and the new one in, and those
+  two seconds are added to the time you set rather than taken out of it,
+  so a column is never on screen for less than you asked.
+- The two are one choice — **Standard, LMU Standings' layout, or Cycling
+  columns** — and picking one puts the other away.
+
+### Standings — columns
+
+- **One list decides which columns appear, in what order, and how precise
+  each one is.** Choosing what to show and arranging it used to be
+  separate controls in separate places, which meant a column you had
+  turned off still sat in the order list doing nothing. Each row now
+  carries its own checkbox, and the five columns with a decimal setting
+  carry that too, labelled.
+- **Every column can be switched off**, position, manufacturer logo,
+  driver name and status badge included. They are compulsory only under
+  the LMU layout, which fixes the whole set.
+- **Status badges — PIT, OUT, GAR — appear in the LMU layout** as well.
+- On your own row, a gap to yourself is shown as a dash rather than a
+  zero.
+
+### Overlay settings
+
+- **The four overlays with the most settings now have tabs** — Layout,
+  Content, Names, Visual — instead of one long column. Standings,
+  Relative and both calculators. The others are short enough to read as
+  they are and were left alone. A few settings changed neighbourhood in
+  the process: alternate-row shading and the best-lap highlight are under
+  Visual, how many drivers are listed is under Content, and "Player row"
+  is now Visual, Player highlight. Nothing you had set has changed.
+- **A search box** finds a setting across every tab when you know what
+  you are after.
+- **Sections fold**, so a long list of settings can be put away rather
+  than scrolled past. They start open: a settings window without tabs is
+  one because it is short, and there was nothing to put away there.
+- **"Revert changes"** puts an overlay back exactly as it was when you
+  opened its settings — every change applies live, and this is the undo
+  for an evening of experimenting that went nowhere. It lights up only
+  once there is something to undo. It is not "Reset to defaults", which
+  is still there and still throws everything away.
+- **The preview shows the overlay at its real size** whatever your
+  Windows display scaling is set to, and the settings window fits on
+  screen at 125% and above instead of running off the right edge.
+- **A few settings that could not explain themselves in a label now
+  say what they do** when you hover them: the fuel and energy safety
+  margins, the AVG 5 reset, and the two Standings durations.
+- **The settings window has been redrawn.** It draws its own title bar
+  now, with the app mark and a breadcrumb, instead of printing its name
+  in the Windows caption and again as a heading inside itself. The
+  preview sits on a stage of its own, and the buttons, switches, steppers
+  and dropdowns were all redrawn to match the overlays they configure.
+- **Choosing a layout shows you the layout**: Standard, LMU Standings'
+  and Cycling columns are three cards with a small drawing of what each
+  one does to the board, instead of three stacked buttons.
+- **The preview can be seen against a plain grid** as well as a track
+  photo — the photo answers "how will this read over the game", the grid
+  answers "what exactly am I drawing". It is a way of looking, not a
+  setting: nothing about it is saved.
+- **The footer says how much you have changed** — "3 unsaved changes"
+  beside Revert changes — and the session switches moved there as pills,
+  across the window, since they apply to the whole overlay rather than
+  to any one tab.
+- **The column list says how many columns are on** on its own header
+  (11/11), so a folded list still answers whether something was switched
+  off, and a column switched off fades but keeps its place in the order.
+
+### The app window
+
+- **The window has been redrawn.** It draws its own title bar — the app
+  mark, the wordmark and the version — instead of printing its name in
+  the Windows caption, and both images are drawn at their exact pixel
+  size, so they stay sharp whatever your display scaling is set to.
+- **It keeps one height** whichever view you are on, instead of growing
+  and shrinking every time you click something in the sidebar.
+- **The overlays list says how many are on**, on its own header, and each
+  row is one line: the name, its settings, its switch.
+- **The lock and the game selector sit together above the list**, and say
+  which state you are in — "UNLOCKED, drag overlays to reposition them" —
+  rather than leaving it to a button's label.
+- **The preset bar moved into the footer**, where it belongs to the
+  window rather than to the overlays list, and **it says when you have
+  unsaved changes**: anything a preset stores counts, whether it is a
+  switch here, a setting inside an overlay's own window, or an overlay
+  dragged across the screen.
+
+### Presets, stream and settings
+
+- **The presets view says how many presets you have**, on its own
+  header, and **the folder they live in is one click away**. A preset
+  tied to a car class now carries that class's colour, so a list of them
+  can be read at a glance.
+- **The stream view says whether it is live** on its own header: LIVE,
+  OFF, or PORT IN USE when something else already has the port, with the
+  detail in the tooltip. It used to be a line of text under the port
+  field, reading like a caption for it.
+- **The list of overlays to stream says how many are on**, and while
+  streaming is off, everything under the master switch is greyed and
+  inert rather than offering eleven controls that do nothing. Copying an
+  overlay's browser-source address is an icon on its row now, not a
+  button spelling out "URL".
+- **The settings page reads as rows**: what the setting is called, what
+  it currently does underneath that, and the control on the right —
+  where the label used to change along with the setting.
+- **Every window and dialog now shares one look**, down to the prompt
+  that asks whether closing should quit or minimise to the tray, and the
+  window that copies an overlay's settings into other presets.
+
+### Visibility in session
+
+- **The Practice, Qualifying and Race switches now work.** They have been
+  in every overlay's settings for some time, remembering what you chose
+  and doing nothing with it. An overlay is now shown or hidden according
+  to the session you are in, per overlay, so a board you want in the race
+  and a fuel calculator you want in practice can each say so. Nothing is
+  hidden while no game is running — that stays Auto-hide's job.
+- **The same switches work for streamed overlays**, with their own
+  answers, kept apart from the ones on your own screen.
+- They sit pinned under the settings rather than among them, reachable
+  whichever tab you are on.
+
+### Appearance
+
+- **The bar across the top of each overlay can be switched off, and
+  recolored.** Both live on the Settings page rather than in each
+  overlay's own settings: it is one look shared by all of them, so it is
+  set once.
+- **The accent color is now its own setting, and repaints everything
+  amber in the app** — the gear indicator on Pedals and Speed & Gear, the
+  headings and highlights across the interface, not just the bar. The
+  color picker is the same one used everywhere else, with a Default
+  button to go back to the original amber. Existing setups are untouched
+  until you change it.
+- **Text on buttons reads more cleanly.** The shadow under it was near
+  enough black to be an outline, which looked different on every
+  background it fell on; it is now light enough to simply darken whatever
+  is behind it.
+
+### Fixes
+
+- **Delta no longer paints a sector purple while you are losing time on
+  it.** Purple was measured against each rival's *last* lap rather than
+  the best they had managed all session, so a rival pitting or stuck in
+  traffic lowered the bar enough for a mediocre sector to clear it — and
+  your own earlier laps were left out of the comparison entirely, which
+  let a sector slower than your own best be called the best in the class.
+  Purple now means quicker than every rival and no slower than yourself.
+- **On your own on track, an improvement is purple again.** With nobody
+  else having run the sector, the quickest it has been run this session
+  is yours, which is what purple says.
+- **iRacing: the session clock counts the session, not your evening.**
+  Both halves of it were measured from the moment you entered rather than
+  from the start of the session, so a fifteen-minute race could go green
+  already reading four minutes gone and eleven left — whatever you had
+  spent waiting. Elapsed and remaining now both come from the session's
+  own countdown. Until a race starts, elapsed still shows how long you
+  have been sitting there, and goes to zero at the green flag.
+- **iRacing: the gap and interval columns agree with the game's own
+  timing.** Both were rebuilt from where each car sat round the lap, a
+  reconstruction of something iRacing already times — and one that moved
+  with the cars' speeds rather than with the racing. They now come from
+  iRacing's own time behind the leader. Le Mans Ultimate is unaffected:
+  it publishes no such figure, and its boards work as they did.
+- **Relative: a car sits on one side of you, not on both.** Every car was
+  measured twice, once as a gap ahead and once as a gap behind, and which
+  figure you were shown came down to how many rows each side happened to
+  have spare — so the same car could read as most of a lap ahead or as a
+  little behind. It now gets one signed gap and one row.
+- **iRacing: Relative shows the sim's own figures, untouched.** They were
+  being stretched onto your own class's pace so that cars of every class
+  shared one clock, and that stretching moved the numbers around as much
+  as the racing did. They are now iRacing's estimates as they come, which
+  is what its other overlays compare. In a multiclass field this makes a
+  gap to another class approximate — nothing at the start/finish line,
+  growing to the difference between the two classes' lap times by the end
+  of the lap. Single-class racing is unaffected, and so is Le Mans
+  Ultimate.
+- **Relative: crossing the line no longer unsettles the gaps.** Whether
+  you and another car are on opposite sides of the start/finish line is
+  now judged on where you both are on track, rather than inferred from
+  the time between you, which took a guessed lap time to be right.
+- **iRacing: the starting order is right on the grid.** Before the field
+  crossed the line for the first time, iRacing had not yet placed anyone,
+  and the board fell back on no order at all — it only came right on that
+  first crossing. It now uses the session's own classification, and
+  failing that the grid from qualifying, until live timing takes over.
+- **iRacing: a race with no time limit no longer claims to last a week.**
+  Lap-limited races carry iRacing's "unlimited" marker instead of a
+  length, and the header was showing it as 168:00:00.
+- **The car class badge grows with the font size.** Everything else in
+  a class header followed it — the badge's own width, and its text — so
+  raising the size left the badge behind, at the height it has always
+  had, beside rows that had all grown around it. At the default size it
+  is unchanged, so no board you have set up moves.
+- **No more stray preset for a game you have not opened.** At startup,
+  before the game had connected, HyperTrace could create a preset for
+  whichever game the header happened to be showing, holding the other
+  game's layout — visible as a preset changing on its own a second after
+  launch. Existing presets were never touched by this, and none are
+  touched now.
+
+---
+
+## [1.3.0]
+
+### iRacing
+
+- **iRacing is now supported**, alongside Le Mans Ultimate. HyperTrace
+  notices which of the two is running and switches to it on its own —
+  nothing to set, no restart, and it follows you if you close one and
+  launch the other. While neither is running, the game picker in the
+  header decides whose settings and presets you're looking at.
+- **Overlays available on iRacing**: Speed & Gear, Pedals, Delta,
+  Standings, Relative, Weather, Fuel Calculator and Battery. The battery
+  gauge reads the hybrid state of charge on cars that have one, and sits
+  at zero on cars that don't — like every overlay, it is shown or hidden
+  by its own on/off switch and nothing else.
+- **Three overlays are hidden on iRacing** rather than shown empty:
+  Damage, because iRacing publishes none of it; Tyres, because its wear
+  and temperature readings only refresh in the pits and are useless on
+  track; and the VE Calculator, because iRacing has no virtual energy at
+  all. All three come back by themselves in LMU.
+- **Standings hides its LMU-only columns on iRacing** — VE/Fuel, tire
+  compound and penalties, none of which iRacing publishes per opponent.
+  Position, laps, gap, interval, best and last lap, delta and pit status
+  all work for the whole field.
+- **Weather shows current conditions only on iRacing** — air and track
+  temperature, rain and wetness. iRacing publishes no forecast of any
+  kind, so that section is dropped entirely and the panel shrinks to fit
+  rather than leaving an empty strip.
+
+### Stream
+
+- **Stream mode is back.** Each overlay is served as a live web page you
+  can add to OBS (or anything else with a browser source), restoring the
+  feature the previous Python app had. The Stream page in the sidebar has
+  a master switch, the port, and one row per overlay with its own
+  settings, a button to copy its URL, and its own on/off. Overlays are
+  off for streaming until you switch them on — turning streaming on does
+  not immediately publish everything you have on your own screen.
+- **Stream overlays have their own settings**, separate from the ones on
+  your screen. That is the point of the feature: a broadcast usually
+  wants different sizes and columns from what the driver is reading
+  mid-corner. They start from the defaults rather than copying your
+  desktop layout.
+- **They keep their transparency**, so they composite straight over your
+  video with no green screen and no matte.
+- **A separate "hide when not driving"** for the stream, independent of
+  the desktop overlays' own. Hidden means the overlay goes transparent on
+  air, not that the feed stops.
+- **Note that this opens a port on your machine**: while streaming is on,
+  the overlays are reachable from your local network, not only from this
+  PC. That is what lets OBS run on a second machine, and it matches how
+  the Python app worked.
+
+### Presets
+
+- **Presets are now kept separately for each game.** A layout is only
+  meaningful for the game it was built for, so LMU and iRacing each have
+  their own list, and names only have to be unique within a game — an
+  LMU "Race" and an iRacing "Race" are two different presets. Switching
+  game switches presets with it. Your existing presets all become LMU's,
+  automatically, on first launch.
+- **New "Apply to…" button in every overlay's settings.** Tune an
+  overlay once, then copy just that overlay's settings into any of your
+  other presets — including the other game's, and into the stream
+  overlays — with tick-all shortcuts per game and overall. It leaves
+  every other overlay in those presets untouched, and deliberately does
+  not carry across whether the overlay is switched on, or where it sits,
+  unless you tick the box for the position: which overlays are on and
+  where they are is most of what makes one preset different from another.
+- **"Preset per class" now works on iRacing.** The panel used to list
+  LMU's five fixed categories, which is meaningless against iRacing's
+  hundreds of car classes. On iRacing it now lists the classes you have
+  actually raced, remembered as you drive them, with a ✕ to drop any row
+  you no longer want (it comes back if you drive that class again). LMU
+  keeps its five categories exactly as before.
+- **Lock is no longer part of a preset.** Whether the overlays are pinned
+  in place is a setting in its own right now, so loading a layout never
+  quietly makes them draggable again — which matters more than it used to,
+  since presets now load themselves on a game switch and on a class
+  change.
+
+### Standings
+
+- **Multiclass boards are easier to follow.** Each class is now separated
+  by a gap, and a line in that class's own colour runs from its badge all
+  the way to the panel's right edge — the badge alone marked the boundary
+  only at the far left, which is no help when your eye is on the gap or
+  lap-time columns. The line is shaped into the badge rather than butting
+  against it, so the two read as one marker.
+- **The header can show time remaining** instead of elapsed / total, for
+  when that is the only figure you want.
+- **Positions now slide to their new place** instead of jumping when the
+  order changes, using the same easing as the settings dialog's column
+  reordering. Each row moves independently, which is what makes an
+  overtake read as one; a car appearing for the first time is placed
+  directly rather than sliding in from somewhere it never was.
+- **Taking the best lap of your class sweeps a soft purple band down that
+  car's Best cell**, and down Last as well while that is the lap in
+  question. It is deliberately faint and brief — this marks a moment on a
+  board you read at a glance, so it has to register without becoming
+  something to look at. Only the class best is marked; a personal best
+  that leaves someone else ahead is not.
+- **Best and Last are centred** in their columns rather than left-aligned.
+- **Every number has fixed-width digits** — position, gap, interval, best,
+  last and delta. Montserrat's digits are not all the same width, so lap
+  times and gaps visibly jittered as their digits changed. Punctuation
+  keeps its natural width; only the digits are given uniform slots.
+- **Values sit further from their column edge**, and the position column
+  is tighter against the panel edge and the car logo.
+- **Every other row is shaded**, very faintly, so the eye can hold a line
+  across a wide board. The banding restarts at each class, and your own
+  row keeps its own highlight rather than stacking the two. Switchable off.
+- **Best-lap highlighting can fill the cell instead of the text** — green
+  or purple behind the lap time with the digits left white, for when the
+  coloured text alone is too easy to miss. Coloured text stays the default.
+
+### Relative
+
+- **A car a lap apart now colours its gap as well as its name.** Only the
+  name was tinted, so one half of the row said "this figure is not
+  comparable to the others" while the other half read like any neighbour.
+- **Every other row is shaded** here too, the same faint band as Standings
+  and switchable the same way. It follows the row's place in the list
+  rather than which cars happen to be showing, so the stripes stay put as
+  drivers come and go around you.
+
+### Delta
+
+- **A row of sector boxes.** S1, S2 and S3 under the delta bar, each filled
+  by how that split compared: yellow for no improvement, green for your own
+  best, purple for the best in your class. The set holds for ten seconds
+  after you cross the line, so you can read the lap you have just finished
+  before it gives way to the one under way.
+- LMU only. iRacing publishes no sector times at all, so the row is hidden
+  there rather than shown permanently empty.
+
+### Pedals
+
+- **Speed and gear are now in the Pedals overlay**, in their own column to
+  the left of the trace — gear, speed beneath it, KM/H beneath that — so
+  you no longer need the Speed & Gear overlay alongside just for those two
+  numbers. Switchable off, and the panel narrows back when it is.
+- **The bars run clutch, brake, throttle**, left to right, matching where
+  the pedals actually are.
+
+### Visual
+
+- **Manufacturer logos are sharp.** They were being resized twice —
+  once to fit their box and once more when drawn — and landed on
+  fractional positions, so every edge was smeared across two pixels. They
+  are now rendered at the size they are actually displayed at, including
+  when the overlay is scaled up.
+- **PIT / OUT / GAR badges sit properly in their box.** The text was
+  centred on the font's full height including the space reserved for
+  descenders, which these all-caps badges never use, so the letters sat
+  high.
+- **The settings preview is sharp.** It is rendered at exactly the size
+  it is shown at, but was then being smoothed on the way to the screen
+  anyway.
+
+### Calculators
+
+- **A TIME column in both calculators**, beside LAPS: how long what is
+  left in the tank will actually last, not just how many laps. Toggleable
+  like every other column.
+- Each row is priced at **its own** lap time — the LAST row against your
+  last lap, the AVG 5 row against the average of the same five laps its
+  usage figure comes from. So after one slow lap the two deliberately
+  disagree, which is the useful part.
+- Shown as a stint length rather than a stopwatch: "11:13" under an hour,
+  "1h30" past it. With no lap time yet it shows "-" rather than a guess.
+
+### Weather
+
+- **The forecast row now shows how far through the session you are.**
+  The fixed S / 25 / 50 / 75 / F labels are replaced by a bar that fills
+  as the session runs, and each forecast icon now sits at the moment it
+  actually predicts rather than in an evenly-spaced slot — so the bar
+  genuinely reaches each one in turn. An icon dims once the session has
+  passed it. A session with no set length leaves the bar empty rather
+  than creeping along a made-up total.
+- **Rain and wetness show which way they're moving.** A red arrow up or
+  a green arrow down appears beside the value when it changes, and clears
+  after five minutes without further movement.
+
+### Smoothness
+
+- **The overlays' stutter is fixed, and they now refresh about twice as
+  often.** The render loop asked Windows for sixty updates a second and
+  was quietly given thirty-two: Windows rounds a 16.7ms request up to its
+  own ~15.6ms clock tick and fires on the second one. Overlays that
+  redraw every other tick were therefore running nearer 16 times a second
+  than 30. They now hold 30, and the Pedals overlay a real 60. This is
+  what was being seen as the overlays briefly freezing.
+- **The pedal trace no longer shows flat "plateaus".** Its points were
+  timestamped when they were drawn rather than when the simulator
+  produced them, so unevenly delivered frames recorded unevenly spaced
+  points. It now plots against the simulator's own clock and records only
+  genuinely new readings, so a repeated value is never drawn as a
+  straight run.
+
+### Fixes
+
+- **The settings preview no longer freezes mid-animation.** It redraws
+  only when you change a setting, so a change that moved rows around left
+  the preview showing them part-way through the move until the next
+  change. It does not animate at all now.
+- **"Le Mans Ultimate" no longer runs under the game picker's arrow** —
+  the name was wider than the space left for it. A name too long for the
+  box is now shortened with an ellipsis instead of overlapping.
+- **Standings' Interval was measured against the wrong car.** It used the
+  previous row on screen rather than the car actually ahead, so with any
+  row hidden or filtered the figure belonged to a different gap than the
+  one being shown.
+- **Cars with no finishing position sorted to the top instead of the
+  bottom**, pushing the real leaders down the list. This is also why
+  best-lap times could look like they had stopped appearing.
+- **Class badges no longer clip their text** — wider abbreviations such
+  as "BMW" ran to the very edge of the badge on both sides.
+- **Fixed a crash when a car reported no tire compound.**
+- **The settings preview box is larger**, so wider overlays no longer
+  need constant scrolling to be seen, and overlay windows are kept within
+  the monitor they open on.
+- **HyperTrace could fail to start with nothing at all on screen.** Separate
+  the .exe from the `assets` folder beside it — copy it out of the zip on
+  its own, or launch it from inside the zip — and the app quit before
+  drawing anything: no window, no message, nothing to report. The one file
+  it genuinely cannot run without now travels inside the .exe, and anything
+  else that stops it starting says so in a dialog instead of vanishing.
+- **Errors are now written to a log file** at
+  `%LOCALAPPDATA%\HyperTrace\errors.txt`, so a failure that used to leave
+  no trace at all can be reported. It stays empty when nothing goes
+  wrong.
+
+---
+
+## [1.2.3]
+
+### Visual
+- **Most overlay text now has a subtle drop shadow**, and so does the
+  main window's (nav rail, buttons, labels, dropdowns) — it was reading
+  flat ("2D") against varied backgrounds; a small bottom-right shadow
+  gives it the readable depth other overlay apps use. Left out on text
+  that sits directly on a bright, saturated fill (PIT/OUT/GAR/penalty/
+  class badges, the whole Tyres widget, the Fuel/VE Calculator bars) —
+  a dark shadow there just smeared instead of adding depth.
+
+### Standings
+- **Column order is now drag-and-drop** — grab a column and drop it where
+  you want; the list slides open to show where it'll land. Replaces the
+  old Up/Down buttons.
+
+### New
+- **A game picker in the main window's header** — groundwork for
+  supporting more than one simulator. HyperTrace now tracks which one is
+  actually running and will only show each widget's settings/columns
+  that apply to it, hiding the rest outright rather than just greying
+  them out. While no game is running, the picker lets you preview
+  another simulator's settings ahead of time. LMU is still the only
+  simulator actually supported end-to-end — this isn't a new one yet.
+
+### Fixes
+- **Tray icon's right-click menu no longer opens partly behind the
+  taskbar** — "Show HyperTrace"/"Quit" were nearly unclickable since the
+  menu expanded downward from the cursor, which sits right at the
+  taskbar's edge. It now opens upward instead.
+- **Closing the app (Close, not minimize) no longer leaves a dead tray
+  icon behind** — the icon used to stay visible but stop responding to
+  clicks for the whole shutdown sequence (overlays, bridge, up to a
+  couple seconds), since the icon wasn't actually removed until the very
+  end. It's now removed the instant you quit.
+
+---
+
+## [1.2.2]
+
+### Standings
+
+- **Gap and Interval no longer show a "+"** before the value — they're
+  always "how far behind", so the sign was redundant.
+- **Delta's colors flipped, and it no longer shows a sign** — a driver
+  who was faster than you is now red, slower is now green (the reverse
+  of 1.2.1), with direction shown by color alone.
+
+---
+
+## [1.2.1]
+
+### Standings
+
+- **New "Delta" column** — shows each driver's last lap compared to your
+  own last lap: green when they were faster than you, red when slower.
+  Shows decimals under 10 seconds, whole seconds above that. Reorderable
+  and toggleable like every other column.
+- **Column headers now use Title Case** ("Gap", "Best", "Delta", ...)
+  instead of all-caps.
+
+---
+
 ## [1.2.0]
 
 ### Rewritten as a native Windows app
 
 HyperTrace is now a native C# (WPF) app with its own C++ telemetry engine,
-replacing the previous Python/PySide6 implementation entirely. A single
-self-contained `HyperTrace.exe` — no separate Python install, no
+replacing the previous Python/PySide6 implementation entirely — every
+line of the desktop experience rebuilt from scratch, not just recompiled.
+A single self-contained `HyperTrace.exe` — no separate Python install, no
 dependency setup.
 
-Every desktop overlay carries over with the same look and behavior:
-Speed & Gear, Pedals, Tyres, Delta, Fuel Calculator, VE Calculator,
-Battery, Relative, Standings, Weather, and Damage — including Presets
-(save/load/rename/delete/save-as) and per-overlay settings.
+### Everything from 1.1.5's desktop experience carries over
+
+- All 11 overlays, same look and behavior: Speed & Gear, Pedals, Tyres,
+  Delta, Fuel Calculator, VE Calculator, Battery, Relative, Standings,
+  Weather, Damage.
+- **Presets** — save, load, rename, delete, save-as, and auto-apply a
+  preset per driven class.
+- **Lock/Free** and **Auto-hide**.
+- **Drag-to-move** overlays, with magnetic snap to screen edges and to
+  other overlays.
+- **Standings' column order**, reorderable per your preference.
+- **System tray** — minimize instead of closing, launch with Windows,
+  a remembered choice for what × does the first time you close the app.
+- **Single instance** — launching HyperTrace again just brings the
+  already-running window to front instead of opening a second copy.
 
 ### New
 
