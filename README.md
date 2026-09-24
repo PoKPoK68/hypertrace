@@ -72,8 +72,8 @@ window header decides whose settings and presets you're looking at.
 
 Telemetry comes from the game's **shared memory**.
 
-For **Le Mans Ultimate**, a small C++ engine (`hypertrace/bridge/`) reads
-it, loaded in-process as a DLL — not a separate process. It also enriches,
+For **Le Mans Ultimate**, a small C++ engine reads it, loaded in-process
+as a DLL — not a separate process. It also enriches,
 on its own background threads, a few things shared memory doesn't expose
 (via LMU's local REST API and WebSocket): standings details, weather
 forecast, and penalty type.
@@ -146,42 +146,18 @@ PC. That is what lets OBS run on a second machine.
 
 ---
 
-## Building from source
+## Source
 
-Two pieces, built separately:
-
-**C++ bridge** (`hypertrace/bridge/`) — requires MSVC (VS 2022 Build
-Tools, "Desktop development with C++", including the Windows 10/11 SDK
-component) and CMake ≥ 3.20. See [`hypertrace/bridge/README.md`](hypertrace/bridge/README.md)
-for the SDK-header vendoring step required before the first build.
-
-```
-cmake -S hypertrace/bridge -B hypertrace/bridge/build -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Release
-cmake --build hypertrace/bridge/build
-```
-
-**C# overlay app** (`hypertrace/overlay/`) — targets `net8.0-windows`, but
-needs the **.NET 10 SDK** installed to build: the iRacing telemetry SDK's
-source generator requires a newer Roslyn than .NET 8 ships, and without it
-the generator is silently skipped.
-
-```bash
-dotnet build hypertrace/overlay/Overlay.csproj      # dev build
-dotnet run --project hypertrace/overlay              # run from source
-dotnet test hypertrace/overlay.tests                  # test suite
-```
-
-To build a self-contained release `.exe`:
-
-```bash
-dotnet publish hypertrace/overlay/Overlay.csproj -c Release -r win-x64 --self-contained true -o hypertrace/overlay/publish
-```
+This repository hosts HyperTrace's releases; the source is not public. The
+app is a C# (WPF) desktop shell rendering its overlays with SkiaSharp,
+backed by a small C++ engine for Le Mans Ultimate's shared memory —
+iRacing's and Assetto Corsa's are public formats and are read directly.
 
 ---
 
 ## Credits
 
-HyperTrace's original Python prototype (retired, see `legacy/`) adapted
-portions of its calc engine from **TinyPedal** (GPLv3) — see
+HyperTrace's original Python prototype, long retired, adapted portions of
+its calc engine from **TinyPedal** (GPLv3) — see
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for details. The
 current app is an independent implementation.
