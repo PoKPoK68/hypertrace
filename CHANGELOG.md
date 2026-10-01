@@ -4,6 +4,108 @@ All notable changes to HyperTrace (formerly LMU App) are documented here.
 
 ---
 
+## [1.4.1]
+
+### Key binds
+
+- **Bind a wheel button or a key to HyperTrace.** A new Key binds window
+  under Settings lists what can be bound, and you press the control you
+  want rather than picking it from a list. Wheels, button boxes, handbrakes
+  and the keyboard all work, and a wheel is named as you know it rather
+  than by a hardware id.
+- **Show/Hide and Lock/Unlock the overlays**, either as a toggle or held
+  down for as long as the button is pressed — your choice per bind.
+- **Reset AVG 5** in the fuel and energy calculators.
+- **Reset the Delta's reference lap**, or nudge it a tenth faster or
+  slower, without leaving the car.
+- Binding a control another command already uses asks first, rather than
+  quietly taking it.
+
+### Broadcast
+
+- **Three broadcast boards — a Tower, a driver card and a Sectors board —
+  on a single page.** You add ONE browser source to OBS and every board
+  appears on it, including any you switch on afterwards. Le Mans Ultimate
+  only: they follow the car the game's own camera is watching, which the
+  other two games do not publish.
+- Each board has its own switch and its own settings, and the Tower is only
+  as wide as what it is showing.
+
+### Live timing
+
+- **A Live timing sheet**, with every car's sectors and lap times coloured
+  as a timing screen colours them.
+- **Click a car to watch it**, and **choose the camera** from the same
+  sheet — up to four cameras of your own choosing, set in its settings.
+  Le Mans Ultimate only.
+
+### Standings and Relative
+
+- **A cuts column.** On Le Mans Ultimate it is the track-limit points race
+  control holds against each car. On iRacing it is the incident count, the
+  team's rather than the driver currently in the car, since that is what
+  the limit is measured against.
+- **Places gained or lost since the start of the race**: a green arrow up,
+  a red arrow down, and the count beside it. A dash for no change, and a
+  dash in practice and qualifying, which have no grid to have gained
+  anything from.
+- **Laps on the current stint**, counted from the last time the car left
+  the pits.
+- **Time spent in the pits.** The stopwatch appears beside the PIT badge
+  the moment a car enters the pit lane, runs while it is in there, and then
+  stays beside the OUT badge showing how long the stop took.
+- **The driver badge** Le Mans Ultimate shows beside a name, for every car
+  on the board.
+- Assetto Corsa cars can fly a **manufacturer logo**: an "Assign brands…"
+  window beside the car classes one, arranged the same way, by dragging a
+  car onto a make.
+- Outside a race on Assetto Corsa, the board is ordered by quickest lap
+  rather than by track position.
+
+### Delta
+
+- **A reference lap of your own**, shown as a REF row beside BEST rather
+  than instead of it. Reset it whenever you like, nudge it a tenth faster
+  or slower, and choose which of the two the delta is measured against.
+
+### Fuel and Energy calculators
+
+- With **"REFUEL as pit-exit total"** ticked, the column is headed **TO
+  PUT** rather than REFUEL. In that mode the figure is the level to leave
+  the pits with — what the game's own pit screen asks for — and not an
+  amount to add, which is a smaller number.
+
+### Fixes
+
+- **REFUEL and TO END were wrong on iRacing and Assetto Corsa.** They
+  answer "enough to reach the flag", which needs the laps left in the
+  SESSION, and both were given the laps left in the TANK instead. Those
+  cancel out almost exactly, so REFUEL read 0.0L — or, with a margin set,
+  the margin and nothing else.
+- The interval column could claim a lap between two cars that were not a
+  lap apart, the moment the class leader lapped one of them and not the
+  other.
+- The pit badge named the lap a car had finished rather than the lap it
+  was on, so a stop everyone calls lap 35 read L34.
+- Columns with no data outside Le Mans Ultimate are no longer listed on the
+  other games as rows that cannot be ticked, and no longer draw an empty
+  column there.
+- On iRacing the Standings tower flashed every row as the race began, as
+  though each car had just completed a lap.
+- The settings preview now follows a live change of game, and follows a
+  preset being loaded, instead of keeping the previous layout on screen
+  until a field is touched.
+- Assetto Corsa: a new session starts its clock at zero instead of carrying
+  on from the session before it, and starts its trackers over.
+- Assetto Corsa: Escape back to the garage hides the overlays, and
+  auto-hide knows you have not gone out yet.
+- Your Assetto Corsa car classes and brands now live in two files of their
+  own beside the config — they are the one thing in HyperTrace you type in
+  yourself, and they are easier to keep, copy and edit there. Existing
+  settings move across on their own.
+
+---
+
 ## [1.4.0]
 
 ### Assetto Corsa
