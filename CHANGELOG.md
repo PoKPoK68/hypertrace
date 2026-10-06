@@ -4,6 +4,108 @@ All notable changes to HyperTrace (formerly LMU App) are documented here.
 
 ---
 
+## [1.4.2]
+
+### Fuel and Energy calculators
+
+- **Choose how many decimals each column shows**, from none to two:
+  USAGE, LAPS, REFUEL, TO END and TANKS each have their own setting.
+  Nothing changes until you do, and figures of 100 or more still show none.
+
+### Delta
+
+- **After a reset, the REF row reads a dash** until you complete a clean
+  lap, rather than going back to the game's best lap. The first clean lap
+  after the reset becomes the reference, whatever its time, and every
+  quicker one replaces it.
+- **The delta against your reference lap is steadier and more accurate.**
+  It is measured every 20 m against your reference at the same point,
+  holds between them, and goes back to zero as you cross the line. Against
+  the same lap it now agrees with the game's own delta, where it used to
+  jump by a couple of tenths from one moment to the next.
+- **The sector boxes follow the session as it goes.** A purple sector turns
+  green as soon as someone in your class goes quicker through it,
+  the same way the Live timing sheet colours its sectors.
+- **BEST is purple while it is the quickest lap in your class**, and white
+  again as soon as someone beats it.
+
+### Standings
+
+- **Places gained or lost are counted within the car's class.** Passing a
+  car of another class is not a place gained, and a GT on class pole
+  starts from P1 even when it is third on the road.
+- **On iRacing, classes are listed fastest first**, using iRacing's own
+  lap-time estimate for each class. Classes such as TCR, MX-5 or Porsche
+  Cup used to end up at the bottom in no particular order.
+- **The other classes' badges on your class's line.** With the other
+  classes' rows switched off, their badges can sit greyed beside yours,
+  fastest first, with their driver count when that is switched on. Off
+  by default.
+
+### Live timing
+
+- **The car the game's camera is watching is highlighted** on the sheet.
+- **The sheet stays in front of everything, the game included.** It now
+  has a minimise button and its own taskbar button to bring it back, and
+  opening it again brings back the one already open.
+
+### Broadcast
+
+- **The Tower's name column has a width setting**, 80 to 150 px, in the
+  window its button opens — now called **Tower settings**. A name longer
+  than its column carries on into the empty space before the gap, and is
+  only cut short of the figure itself.
+
+### App
+
+- **A pin on the main window's title bar keeps it in front of everything**,
+  the game included. Off by default.
+- **With the overlays unlocked, hovering or dragging one outlines its whole
+  window**, including the room Standings and Relative keep for a penalty
+  tag that is only drawn when a car has one.
+- **Standings snaps by its whole window**, penalty tag room included, as
+  Relative already did. A tag appearing no longer lands on the overlay
+  beside it.
+
+### Fixes
+
+- The key binds window, its conflict prompt, the broadcast settings and
+  the Live timing sheet had square corners instead of rounded ones.
+- The Delta's reference lap could pick up the time of the lap before as
+  you crossed the line, when the game had not yet published the new one.
+  The REF row could then show the lap you had just reset, and a genuinely
+  quicker lap could be refused as the new reference.
+- Watching a Le Mans Ultimate session with no car of your own, the
+  broadcast boards and the Live timing sheet showed the wrong session, a
+  time remaining that did not move, and no flag.
+- The Live timing sheet could show several purples in one sector column,
+  or a whole column of them, until each car had been through the sector
+  again. Purple now marks the quickest time in the column, and only that.
+- On the Live timing sheet, a car's new sector 1 sat beside the sectors 2
+  and 3 of its previous lap, so a row read as one lap when it was two.
+  A row now shows the lap under way only, and after the line keeps the
+  finished lap for ten seconds before clearing, as the broadcast Sectors
+  board does.
+- On the broadcast Sectors board, a sector's colour was judged on the
+  time to the end of that sector rather than on the sector itself, so a
+  strong sector 1 could turn an ordinary sector 2 purple. Each bar is now
+  coloured on its own sector, as on the Live timing sheet; the gaps above
+  the bars are unchanged.
+- In a race, the gaps on the Live timing sheet and the broadcast Tower
+  only moved as cars crossed the line. They are now measured live, the
+  way the Standings board does it, refreshed every two seconds so they
+  can be read, with lapped cars shown as +1L.
+- With the game in front, the Live timing sheet could freeze, clock and
+  all, and show sectors seconds late.
+- The broadcast Tower measured its gap from the first car still running
+  and left cars in their garage out of class positions, so it could
+  disagree with the Live timing sheet and count places gained wrongly.
+- "Unsaved changes" stayed lit in the main window's footer, notably every
+  time a class preset loaded on getting into a car.
+- A lap time a hair under a whole minute could read 1:60.000.
+
+---
+
 ## [1.4.1]
 
 ### Key binds
