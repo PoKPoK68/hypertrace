@@ -4,6 +4,51 @@ All notable changes to HyperTrace (formerly LMU App) are documented here.
 
 ---
 
+## [1.4.3]
+
+### Broadcast
+
+- **The boards slide on and off air.** The Tower comes in from the left
+  of the picture and leaves the same way; the driver card and the Sectors
+  board rise from the bottom and sink back. Switching from one of those
+  two to the other, the first goes before the second arrives.
+- **The Tower's column changes over smoothly**, on a cycle or when you
+  pick another: the column retracts, the rows' edge following it while
+  the session bar stays put, and the next one expands in its place.
+- **Changing what the Tower lists plays a movement too**: switching
+  between overall, multiclass and one class, or in one-class mode moving
+  to a car of another class, the list rises into the session bar and the
+  new one comes back down out of it.
+- **A change of driver slides the driver card or the Sectors board out
+  and back in**: it leaves with the driver it was showing and returns
+  with the new one.
+- Switched back on, the Tower starts its column cycle afresh, rather than
+  changing column as it arrives, and shows straight away whatever it was
+  set to list while it was off, with no list movement on top of its slide.
+- The Tower's column cycle now defaults to **30 seconds** per column.
+
+### Manufacturer logos
+
+- **Acura, Mazda and Renault** cars now carry their manufacturer's logo,
+  on every board that shows one. On Assetto Corsa they are also offered
+  in the "Assign brands…" window.
+
+### Delta
+
+- **The delta against your reference lap updates every 10 m** rather than
+  every 20 m, so it moves more often through slow corners.
+
+### Fixes
+
+- The broadcast driver card and Sectors board could take up to a second
+  to appear after being switched on.
+- Changing an overlay's settings while playing one game no longer resets
+  its options that belong to another game (Le Mans Ultimate's Standings
+  and Relative columns, for instance, edited from iRacing or Assetto
+  Corsa). "Reset to defaults" leaves them alone too.
+
+---
+
 ## [1.4.2]
 
 ### Fuel and Energy calculators
