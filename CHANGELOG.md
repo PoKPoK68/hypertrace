@@ -4,6 +4,52 @@ All notable changes to HyperTrace (formerly LMU App) are documented here.
 
 ---
 
+## [1.4.4]
+
+### Live timing
+
+- **Each car's manufacturer logo**, between its number and its driver,
+  the same logo the broadcast boards show.
+- **Camera buttons for the car being watched**, next to "Cameras…": switch
+  camera on the car on screen without looking for its row.
+
+### Broadcast
+
+- **The car being watched is always on the Tower.** Further down than the
+  top of the order, the Tower shows the leader, a dividing line, then the
+  cars around the watched one with it in the middle; in multiclass, only
+  its own class moves. The scrolling section still runs while the watched
+  car is in the fixed top rows.
+- **The Tower scrolls**: moving to another car, or the scrolling section
+  stepping on, runs the order through every car in between instead of
+  swapping one set of rows for another.
+- **The watched car is framed on the Tower**, in the app's accent colour,
+  so it is found at a glance. The frame draws in from the left once the
+  Tower has scrolled to it, and out the same way as soon as another car
+  is watched.
+- The Tower's energy column now shows **virtual energy only**, headed "VE"
+  for every class. A car without virtual energy shows a dash rather than
+  its fuel: online the game only gives the fuel of your own car.
+
+### Relative and Standings
+
+- **No longer empty in the garage on Le Mans Ultimate.** When the game does
+  not mark any car as yours, as in the garage, they follow the car the
+  game's camera is watching, as the broadcast boards do. As soon as your
+  own car is marked again, they go back to it.
+
+### Fixes
+
+- **Stream overlays: any number can now be open in OBS at once.** OBS
+  could only receive six of them at a time, so with the /broadcast page
+  and a few stream overlays added, one of them stayed blank, with no error.
+  Since 1.4.3 the /broadcast page alone counted for three, so even four
+  stream overlays could leave one empty. After updating, refresh your
+  HyperTrace browser sources in OBS (or restart OBS) so they pick this up;
+  the URLs do not change.
+
+---
+
 ## [1.4.3]
 
 ### Broadcast
