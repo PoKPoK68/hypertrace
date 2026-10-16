@@ -4,6 +4,68 @@ All notable changes to HyperTrace (formerly LMU App) are documented here.
 
 ---
 
+## [1.4.5]
+
+### Broadcast
+
+- **A starting grid**, switched on from the Broadcast page: across the
+  bottom of the picture, two cars at a time, each with its place on its
+  class's grid, logo, number, driver, class, qualifying lap and the game's
+  own picture of the car. Every class has its own grid, fastest class
+  first; every 4 seconds the next row slides in, and once every car has
+  been shown the grid switches itself off; it is also always off when
+  HyperTrace starts. While it is up it is the only board on the picture:
+  the others go off first and come back after it.
+  The qualifying lap is the one HyperTrace saw during qualifying, so it is
+  shown only if HyperTrace was running then.
+- **A fastest-lap banner** at the top of the /broadcast page, whenever a
+  class's best lap of the session falls: "FASTEST LAP" and the class
+  badge, then the driver, with their current place in the class, and the
+  time. It goes up once the lap has stood for 5 seconds, so a lap beaten
+  straight away never shows, comes down from the top of the picture, stays
+  up 8 seconds and goes back up. Two classes at once are shown in turn. It
+  is on whenever broadcast is, with nothing to set.
+- **The driver card shows the class badge** at the end of the driver's
+  name, and widens to fit a long name rather than cutting it short. Virtual
+  energy moves to the lap times' row, just before the tyre.
+- **The Tower's Pos +/- column is back**: places gained or lost in the
+  class since the start, counted as the Standings board counts them. It
+  joins the column cycle in a race, and picked by hand it is always shown,
+  with a dash outside a race.
+- The frame round the watched car on the Tower is now an **outline only**,
+  without the tinted fill.
+
+### Live timing
+
+- **Pick which classes are shown**: one button per class of the session
+  beside the camera buttons, on the class's colour while it is shown and
+  grey while it is not. Click to switch one. Positions and gaps stay those
+  of the whole field, and the car count reads "18 / 24 cars" while some
+  are left out.
+- **A POS +/- column**, places gained or lost in the class since the start,
+  and **a VE column**, the virtual energy left.
+
+### General
+
+- **The main window and the Live timing sheet open where you last left
+  them**, the sheet at its last size too. A place no longer on any screen
+  is ignored, and the window opens where it always did.
+
+### Fixes
+
+- **Overlays hidden behind the game.** With HyperTrace opened before the
+  game, the game's window could end up in front of every overlay and stay
+  there, while the stream overlays showed fine. The overlays now take
+  their place on top again every second.
+- The Tower now shows a car's **first lap**: for a car that appeared
+  without a time, it was taken for a lap set before HyperTrace was
+  watching, and only the second one showed.
+- The Tower's **last laps take the Live timing sheet's colours**, graded
+  live: a class best beaten moments later no longer stays purple, so two
+  purple laps no longer show in one class.
+
+---
+
 ## [1.4.4]
 
 ### Live timing
