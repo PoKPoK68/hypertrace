@@ -4,6 +4,123 @@ All notable changes to HyperTrace (formerly LMU App) are documented here.
 
 ---
 
+## [1.5.0]
+
+### Overlays
+
+- **Track Map** (Le Mans Ultimate): the circuit seen from above, with every
+  car as a dot in its class's colour and yours ringed in white. Cars in the
+  pit lane fade, cars in the garage are left off, and the dots glide
+  smoothly between updates. A **Class position** option writes each car's
+  place in its class inside its dot. Size and opacity can be set, and the
+  map follows a change of circuit by itself. Each circuit's map is kept
+  once it has been seen, so from the second visit on it is there the
+  moment the session loads. It starts switched off: turn it on from the
+  Overlays page.
+- **Standings and Relative show the lap in a race run to a lap count**
+  (iRacing and Assetto Corsa): "LAP 12/45", the leader's lap, in place of
+  the clock — and beside it when the race also ends on a clock. Practice,
+  qualifying and timed races keep the clock alone.
+
+### Broadcast
+
+- **The Sectors board shows the lap's running time**, centred above the
+  sectors, and the finished lap's time, in its colour, once the car
+  crosses the line. Each sector box now holds the gap to the class's
+  quickest lap at that split, or the sector's own time while the class has
+  no lap to compare with, and reads S1, S2 or S3 until the sector is done.
+  The finished lap stays up for 5 seconds after the line, instead of 10.
+- **General settings** for the broadcast, opened from the Broadcast page
+  in place of "Tower settings". A GENERAL section sets how every board
+  writes a driver (FIRST LAST, F. LAST or LAST) and whether car numbers
+  show, on every board that has them. The Tower's own settings follow in a
+  TOWER section, its column pace now "Cycle time" under CYCLE COLUMN. Each
+  section folds away, and stays as you left it.
+- **Results tables** for practice, qualifying and the race, switched on
+  from the Broadcast page's new **Results** row, with a PRACTICE / QUALI /
+  RACE choice beside it. The table goes up in the middle of the picture,
+  alone, one class at a time and ten cars a page: place, manufacturer
+  logo, the car's picture, number and driver, and on the right the class's
+  best lap then each car's gap to it (practice and qualifying), or the
+  winner's laps then each car's gap at the finish, in time or in laps,
+  with DNF and DQ (race). Each session's results are kept once it is over,
+  so qualifying's can go up during the race, for as long as HyperTrace
+  stays open. Once every class has been shown, the switch goes off by
+  itself.
+- **Driver info**: the Driver Card and Sectors switches become one, with a
+  choice of which board it puts up: **RACE** (the driver card) or
+  **QUALI** (sectors). Choosing the other while it is on swaps the board on
+  air at once, and the choice is kept while it is off.
+- The Broadcast page is tidier: the **URL** button now sits beside the
+  Enable broadcast switch (the address is in its tooltip) instead of on a
+  row of its own, General settings comes before Live timing, and the
+  Tower's column buttons form a two-by-two square with **Cycle** at the end
+  of the same line.
+- The driver card's **virtual energy turns amber under 25% and red under
+  10%**, as on the Standings and the Tower, instead of staying green.
+
+### Live timing
+
+- **GAR and PIT are badges**: GAR on yellow, PIT in white on the PIT
+  badge's blue.
+- In a race, **the gap turns amber** when the car is within a second of
+  the one ahead of it in its class, **and red** within half a second.
+
+### General
+
+- **NEW UPDATE**: when a newer version of HyperTrace is out, a NEW UPDATE
+  button appears above SETTINGS. It opens that version's changelog, with
+  **Download & install** and **Back**. Installing downloads the new
+  version, checks it against the published file, puts it in place of the
+  old one and restarts HyperTrace; your settings are kept. If anything
+  goes wrong, nothing is changed. HyperTrace looks for a new version when
+  it starts and every six hours after.
+
+- **Lighter on the CPU**: text is drawn far more efficiently, which takes
+  about four fifths of the memory churn off the Standings and the Relative
+  each frame and a third off the Standings' drawing time. Nothing looks
+  any different.
+- **The stream renders large boards much faster**: encoding a frame for
+  OBS takes a quarter of the time it did, so animated boards no longer hold
+  up the others' frames.
+
+### Fixes
+
+- The Sectors board, moving to a car that has just crossed the line, kept
+  that car's finished lap up until it reached sector 1. It now keeps it
+  only for what is left of its 5 seconds.
+- The starting grid, switched on with no car to show (the game still in
+  its menus, say), no longer keeps every other board off the picture until
+  switched off by hand: it switches itself off after a few seconds.
+- On the starting grid, the first two cars' pictures no longer arrive a
+  second or two after the grid: every car's picture is fetched ahead while
+  broadcast is on.
+- Text on the broadcast boards no longer jitters while they slide: the
+  letters used to shift about inside a board as it came in or went out,
+  and inside the Tower's rows as they changed places.
+- Overlays now start over with a new session, a new circuit or a new car
+  on iRacing and Assetto Corsa, where they never did: the calculators'
+  history, the pit and out-lap badges, stint laps, the pit stopwatch and
+  places gained all carried on from the session before. On Le Mans
+  Ultimate, a change of circuit or car now counts too, even when joining
+  a session already under way.
+- The calculators' **LAST** and **AVG 5** rows now always start over with
+  a new session, circuit or car, instead of quoting laps from the one
+  before. The AVG 5 reset setting is now At session start (the default) or
+  On pit exit; Never is gone.
+- iRacing, Standings in the LMU layout: crossing the line no longer shows
+  the previous lap's time before the new one.
+- iRacing: the running order no longer freezes once the leader takes the
+  chequered flag. The cars still on their last lap keep being placed where
+  they are on the track, and each one is fixed in its finishing place as it
+  crosses the line, a lapped car behind those still finishing on the
+  leader's lap.
+- The Standings and the Relative could name a different lap for the same
+  pit stop (L12 on one, L11 on the other) when a car crossed the line in
+  the pit lane. They now agree, on the lap the car entered the pits on.
+
+---
+
 ## [1.4.5]
 
 ### Broadcast
