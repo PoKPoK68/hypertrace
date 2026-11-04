@@ -44,7 +44,7 @@ extraction, and the auto-hide visibility gate — was independently
 reimplemented for the rewrite: same observable behavior, different
 internal design (see `hypertrace/bridge/src/consumption_tracker.hpp`,
 `hypertrace/bridge/src/bridge_core.cpp`, `hypertrace/bridge/src/lmu_bridge.cpp`,
-and `hypertrace/overlay/src/SessionActivity.cs`). No GPLv3 obligation
+and `hypertrace/overlay/src/Race/SessionActivity.cs`). No GPLv3 obligation
 applies to the binary this app distributes.
 
 TinyPedal is credited here as a courtesy, for the historical record of

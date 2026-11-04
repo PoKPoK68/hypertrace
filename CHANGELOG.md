@@ -4,6 +4,223 @@ All notable changes to HyperTrace (formerly LMU App) are documented here.
 
 ---
 
+## [1.5.2]
+
+### Broadcast
+
+- **Race control banner**: when a car is handed a penalty, a banner at the
+  top of the picture shows RACE CONTROL with the class badge, the penalty
+  written out with its reason (`10s STOP AND GO PENALTY — SPEEDING IN
+  PITLANE`, `5s PENALTY`, `DRIVE THROUGH PENALTY — TRACK LIMITS`), then the
+  car's position, brand logo, number and driver. It shares the place of the
+  Fastest lap and the Leader change, one banner at a time, and like them has
+  no switch.
+- **The Tower shows penalties**, in red, in the same badge as PIT and GAR,
+  which take over while the car is in the pits or the garage. DNF and DQ
+  come before all of them.
+- **Class color on the Tower**: a new switch, off by default, puts a fade in
+  each class's color behind the position, in every mode. In Overall, the
+  classes in the session also appear as short badges beside OVERALL (`HYP`,
+  `LMP2`, `GT3`), as many as fit, as the key to those colors.
+- **Up to 40 rows on the Tower** in all three modes, and its Show setting is
+  now called **Mode**.
+- **All the boards' text is a little larger.** The Driver Card, the Sectors
+  and the Tower are a few pixels wider to hold it.
+- The Driver Card's VE is **the figure alone**, without its label. Its digits
+  keep the same width and it no longer shifts between 99% and 100%. LAST and
+  BEST now share a middle line with their times.
+
+### Live timing
+
+- **The status column is now titled STS and shows penalties**, in red, when
+  the car is neither in the garage nor in the pits.
+
+### Overlays
+
+- **The Delta has a Laps row**, off by default: the lap being driven over
+  the laps the race should run. On Le Mans Ultimate that is the game's own
+  estimate, as in `120/~403.4`. On what should be the last lap the decimal
+  goes (`404/~404`), and the tilde goes once the overall leader has taken
+  the flag (`404/404`). On iRacing and Assetto Corsa, which have no such
+  estimate, it shows the lap alone, or over the race's lap count if it has
+  one.
+- **Class color on the Standings and the Relative**, as on the Tower: a fade
+  in each class's color behind the position. On the Standings it is a new
+  switch under Rows, off by default. On the Relative, Class color chooses
+  between the box behind the position, as before and still the default, and
+  the fade.
+- The Standings' **positions below the podium are white**, no longer grey.
+
+### Removed
+
+- **The Driver badge column is gone** from the Standings and the Relative.
+  Le Mans Ultimate keeps that badge on its online service, RaceControl, and
+  the only way to read it was to sign in there with your Steam login, the
+  way the game itself does. On 4 November 2026 Studio 397 asked third-party
+  tools to stop doing this: it is against the game's EULA and privacy
+  policy, and RaceControl now rate-limits requests it finds unusual and bans
+  the IP address they come from, which would cut your game off from online
+  racing too. HyperTrace no longer contacts RaceControl at all. Everything
+  else it shows from Le Mans Ultimate comes from the game itself, on your
+  PC, and is not affected.
+
+### App
+
+- **The see-through tints follow the accent color**, in the app and in the
+  outline around the overlays. They used to stay amber whatever the accent,
+  leaving some controls in two colors.
+- **A daily copy of your settings**: the first launch of each day copies the
+  config, the presets and the Assetto Corsa classes and brands files to
+  `.hypertrace\backups\<date>\`. The last 14 days are kept.
+
+### Fixes
+
+- The Tower's **session name is centered on the clock**. It sat a little high.
+- **Gaps stop moving at the flag** on the Standings, the Tower and the Live
+  timing sheet: each car's gap is now measured from when it crossed the
+  line. Le Mans Ultimate.
+- **The starting grid follows the qualifying results**, in the same cars and
+  the same order. A car that joined without setting a lap could take the lap
+  and the name of another car in its livery, showing a driver twice on the
+  grid.
+- The Tower shows **DQ on a disqualified car**. It never did.
+- **The car in the game's first slot** can be followed like any other. The
+  boards showed your own car in its place.
+- **A car at 0% virtual energy shows 0%** on the Driver Card, the Tower, the
+  Standings and the Live timing sheet. The figure used to disappear, the
+  VE label with it on the Driver Card.
+- **Settings could change on their own**: a button, switch or tick box kept
+  the focus once clicked, and the next Space or Enter pressed it again,
+  flipping a switch or saving again. The keyboard now only reaches text
+  fields, open dropdowns and what a dialog handles itself.
+- **An update or a crash could reset your settings**: a config file cut off
+  while being written, or held for a moment by another program, sent the app
+  back to its defaults and was then overwritten. The file is now written
+  whole before it replaces the old one, a refused read is tried again, and a
+  config that truly cannot be read goes back to a copy of the last good one,
+  kept as `config.json.bak`, with the broken file kept beside it. The Assetto
+  Corsa classes and brands files are protected the same way.
+- **Presets survive a crash or a power cut** the same way: each is written
+  whole before it replaces the old one, and kept as a `.bak` when it is
+  saved, renamed or deleted. A preset that cannot be read is set aside as
+  `.unreadable-<date>` and replaced by its last good copy. Loading a preset
+  is now saved in one go, so a stop half-way no longer leaves half of one
+  preset and half of another on screen.
+- **Loading a preset takes an overlay it holds no settings for back to its
+  defaults.** The settings on screen used to stay, so one game's size could
+  show up on another game's preset and be saved into it.
+- **Switching games is safer**: the app moves to the new game in one step,
+  so one game's layout can no longer be saved under the other's preset
+  half-way through.
+- **No preset is written at launch.** Starting the app could create one by
+  itself.
+- **A preset file copied in Windows** no longer takes the original's name in
+  the list: the original keeps it.
+- **Text is centered in its row on the Standings and the Relative**, above
+  all in the PIT, GAR, OUT and lap badges, which sat low, more so the larger
+  the overlay. At some font sizes the badges' text is a pixel smaller, so it
+  can be centered exactly.
+
+---
+
+## [1.5.1]
+
+### Broadcast
+
+- The starting grid shows **the driver who set each car's qualifying
+  lap**, beside that lap, rather than whoever is in the car on the grid.
+  A car started by a team-mate used to show no qualifying time at all.
+- **Leader change**: when a class's race leader changes and the new one
+  holds the lead for five seconds, a banner at the top of the picture shows
+  the old leader with their brand logo and class badge, then slides the new
+  one in from the right. Another change within the five seconds starts the
+  wait over; the old leader back in front within it puts nothing up. It
+  shares the Fastest lap's place, the two taking turns, and like it has no
+  switch.
+
+### Live timing
+
+- **An INT column**: the gap to the car directly ahead in the same class —
+  live in a race, the best-lap difference otherwise. The amber (within a
+  second) and red (within half a second) move to it from the GAP column,
+  which is white again.
+- **A − beside S1 folds the three sector columns away**, and a + in the
+  same place brings them back. The window narrows and widens with them,
+  and the sheet opens the way it was last left.
+- **The cameras column sits right after the driver's name**, now titled
+  CAMERAS, and **every other row is shaded**, as on the Standings and the
+  Relative.
+- **Ahead and Behind**, beside the watched car's cameras, switch to the
+  car directly in front of it or behind it on the road, whatever its class
+  or place: from third in GT3, Ahead can land on the Hypercar running
+  tenth just up the road. Le Mans Ultimate.
+- **Le Mans Ultimate only**, as a broadcast tool: its button greys out on
+  another game, and a sheet left open closes on the switch.
+
+### Overlays
+
+- On the Standings and the Relative, **the row backgrounds are square**:
+  the shaded rows, your own row and, on the Relative, the lap-apart rows
+  read as stripes across the board rather than separate rounded blocks.
+- **The pit stopwatch** on the Standings and the Relative keeps its figures
+  still: every digit takes the same width, so the time no longer shifts
+  sideways as it counts.
+- **The Relative has a column list**, as the Standings does: position,
+  brand logo, driver badge, name, last lap, cuts / incidents, stint laps and
+  gap, each switched on or off and dragged into the order you want. The gap
+  column carries its own decimals.
+- **Every badge has its own switch** on the Standings and the Relative —
+  PIT, GAR, OUT and the pitted-lap badge — with the pit time right below
+  the PIT badge. Some used to share one switch. Your current choices carry
+  over.
+- **Your own row's highlight** on the Relative can be switched off.
+- The Standings' "LMU Standings' layout" is now called **Compact layout**.
+
+### Settings
+
+- **The column list has a column of its own** in an overlay's settings,
+  always open beside the other settings, whatever the tab. The Fuel and VE
+  calculators get one too: USAGE, LAPS, TIME, REFUEL, TO END and TANKS,
+  each with its own decimals.
+- **Settings regrouped** where they were hard to find:
+  - the calculators: a **Display** section and a **Rows** section;
+  - the Delta: one **Bar** section with the bar, its range and what the
+    delta is against;
+  - the Pedals: one **Display** section;
+  - the Battery: a **Rows** section;
+  - the Relative: shaded rows under **Visual**.
+- **Settings › Cars** gathers the class colors and Assetto Corsa's
+  **Classes and brands (AC)**, which move there from the Presets page and
+  can now be set up before the game is even launched.
+- "Apply to…" is now **Copy to presets…**, and the stream page's switch is
+  simply **Auto-hide**.
+- The explanatory lines under settings are gone, and *color* is spelled
+  the same way everywhere.
+
+### Fixes
+
+- The pit and out-lap badges, the pit stopwatch and stint laps on the
+  Standings and the Relative are right on getting back in the car: they
+  used to stop following while the overlays were hidden (auto-hide) or
+  switched off, and came back with stops missed. Both overlays, and their
+  stream versions, now always agree.
+- Live timing: a car level with the one ahead no longer shows its dash in
+  red.
+- **A key pressed with HyperTrace in front could move every overlay**: a
+  dropdown left with the focus, the preset list above all, took the arrow
+  keys and letters as a new choice and loaded another preset. A closed
+  dropdown now ignores the keyboard.
+- **After playing another game, the next launch could save its layout
+  into the wrong preset**: HyperTrace started on the last game picked in
+  its header, naming that game's preset over the other game's overlays —
+  its own overlays appearing at the other game's places, and Save writing
+  the layout into it. It now starts on the game the overlays on screen
+  belong to.
+- The Overlays page's count no longer reads 18 overlays on Le Mans
+  Ultimate: it counted the broadcast boards too, which have no row there.
+
+---
+
 ## [1.5.0]
 
 ### Overlays
