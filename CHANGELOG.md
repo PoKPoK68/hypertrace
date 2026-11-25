@@ -4,6 +4,211 @@ All notable changes to HyperTrace (formerly LMU App) are documented here.
 
 ---
 
+## [1.5.3]
+
+### Broadcast
+
+- **Final lap and checkered flag on the Tower.** When the overall leader
+  starts the last lap, a white FINAL LAP band sweeps across the top of the
+  Tower and stays there. When the leader crosses the line, a checkered
+  FINISH band sweeps over it. Each car's row then takes a faint checkered
+  flag as that car crosses the line. The last lap is called as the leader
+  starts it when the clock left is clearly short of a lap, otherwise at 0:00.
+  In practice and qualifying, the flag square turns checkered once the clock
+  runs out.
+- **The winner on the Results board.** A card left of the table shows the
+  winner of the class on show: WINNER in a race, POLE in qualifying, 1ST in
+  practice, with the maker's logo, the car's picture, the first name and
+  surname, and the winning lap in purple outside a race.
+- **Driver info follows the session.** The QUALI / RACE choice is gone: the
+  Sectors board shows in qualifying, the Driver Card in practice and the
+  race.
+- **Three Sectors boards in qualifying.** Beside the car you are watching,
+  the two cars of its class next to reach the line, judged by time at each
+  car's own pace. Cars in the garage, in the pits or on an out-lap are left
+  out. The board nearest the line is on the left, and the watched car's
+  board is framed. A car that crosses the line keeps its board for 3
+  seconds, then the boards change places one step at a time: the leaving
+  ones drop out, the others slide over, the new ones rise. With fewer cars,
+  fewer boards, centered where the single board always was. The finished lap
+  now stays up for 3 seconds instead of 5.
+- **Class color on the Driver Card and the Sectors boards.** With Class
+  color on, they take the same class color fade as the Tower, behind the
+  position. The Class color switch moves from Tower to General in the
+  Broadcast settings, since it is no longer the Tower's alone.
+- **Your own image on the boards.** Broadcast settings, General, Image:
+  choose a picture (PNG, JPG, WEBP or BMP) and it shows at the foot of the
+  Tower, in the Starting Grid's information block and at the right of the
+  Results header. Until you choose one, the HyperTrace logo is there;
+  Default puts it back. The file is copied into HyperTrace's own folder, so
+  moving or deleting the original does not take it off the picture.
+- **Class headers fade on the Tower.** In One class and Multiclass, the
+  class name sits on a fade of its color, reaching the end of the name
+  column and running into the first car's own class color below, instead
+  of a rounded badge. OVERALL keeps its badge.
+- **The Tower always fits a 1080 picture, image included.** Overall and One
+  class go up to 31 rows, Multiclass to 15 rows per class. With more than two
+  classes, the Tower shares the rows out itself so it still fits: a small
+  class keeps all its cars, and the class of the car you are watching gets
+  any row left over.
+- The Starting Grid's information block is a little wider to hold the image.
+
+### Delta
+
+- **PIT and OUTLAP instead of a delta.** Measured against a flying lap, a
+  delta in the pits or on an out-lap reads seconds down and says nothing.
+  The overlay now reads PIT in the pits and OUTLAP from the pit exit to the
+  line, with the bar empty, and the delta comes back as the line is crossed.
+- **The lap row is called Lap**, in the settings and on the overlay.
+
+### Standings and Relative
+
+- **The rows reach the edge of the board.** The Relative's first and last
+  rows, and the Standings' last row, now run to the edge and take the
+  board's rounded corners, with no empty strip above or below them. Both
+  boards are a few pixels shorter.
+- **One block of class color.** On the Standings and the Tower, the class
+  color fade now carries on across the gap between the leaders and the
+  cars around you.
+
+### Track Map
+
+- **The finish line and the sector ends.** A white line across the road
+  for the finish, and shorter accent-colored lines where sectors 1 and 2
+  end. Le Mans Ultimate does not give these positions, so HyperTrace
+  works them out from the cars passing each point. They are saved for
+  each circuit, so they show straight away on a circuit you have driven
+  before. Off by default: Finish line and sectors, in the overlay's
+  settings.
+- **Yellow flags by sector.** A sector with a local yellow is painted
+  yellow on the map, from its start to its end. It needs the sector ends
+  above to be known. Off by default: Yellow flags by sector.
+- **A shade of gray for each sector.** The road is drawn in three grays,
+  sector 1 the lightest and sector 3 the darkest, the same on every
+  circuit. It needs the sector ends to be known. Off by default: Sector
+  shades.
+
+### Live timing
+
+- **DNF and DQ in the STS column**, in the same badges as on the Tower.
+  They come before GAR, PIT and penalties.
+
+### Assetto Corsa
+
+- **Setting up the in-game app.** The first time Assetto Corsa is on screen,
+  a window explains where HyperTrace's in-game app goes. Copy folder puts
+  it on the clipboard, ready to paste into the game's folder (the one
+  holding acs.exe). Already done closes the window for good.
+
+### App
+
+- **Much less CPU with no game running.** Overlays on screen with no game
+  open were repainted 30 times a second with the same picture, and the app
+  kept waking up to check on a game that was not there. With no game open
+  it now uses about a fifth of what it did.
+- **Lighter while racing, too.** A long list of small savings across all
+  three games: Le Mans Ultimate's data read once instead of twice, one
+  connection to its local API kept open instead of a new one ten times a
+  second, Assetto Corsa watched without listing every program on the PC
+  each second, iRacing's results looked up once per update. Overlays whose
+  figures change slowly, such as the fuel and VE calculators, are redrawn
+  10 or 2 times a second instead of 30. Anything that moves, like the
+  Standings' sliding rows, still runs at full rate. About a tenth less CPU on
+  a simulated race with eleven overlays up.
+- **Sliders no longer stutter in the settings.** Every step of a slider
+  wrote the whole config to disk, about 20 ms each time on the thread that
+  also draws the overlays. Changes are now written a moment after the last
+  one, and always before the app closes or updates.
+- **Stream mode only draws what someone is watching.** Every overlay
+  switched on for the stream was drawn and encoded 30 times a second, even
+  with OBS closed. Now an overlay is drawn only while a page shows it, and
+  appears as soon as one opens it. The broadcast boards are always drawn.
+- **Less memory over a long evening.** Car pictures for the starting grid
+  and results are let go of once no longer shown, instead of piling up
+  with every new field.
+- **Quicker to start, and half the memory.** The exe is no longer
+  compressed, so Windows no longer unpacks it into memory at every start.
+  It takes 152 MB on disk instead of 70; the download is the same size.
+- **`errors.txt` keeps its history.** When it reaches its size limit, it
+  now becomes `errors.old.txt` instead of being wiped.
+- **Built on .NET 10.** The version of .NET the app was built on stopped
+  receiving security fixes on 10 November 2026. Nothing to install: the app
+  still carries its own. The download is also a few MB smaller.
+- **Lighter broadcast boards.** The Tower and the other boards no longer
+  measure their digits again on every row of every frame, on the desktop
+  and on the stream alike.
+
+### Fixes
+
+- **The Tower showed yellow flags at the end of a race.** On the last lap
+  the sector holding the finish line showed a yellow, and after the
+  checkered flag the others did too, with no flag out. The Tower now reads
+  Le Mans Ultimate's sector flags by their actual value, so only a real
+  local yellow shows.
+- **The Standings' class driver count shrank as cars retired** when the
+  DNF/DQ rows were hidden, and a class whose cars were all in the garage
+  disappeared from the board. The count is now the class's size, and the
+  class stays on the board.
+- **The class color fade stood one pixel out of the board** on the left,
+  most visibly in red and orange. It now starts inside the board's edge, on
+  the Standings, the Relative and the Tower.
+- **The fuel and VE calculators could count an out-lap in their
+  averages.** They only followed the laps while on screen, so with the
+  overlay hidden by auto-hide, the lap from the pits was not recognized and
+  went into AVG 5. They now follow every lap, shown or hidden.
+- **The Delta's reference lap belonged to the circuit, not to the car.** On
+  Le Mans Ultimate, changing car or class on the same circuit kept the last
+  car's lap as the target for as long as the app ran. A change of car, class
+  or circuit now starts again from the game's best lap for it.
+- **Track limit cuts and penalty reasons carried over into the next session**
+  on the Standings in some cases. They are now cleared on every new session.
+  Le Mans Ultimate.
+- **Assetto Corsa's class colors** showed right in the car class window only
+  while Assetto Corsa was the game picked. With another game picked, every
+  class came out red. Each game now keeps its own colors.
+- **An error while reading Le Mans Ultimate could close the app**, with
+  nothing written to `errors.txt`. It is now logged and the reading starts
+  over. Closing the app or switching games no longer waits up to 5 seconds
+  on Le Mans Ultimate's connection either.
+- **A crash's last line reaches `errors.txt`.** The app could close before
+  writing down why.
+- **Assetto Corsa: every overlay could freeze** if the in-game HyperTrace
+  app stopped answering without closing (a Lua error, a loading screen).
+  The app no longer waits for it: after 2 seconds without an answer the
+  boards empty and it reconnects, and the rest keeps running.
+- **Overlay window titles were garbled** in OBS's window list, Task
+  Manager and anything else that reads them. They now read "HyperTrace
+  Speed" and so on.
+- **A penalty could stay attached to a car's slot** after the car left, and
+  show on the next car to take it. Le Mans Ultimate.
+- **Assetto Corsa: a slower class could sit above a quicker one.** Classes
+  were ordered by words in their names, which mean nothing for names you
+  chose yourself. They are now ordered by each class's best lap of the
+  session, quickest first. A class with no lap yet comes after those with
+  one.
+- **Stream mode could stay dark until the app was restarted**, typically
+  right after closing one version and opening another, while the old one
+  still held the port. The app now tries the port again every second
+  until it gets it, and the overlays and boards come up in OBS on their
+  own.
+- **The Stream page counted the broadcast boards** among the overlays
+  switched on for the stream. It now counts only the overlays it lists.
+- **A setting out of range could stop the app from starting.** A value
+  outside what the settings window allows, typed into `config.json` or
+  brought in by a preset, could leave the Standings unable to start (a
+  negative number of decimals) or the Relative empty (a negative number of
+  cars). Every overlay setting is now brought back inside its range, and
+  an overlay that still cannot take its settings goes back to its defaults
+  instead.
+- **The Weather's rain and wetness arrows outlived the session.** They
+  carried over to the next session, circuit or game, and compared its
+  weather with the last one's. They now start over, and go away after a
+  minute without change instead of five.
+- **The Tower after a restarted race** kept the first start's grid for
+  places gained. It now starts over with the race.
+
+---
+
 ## [1.5.2]
 
 ### Broadcast
